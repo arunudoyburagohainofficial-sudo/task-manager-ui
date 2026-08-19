@@ -27,9 +27,9 @@ export function homeLine(tone: CompanionTone, currentStreak: number, doneTodayCo
   }[tone];
 }
 
-/** Voice/text capture screen status line — literal per COMPANION.md, name only. */
+/** Capture screen status line — name only, no tone variation (matches COMPANION.md). */
 export function listeningLine(name: string): string {
-  return `${name} is listening…`;
+  return `${name} is ready when you are.`;
 }
 
 /** Confirm & Organize screen — explains the focus-vs-reminder type inference in plain words. */

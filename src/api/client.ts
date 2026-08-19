@@ -71,6 +71,15 @@ function buildUrl(path: string, query?: RequestOptions["query"]): string {
   return url.toString();
 }
 
+/**
+ * Hard ceiling per request. React Native's fetch has NO default timeout — a connection
+ * that drops mid-request otherwise hangs forever, leaving whatever spinner triggered it
+ * (create task, complete, sign-in) stuck with no way out. 20s is deliberately generous:
+ * it has to absorb a Cloud Run cold start plus the us-central1 ↔ ap-southeast-1 DB hop
+ * on the slowest real request, while still being an answer rather than an eternity.
+ */
+const REQUEST_TIMEOUT_MS = 20_000;
+
 /** Generic request helper shared by every resource module in src/api/. */
 export async function apiRequest<T>(
   path: string,
@@ -88,11 +97,27 @@ export async function apiRequest<T>(
   }
   if (body !== undefined) headers["Content-Type"] = "application/json";
 
-  const response = await fetch(buildUrl(path, query), {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path, query), {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (e) {
+    // Abort surfaces as a DOMException-ish "AbortError" — rethrow it as something a
+    // screen can show verbatim; anything else (DNS failure, offline) passes through
+    // with fetch's own message.
+    if ((e as { name?: string })?.name === "AbortError") {
+      throw new ApiError(0, undefined, "Request timed out — check your connection and try again.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (response.status === 204) {
     return undefined as T;

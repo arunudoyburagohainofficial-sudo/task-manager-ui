@@ -51,10 +51,14 @@ export async function syncReminders(): Promise<void> {
 export function useReminderSync(): void {
   const { user } = useSession();
 
+  // Keyed on user?.id, not `user` as a whole — same reasoning as SessionContext's own
+  // prefetch effect: updateUser (weekly goal, profile edits, ...) replaces the user object
+  // without changing who's signed in, and shouldn't re-trigger a sync of unrelated data.
   const sync = useCallback(async () => {
     if (!user) return;
     await syncReminders();
-  }, [user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   useEffect(() => {
     sync();

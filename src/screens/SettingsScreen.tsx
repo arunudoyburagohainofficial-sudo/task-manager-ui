@@ -148,6 +148,10 @@ export function SettingsScreen() {
     try {
       const updated = await usersApi.updateWeeklyGoal(nextGoal);
       updateUser(updated);
+    } catch (e) {
+      // Without this catch the failure was an unhandled rejection: no message, the
+      // displayed goal silently kept its old value, and nothing told the user why.
+      Alert.alert("Couldn't update weekly goal", e instanceof ApiError ? e.message : "Try again.");
     } finally {
       setSavingGoal(false);
     }

@@ -45,3 +45,9 @@ yarn-error.*
 # key), not secrets, and EAS Build's project archive is built from what git tracks. An
 # ignored copy here is invisible to EAS regardless of being present on disk locally,
 # so a cloud build would silently produce an app Firebase can't initialize in.
+
+
+task-app/design_handoff_focus_capture_app
+task-app/design_handoff_focus_capture_app 2
+
+handoffs

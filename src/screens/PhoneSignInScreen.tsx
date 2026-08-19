@@ -2,10 +2,14 @@ import React, { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import type { ConfirmationResult } from "@react-native-firebase/auth";
 import { authApi } from "../api";
 import { ApiError } from "../api/client";
-import { confirmPhoneCode, getCurrentFirebaseIdToken, sendPhoneVerificationCode } from "../api/firebaseAuth";
+import {
+  confirmPhoneCode,
+  getCurrentFirebaseIdToken,
+  sendPhoneVerificationCode,
+  type PhoneConfirmation,
+} from "../api/firebaseAuth";
 import { Body, Button, ScreenContainer, ScreenTitle, TextField } from "../components";
 import { useAppearance } from "../state/AppearanceContext";
 import { useSession } from "../state/SessionContext";
@@ -28,7 +32,7 @@ export function PhoneSignInScreen() {
   const [step, setStep] = useState<"phone" | "code">("phone");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [code, setCode] = useState("");
-  const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
+  const [confirmation, setConfirmation] = useState<PhoneConfirmation | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

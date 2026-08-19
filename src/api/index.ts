@@ -5,7 +5,6 @@ export * as usersApi from "./users";
 export * as tasksApi from "./tasks";
 export * as categoriesApi from "./categories";
 export * as remindersApi from "./reminders";
-export * as devicesApi from "./devices";
 export * as focusSessionsApi from "./focusSessions";
 export * as streaksApi from "./streaks";
 export * as weeklyProgressApi from "./weeklyProgress";

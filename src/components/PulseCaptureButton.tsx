@@ -10,7 +10,7 @@ interface PulseCaptureButtonProps {
 }
 
 /**
- * Hero voice-capture button — per design_handoff_focus_capture_app 2/COMPANION.md
+ * Hero capture button — per design_handoff_focus_capture_app 2/COMPANION.md
  * "Placement rules > Home": the capture button IS the companion (84px orb, idle state).
  * Accessibility label stays generic regardless of orb state/name, per the addendum's
  * accessibility rule.
@@ -24,7 +24,7 @@ export function PulseCaptureButton({ onPress }: PulseCaptureButtonProps) {
         onPress={onPress}
         hitSlop={12}
         accessibilityRole="button"
-        accessibilityLabel="Capture a task by voice"
+        accessibilityLabel="Capture a task"
       >
         <CompanionOrb state="idle" size={84} />
       </Pressable>

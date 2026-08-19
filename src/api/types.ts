@@ -8,7 +8,6 @@
 
 export type TaskType = "focus" | "reminder";
 export type TaskStatus = "pending" | "completed" | "archived";
-export type DeviceType = "android" | "ios";
 export type FocusMode = "regular" | "pomodoro";
 
 export interface UserDto {
@@ -149,18 +148,6 @@ export interface UpdateIntervalReminderRequest {
 export interface NotificationResponse {
   success: boolean;
   message: string;
-}
-
-export interface DeviceTokenRequest {
-  deviceToken: string;
-  deviceType?: DeviceType;
-  deviceName?: string;
-}
-
-/** Raw Map<String,Object> response from POST /devices/register — no dedicated DTO server-side. */
-export interface DeviceRegisterResponse {
-  deviceId: string;
-  isActive: boolean;
 }
 
 export interface FocusSessionDto {
