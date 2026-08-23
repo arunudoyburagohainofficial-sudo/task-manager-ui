@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { TextInput, View, Pressable } from "react-native";
+import { StyleSheet, TextInput, View, Pressable } from "react-native";
 import { useAppearance } from "../state/AppearanceContext";
 import { fontSize } from "../theme/typography";
 import { radii } from "../theme/spacing";
@@ -7,6 +7,35 @@ import { Label, Text } from "./Text";
 
 /** Web-only style, cast past RN's TextStyle typing — see usage below for why. */
 const webFocusRingReset = { outlineStyle: "none" };
+
+const styles = StyleSheet.create({
+  wrapper: {
+    gap: 6,
+  },
+  containerBase: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    borderRadius: radii.control,
+  },
+  containerSingleLine: {
+    minHeight: 52,
+    alignItems: "center",
+  },
+  containerMultiline: {
+    minHeight: 96,
+    alignItems: "flex-start",
+    paddingVertical: 14,
+  },
+  inputBase: {
+    flex: 1,
+    alignSelf: "stretch",
+    width: "100%",
+    fontSize: fontSize.body,
+  },
+  inputMultiline: {
+    paddingVertical: 0,
+  },
+});
 
 interface TextFieldProps {
   label?: string;
@@ -37,20 +66,18 @@ export function TextField({
   const [hidden, setHidden] = useState(isPassword);
 
   return (
-    <View style={{ gap: 6 }}>
+    <View style={styles.wrapper}>
       {label ? <Label>{label}</Label> : null}
       <View
-        style={{
-          minHeight: multiline ? 96 : 52,
-          flexDirection: "row",
-          alignItems: multiline ? "flex-start" : "center",
-          paddingHorizontal: 16,
-          paddingVertical: multiline ? 14 : 0,
-          backgroundColor: colors.bgCard,
-          borderRadius: radii.control,
-          borderWidth: focused ? 2 : 1,
-          borderColor: focused ? colors.primary : colors.toggleOff,
-        }}
+        style={[
+          styles.containerBase,
+          multiline ? styles.containerMultiline : styles.containerSingleLine,
+          {
+            backgroundColor: colors.bgCard,
+            borderWidth: focused ? 2 : 1,
+            borderColor: focused ? colors.primary : colors.toggleOff,
+          },
+        ]}
       >
         <TextInput
           value={value}
@@ -65,15 +92,9 @@ export function TextField({
           onBlur={() => setFocused(false)}
           textAlignVertical={multiline ? "top" : undefined}
           style={[
-            {
-              flex: 1,
-              alignSelf: "stretch",
-              width: "100%",
-              fontFamily: fonts.regular,
-              fontSize: fontSize.body,
-              color: colors.textDark,
-              paddingVertical: multiline ? 0 : undefined,
-            },
+            styles.inputBase,
+            multiline ? styles.inputMultiline : undefined,
+            { fontFamily: fonts.regular, color: colors.textDark },
             // Suppresses the browser's default "outline: auto" focus ring on web (Chromium
             // ignores outlineWidth:0 for that special keyword) — focus is already shown via
             // the wrapping View's border above. Cast needed: RN's own TextStyle type only

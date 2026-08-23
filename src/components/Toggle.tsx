@@ -1,7 +1,24 @@
 import React, { useEffect, useRef } from "react";
-import { Animated, Pressable } from "react-native";
+import { Animated, Pressable, StyleSheet } from "react-native";
 import { useAppearance } from "../state/AppearanceContext";
 import { radii } from "../theme/spacing";
+
+const styles = StyleSheet.create({
+  track: {
+    width: 48,
+    height: 28,
+    borderRadius: radii.pill,
+    justifyContent: "center",
+  },
+  knob: {
+    position: "absolute",
+    top: 3,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#FFFFFF",
+  },
+});
 
 interface ToggleProps {
   value: boolean;
@@ -22,26 +39,9 @@ export function Toggle({ value, onChange, disabled = false }: ToggleProps) {
     <Pressable
       onPress={() => !disabled && onChange(!value)}
       hitSlop={8}
-      style={{
-        width: 48,
-        height: 28,
-        borderRadius: radii.pill,
-        backgroundColor: value ? colors.primary : colors.toggleOff,
-        justifyContent: "center",
-        opacity: disabled ? 0.5 : 1,
-      }}
+      style={[styles.track, { backgroundColor: value ? colors.primary : colors.toggleOff, opacity: disabled ? 0.5 : 1 }]}
     >
-      <Animated.View
-        style={{
-          position: "absolute",
-          top: 3,
-          left: knobLeft,
-          width: 22,
-          height: 22,
-          borderRadius: 11,
-          backgroundColor: "#FFFFFF",
-        }}
-      />
+      <Animated.View style={[styles.knob, { left: knobLeft }]} />
     </Pressable>
   );
 }

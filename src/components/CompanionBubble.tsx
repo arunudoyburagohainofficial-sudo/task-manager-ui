@@ -1,8 +1,25 @@
 import React, { useEffect, useRef } from "react";
-import { Animated, Easing, ViewStyle } from "react-native";
+import { Animated, Easing, StyleSheet, ViewStyle } from "react-native";
 import { useAppearance } from "../state/AppearanceContext";
 import { fontSize } from "../theme/typography";
 import { Body } from "./Text";
+
+const styles = StyleSheet.create({
+  bubble: {
+    borderWidth: 1,
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    shadowColor: "#1A1A1A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+});
 
 interface CompanionBubbleProps {
   text: string;
@@ -26,21 +43,10 @@ export function CompanionBubble({ text, style }: CompanionBubbleProps) {
   return (
     <Animated.View
       style={[
+        styles.bubble,
         {
           backgroundColor: colors.bgCard,
-          borderWidth: 1,
           borderColor: colors.borderCard,
-          borderTopLeftRadius: 14,
-          borderTopRightRadius: 14,
-          borderBottomLeftRadius: 4,
-          borderBottomRightRadius: 14,
-          paddingVertical: 10,
-          paddingHorizontal: 14,
-          shadowColor: "#1A1A1A",
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.06,
-          shadowRadius: 8,
-          elevation: 2,
           opacity: pop,
           transform: [{ scale: pop.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
         },

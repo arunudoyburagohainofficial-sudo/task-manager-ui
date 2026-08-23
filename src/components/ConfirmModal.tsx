@@ -1,10 +1,39 @@
 import React from "react";
-import { Modal, Pressable, View } from "react-native";
+import { Modal, Pressable, StyleSheet, View } from "react-native";
 import { useAppearance } from "../state/AppearanceContext";
 import { radii, spacing } from "../theme/spacing";
 import { fontSize } from "../theme/typography";
 import { Button } from "./Button";
 import { Body, Text } from "./Text";
+
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(26,26,26,.45)",
+    justifyContent: "center",
+  },
+  card: {
+    marginHorizontal: 24,
+    borderRadius: radii.modal,
+    padding: spacing.md,
+    gap: 14,
+    alignItems: "center",
+  },
+  title: {
+    textAlign: "center",
+  },
+  message: {
+    textAlign: "center",
+  },
+  buttonRow: {
+    flexDirection: "row",
+    gap: 10,
+    width: "100%",
+  },
+  buttonFlex: {
+    flex: 1,
+  },
+});
 
 interface ConfirmModalProps {
   visible: boolean;
@@ -37,27 +66,20 @@ export function ConfirmModal({
   const { colors } = useAppearance();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable style={{ flex: 1, backgroundColor: "rgba(26,26,26,.45)", justifyContent: "center" }} onPress={onCancel}>
+      <Pressable style={styles.backdrop} onPress={onCancel}>
         <Pressable
           onPress={(e) => e.stopPropagation()}
-          style={{
-            marginHorizontal: 24,
-            backgroundColor: colors.bgCard,
-            borderRadius: radii.modal,
-            padding: spacing.md,
-            gap: 14,
-            alignItems: "center",
-          }}
+          style={[styles.card, { backgroundColor: colors.bgCard }]}
         >
-          <Text size={fontSize.lg} weight="bold" style={{ textAlign: "center" }}>
+          <Text size={fontSize.lg} weight="bold" style={styles.title}>
             {title}
           </Text>
-          <Body color={colors.textMuted} style={{ textAlign: "center" }}>
+          <Body color={colors.textMuted} style={styles.message}>
             {message}
           </Body>
-          <View style={{ flexDirection: "row", gap: 10, width: "100%" }}>
-            <Button label={cancelLabel} variant="secondary" onPress={onCancel} style={{ flex: 1 }} />
-            <Button label={confirmLabel} variant={confirmVariant} onPress={onConfirm} style={{ flex: 1 }} />
+          <View style={styles.buttonRow}>
+            <Button label={cancelLabel} variant="secondary" onPress={onCancel} style={styles.buttonFlex} />
+            <Button label={confirmLabel} variant={confirmVariant} onPress={onConfirm} style={styles.buttonFlex} />
           </View>
         </Pressable>
       </Pressable>

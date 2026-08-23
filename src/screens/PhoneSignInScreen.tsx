@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { authApi } from "../api";
@@ -18,6 +18,24 @@ import { fontSize } from "../theme/typography";
 import type { RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+const styles = StyleSheet.create({
+  keyboardAvoiding: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    padding: 24,
+    gap: 12,
+  },
+  submitButton: {
+    marginTop: spacing.xs,
+  },
+  backLink: {
+    textAlign: "center",
+  },
+});
 
 /**
  * Requires a real Firebase project + a custom EAS dev client build — see
@@ -70,9 +88,9 @@ export function PhoneSignInScreen() {
 
   return (
     <ScreenContainer>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardAvoiding}>
         <ScrollView
-          contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24, gap: 12 }}
+          contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
           <ScreenTitle>{step === "phone" ? "Sign in with phone" : "Enter the code"}</ScreenTitle>
@@ -99,14 +117,14 @@ export function PhoneSignInScreen() {
             loading={submitting}
             disabled={step === "phone" ? !phoneNumber.trim() : !code.trim()}
             onPress={step === "phone" ? handleSendCode : handleConfirmCode}
-            style={{ marginTop: spacing.xs }}
+            style={styles.submitButton}
           />
 
           <Body
             size={fontSize.caption}
             color={colors.textFaint}
             onPress={() => (step === "code" ? setStep("phone") : navigation.goBack())}
-            style={{ textAlign: "center" }}
+            style={styles.backLink}
           >
             {step === "code" ? "Use a different number" : "Back"}
           </Body>

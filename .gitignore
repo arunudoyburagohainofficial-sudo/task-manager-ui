@@ -40,6 +40,8 @@ yarn-error.*
 /ios
 /android
 
+.idea
+
 # google-services.json / GoogleService-Info.plist are deliberately tracked, not
 # ignored — they're client-side Firebase config (project ID + a domain-restricted API
 # key), not secrets, and EAS Build's project archive is built from what git tracks. An

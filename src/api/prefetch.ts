@@ -1,4 +1,4 @@
-import { categoriesApi, remindersApi, streaksApi, tasksApi, weeklyProgressApi } from ".";
+import { goalsApi, remindersApi, streaksApi, tasksApi, weeklyProgressApi } from ".";
 import { queryClient } from "./queryClient";
 import { queryKeys } from "./queryKeys";
 
@@ -37,9 +37,8 @@ export function prefetchAppData(): Promise<void> {
   return Promise.allSettled([
     queryClient.prefetchQuery({ queryKey: queryKeys.tasks("pending"), queryFn: () => tasksApi.getTasks("pending"), staleTime: 0 }),
     queryClient.prefetchQuery({ queryKey: queryKeys.tasks("completed"), queryFn: () => tasksApi.getTasks("completed"), staleTime: 0 }),
-    // The unfiltered list — only CategoriesScreen reads this one, for its per-category task counts.
-    queryClient.prefetchQuery({ queryKey: queryKeys.tasks(), queryFn: () => tasksApi.getTasks(), staleTime: 0 }),
-    queryClient.prefetchQuery({ queryKey: queryKeys.categories(), queryFn: () => categoriesApi.getCategories(), staleTime: 0 }),
+    // Needed by the goal picker during capture, and by the Goals strip on both Home and Progress.
+    queryClient.prefetchQuery({ queryKey: queryKeys.goals(), queryFn: () => goalsApi.getGoals(), staleTime: 0 }),
     queryClient.prefetchQuery({ queryKey: queryKeys.reminders(), queryFn: () => remindersApi.getReminders(), staleTime: 0 }),
     queryClient.prefetchQuery({ queryKey: queryKeys.streak(), queryFn: () => streaksApi.getStreak(), staleTime: 0 }),
     queryClient.prefetchQuery({ queryKey: queryKeys.weeklyProgressCurrent(), queryFn: () => weeklyProgressApi.getCurrentWeekProgress(), staleTime: 0 }),

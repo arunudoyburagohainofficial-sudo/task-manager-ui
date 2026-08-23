@@ -39,17 +39,5 @@ export const colors = {
   bgFocusSession: "#FBFBFA",
 } as const;
 
-/** High-contrast mode overrides (see design handoff screen S7). */
-export const highContrastColors = {
-  ...colors,
-  bgScreen: "#FFFFFF",
-  bgCard: "#FFFFFF",
-  borderCard: "#1A1A1A",
-  textMuted: "#1A1A1A",
-  textFaint: "#1A1A1A",
-  primaryTintBg: "#1F5A36",
-  primaryTintText: "#FFFFFF",
-} as const;
-
 export type ColorToken = keyof typeof colors;
 export type ColorPalette = Record<ColorToken, string>;

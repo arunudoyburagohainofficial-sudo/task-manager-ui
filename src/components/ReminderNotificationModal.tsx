@@ -1,17 +1,62 @@
 import React from "react";
-import { Modal, View } from "react-native";
+import { Modal, StyleSheet, View } from "react-native";
 import { useAppearance } from "../state/AppearanceContext";
 import { radii, spacing } from "../theme/spacing";
 import { fontSize } from "../theme/typography";
 import { Body, Text } from "./Text";
 import { Button } from "./Button";
-import { CategoryTag } from "./CategoryTag";
-import type { CategoryDto } from "../api/types";
+
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(26,26,26,.45)",
+    justifyContent: "center",
+  },
+  card: {
+    marginHorizontal: 16,
+    borderRadius: radii.modal,
+    padding: spacing.md,
+    gap: 14,
+    alignItems: "center",
+  },
+  iconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  timeText: {
+    fontVariant: ["tabular-nums"],
+  },
+  tagRow: {
+    flexDirection: "row",
+    gap: 8,
+    flexWrap: "wrap",
+    justifyContent: "center",
+  },
+  intervalPill: {
+    borderRadius: radii.pill,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+  },
+  actions: {
+    width: "100%",
+    gap: 10,
+    marginTop: 6,
+  },
+  actionRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  actionFlex: {
+    flex: 1,
+  },
+});
 
 interface ReminderNotificationModalProps {
   visible: boolean;
   taskName: string;
-  category: CategoryDto | null;
   time: string; // already formatted, e.g. "6:15 PM"
   /** Present only for an interval reminder's nudge — e.g. "Interval · 6-8 PM". */
   intervalLabel?: string;
@@ -33,7 +78,6 @@ interface ReminderNotificationModalProps {
 export function ReminderNotificationModal({
   visible,
   taskName,
-  category,
   time,
   intervalLabel,
   isFocusPreStart = false,
@@ -45,18 +89,9 @@ export function ReminderNotificationModal({
   const { colors } = useAppearance();
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <View style={{ flex: 1, backgroundColor: "rgba(26,26,26,.45)", justifyContent: "center" }}>
-        <View
-          style={{
-            marginHorizontal: 16,
-            backgroundColor: colors.bgCard,
-            borderRadius: radii.modal,
-            padding: spacing.md,
-            gap: 14,
-            alignItems: "center",
-          }}
-        >
-          <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primaryTintBg, alignItems: "center", justifyContent: "center" }}>
+      <View style={styles.backdrop}>
+        <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
+          <View style={[styles.iconCircle, { backgroundColor: colors.primaryTintBg }]}>
             <Text size={24}>🔔</Text>
           </View>
           <Text size={fontSize.xl} weight="bold">
@@ -65,24 +100,23 @@ export function ReminderNotificationModal({
           <Text size={fontSize.bodyLg} weight="bold">
             {taskName}
           </Text>
-          <Text size={26} weight="extraBold" color={colors.textMuted} style={{ fontVariant: ["tabular-nums"] }}>
+          <Text size={26} weight="extraBold" color={colors.textMuted} style={styles.timeText}>
             {time}
           </Text>
-          <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-            <CategoryTag category={category} />
-            {intervalLabel ? (
-              <View style={{ backgroundColor: colors.primaryTintBg, borderRadius: radii.pill, paddingVertical: 5, paddingHorizontal: 10 }}>
+          {intervalLabel ? (
+            <View style={styles.tagRow}>
+              <View style={[styles.intervalPill, { backgroundColor: colors.primaryTintBg }]}>
                 <Text size={fontSize.tiny} weight="bold" color={colors.primaryTintText}>
                   {intervalLabel}
                 </Text>
               </View>
-            ) : null}
-          </View>
-          <View style={{ width: "100%", gap: 10, marginTop: 6 }}>
+            </View>
+          ) : null}
+          <View style={styles.actions}>
             <Button label={isFocusPreStart ? "Start now" : "Done ✓"} onPress={onPrimaryAction} />
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <Button label="Snooze 15 min" variant="secondary" onPress={onSnooze} style={{ flex: 1 }} />
-              <Button label={secondaryLabel} variant="secondary" onPress={onSecondaryAction} style={{ flex: 1 }} />
+            <View style={styles.actionRow}>
+              <Button label="Snooze 15 min" variant="secondary" onPress={onSnooze} style={styles.actionFlex} />
+              <Button label={secondaryLabel} variant="secondary" onPress={onSecondaryAction} style={styles.actionFlex} />
             </View>
           </View>
           <Body size={fontSize.micro} color={colors.textFaint}>

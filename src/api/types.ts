@@ -38,8 +38,12 @@ export interface FirebaseAuthRequest {
 }
 
 /** Partial update — only send the fields you're changing. */
+/**
+ * No email or phoneNumber: both are Firebase-owned identity, and the server's
+ * UpdateUserRequest doesn't accept them either — changing one needs a real
+ * re-verification flow, not a profile PATCH.
+ */
 export interface UpdateUserRequest {
-  email?: string;
   username?: string;
   displayName?: string;
 }
@@ -66,10 +70,46 @@ export interface UpdateCategoryRequest {
   icon?: string;
 }
 
+/** A goal's lifecycle — entirely derived server-side from totalDaysActive vs targetDays. */
+export type GoalStatus = "active" | "completed";
+
+/**
+ * A longer-horizon thing you're working toward, that focus tasks get logged against.
+ *
+ * Deliberately not a streak: totalDaysActive only ever climbs, so missing days costs
+ * nothing but those days — there's no reset, and a gap can't destroy progress.
+ */
+export interface GoalDto {
+  id: string;
+  userId: string;
+  name: string;
+  color: string | null;
+  /** Days of activity needed to complete the goal. */
+  targetDays: number;
+  /** Distinct days with ≥1 focus task completed against this goal. Never decreases. */
+  totalDaysActive: number;
+  lastActivityDate: string | null;
+  status: GoalStatus;
+}
+
+export interface CreateGoalRequest {
+  name: string;
+  color?: string;
+  targetDays?: number;
+}
+
+/** Partial update — only send the fields you're changing. Status is never client-settable. */
+export interface UpdateGoalRequest {
+  name?: string;
+  color?: string;
+  targetDays?: number;
+}
+
 export interface TaskDto {
   id: string;
   userId: string;
   categoryId: string | null;
+  goalId: string | null;
   name: string;
   description: string | null;
   taskType: TaskType;
@@ -82,6 +122,7 @@ export interface TaskDto {
 
 export interface CreateTaskRequest {
   categoryId?: string;
+  goalId?: string;
   name: string;
   description?: string;
   taskType: TaskType;
@@ -91,12 +132,15 @@ export interface CreateTaskRequest {
  * Partial update — only send the fields you're changing. categoryId sets a specific
  * category; pass clearCategory: true to unset it back to Uncategorized (a plain
  * categoryId of undefined is ambiguous between "don't touch this" and "clear it").
+ * goalId/clearGoal follow the identical pattern.
  */
 export interface UpdateTaskRequest {
   name?: string;
   taskType?: TaskType;
   categoryId?: string;
   clearCategory?: boolean;
+  goalId?: string;
+  clearGoal?: boolean;
 }
 
 export interface ReminderDto {

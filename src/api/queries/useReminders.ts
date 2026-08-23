@@ -95,9 +95,14 @@ export function useMarkTaskDoneMutation() {
       }
       queryClient.setQueryData(queryKeys.reminders(), context?.previousReminders);
     },
-    onSuccess: () => {
+    onSuccess: (_data, taskId, context) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.streak() });
       queryClient.invalidateQueries({ queryKey: ["weeklyProgress"] });
+      // Same "changed, but the response can't say to what" case — and only worth asking
+      // about when the completed task was actually attached to a goal.
+      if (context?.previousTask?.goalId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.goals() });
+      }
     },
   });
 }

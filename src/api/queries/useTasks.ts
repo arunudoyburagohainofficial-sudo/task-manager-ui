@@ -14,7 +14,7 @@ function withTaskUpdate(task: TaskDto, request: UpdateTaskRequest): TaskDto {
     ...task,
     ...(request.name !== undefined ? { name: request.name } : {}),
     ...(request.taskType !== undefined ? { taskType: request.taskType } : {}),
-    ...(request.clearCategory ? { categoryId: null } : request.categoryId !== undefined ? { categoryId: request.categoryId } : {}),
+    ...(request.clearGoal ? { goalId: null } : request.goalId !== undefined ? { goalId: request.goalId } : {}),
   };
 }
 
@@ -138,10 +138,11 @@ export function useDeleteTaskMutation() {
 /**
  * Completing a task returns the real, complete server-confirmed task — moved from
  * whichever list it was in over to "completed" directly, no refetch needed for the task
- * itself. Streak and weekly-progress are the one legitimate exception in this whole file:
- * their new values genuinely aren't knowable from this response (the server computes
- * streak/grace-day/points logic itself), so those two specifically still invalidate —
- * that's a real "we know something changed but not to what," not a leftover habit.
+ * itself. Streak, weekly-progress and goals are the legitimate exceptions in this whole
+ * file: their new values genuinely aren't knowable from this response (the server computes
+ * streak/grace-day/points and the goal's day count itself), so those specifically still
+ * invalidate — that's a real "we know something changed but not to what," not a leftover
+ * habit. Goals are only invalidated when this task actually had one.
  */
 export function useCompleteTaskMutation() {
   const queryClient = useQueryClient();
@@ -155,6 +156,9 @@ export function useCompleteTaskMutation() {
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.streak() });
       queryClient.invalidateQueries({ queryKey: ["weeklyProgress"] });
+      if (completedTask.goalId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.goals() });
+      }
     },
   });
 }

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as WebBrowser from "expo-web-browser";
@@ -13,7 +13,6 @@ import { useAppearance } from "../state/AppearanceContext";
 import { useSession } from "../state/SessionContext";
 import { radii } from "../theme/spacing";
 import { fontSize } from "../theme/typography";
-import { CategoryTag } from "../components/CategoryTag";
 import type { RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -21,11 +20,56 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 // Required once per app for expo-auth-session's browser flow to close/return properly.
 WebBrowser.maybeCompleteAuthSession();
 
-const SEEDED_CATEGORIES = [
-  { name: "Work", color: "#2D7D4C" },
-  { name: "Personal", color: "#D4A574" },
-  { name: "Health", color: "#5B8DB8" },
-];
+const styles = StyleSheet.create({
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    padding: 24,
+    gap: 12,
+  },
+  logo: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+    alignSelf: "flex-start",
+  },
+  logoBars: {
+    flexDirection: "row",
+    gap: 3,
+    alignItems: "center",
+    height: 22,
+  },
+  logoBar: {
+    width: 4,
+    backgroundColor: "#fff",
+    borderRadius: 2,
+  },
+  buttonsSection: {
+    gap: 12,
+    marginTop: 12,
+  },
+  googleButton: {
+    minHeight: 52,
+    borderRadius: radii.control,
+    borderWidth: 1.5,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  testUserButton: {
+    marginTop: 4,
+    minHeight: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  centerText: {
+    textAlign: "center",
+  },
+});
 
 export function AuthScreen() {
   const { colors } = useAppearance();
@@ -105,51 +149,21 @@ export function AuthScreen() {
 
   return (
     <ScreenContainer>
-      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24, gap: 12 }}>
-        <View
-          style={{
-            width: 56,
-            height: 56,
-            borderRadius: 14,
-            backgroundColor: colors.primary,
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: 8,
-            alignSelf: "flex-start",
-          }}
-        >
-          <View style={{ flexDirection: "row", gap: 3, alignItems: "center", height: 22 }}>
-            <View style={{ width: 4, height: 10, backgroundColor: "#fff", borderRadius: 2 }} />
-            <View style={{ width: 4, height: 20, backgroundColor: "#fff", borderRadius: 2 }} />
-            <View style={{ width: 4, height: 14, backgroundColor: "#fff", borderRadius: 2 }} />
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={[styles.logo, { backgroundColor: colors.primary }]}>
+          <View style={styles.logoBars}>
+            <View style={[styles.logoBar, { height: 10 }]} />
+            <View style={[styles.logoBar, { height: 20 }]} />
+            <View style={[styles.logoBar, { height: 14 }]} />
           </View>
         </View>
 
         <ScreenTitle size={fontSize.taskDetailTitle}>Welcome</ScreenTitle>
         <Body color={colors.textMuted}>Capture tasks fast. Focus without friction.</Body>
 
-        <View
-          style={{
-            backgroundColor: colors.primaryTintBg,
-            borderRadius: radii.control,
-            padding: 14,
-            gap: 8,
-            marginTop: 8,
-          }}
-        >
-          <Body weight="semiBold" color={colors.primaryTintText} size={fontSize.caption}>
-            New here? We&rsquo;ll set you up with three starter categories:
-          </Body>
-          <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-            {SEEDED_CATEGORIES.map((c) => (
-              <CategoryTag key={c.name} category={c} />
-            ))}
-          </View>
-        </View>
-
         {error ? <Body color={colors.destructive}>{error}</Body> : null}
 
-        <View style={{ gap: 12, marginTop: 12 }}>
+        <View style={styles.buttonsSection}>
           <Button
             label="Continue with phone"
             large
@@ -157,7 +171,7 @@ export function AuthScreen() {
             onPress={() => navigation.navigate("PhoneSignIn")}
           />
           {!isPhoneAuthAvailable ? (
-            <Caption style={{ textAlign: "center" }}>
+            <Caption style={styles.centerText}>
               Phone sign-in needs a development build — it isn&rsquo;t part of Expo Go.
             </Caption>
           ) : null}
@@ -165,18 +179,14 @@ export function AuthScreen() {
           <Pressable
             onPress={handleGooglePress}
             disabled={!google.isReady || !google.isAvailable || submitting || testUserLoading}
-            style={({ pressed }) => ({
-              minHeight: 52,
-              borderRadius: radii.control,
-              backgroundColor: colors.bgCard,
-              borderWidth: 1.5,
-              borderColor: colors.borderCard,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              opacity: !google.isReady || !google.isAvailable || submitting ? 0.5 : pressed ? 0.85 : 1,
-            })}
+            style={({ pressed }) => [
+              styles.googleButton,
+              {
+                backgroundColor: colors.bgCard,
+                borderColor: colors.borderCard,
+                opacity: !google.isReady || !google.isAvailable || submitting ? 0.5 : pressed ? 0.85 : 1,
+              },
+            ]}
           >
             {submitting ? (
               <ActivityIndicator color={colors.textDark} />
@@ -191,19 +201,19 @@ export function AuthScreen() {
           </Pressable>
 
           {google.unavailableReason ? (
-            <Caption style={{ textAlign: "center" }}>{google.unavailableReason}</Caption>
+            <Caption style={styles.centerText}>{google.unavailableReason}</Caption>
           ) : null}
 
           <Pressable
             onPress={handleTestUserPress}
             disabled={submitting || testUserLoading}
             hitSlop={8}
-            style={{ marginTop: 4, minHeight: 20, alignItems: "center", justifyContent: "center" }}
+            style={styles.testUserButton}
           >
             {testUserLoading ? (
               <ActivityIndicator size="small" color={colors.textFaint} />
             ) : (
-              <Caption style={{ textAlign: "center", opacity: submitting ? 0.5 : 1 }}>
+              <Caption style={[styles.centerText, { opacity: submitting ? 0.5 : 1 }]}>
                 Continue as test user
               </Caption>
             )}

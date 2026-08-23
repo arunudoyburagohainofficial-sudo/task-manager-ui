@@ -1,68 +1,33 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { colors as baseColors, highContrastColors, ColorPalette } from "../theme/colors";
-import { dyslexiaFontFamily, fontFamily, FontFamilyMap } from "../theme/typography";
+import React, { createContext, useContext } from "react";
+import { colors as baseColors, ColorPalette } from "../theme/colors";
+import { fontFamily, FontFamilyMap } from "../theme/typography";
 
-const STORAGE_KEY = "appearance-settings-v1";
-
-interface AppearanceSettings {
-  dyslexiaFont: boolean;
-  highContrast: boolean;
-  /**
-   * Stored but not yet applied to an actual alternate palette — the design handoff
-   * calls for a "colorblind-safe palette toggle" without specifying its exact colors.
-   * Wire this up once that palette is specified.
-   */
-  colorblindSafe: boolean;
-}
-
-const DEFAULT_SETTINGS: AppearanceSettings = {
-  dyslexiaFont: false,
-  highContrast: false,
-  colorblindSafe: false,
-};
-
-interface AppearanceContextValue extends AppearanceSettings {
+interface AppearanceContextValue {
   colors: ColorPalette;
   fonts: FontFamilyMap;
-  setDyslexiaFont: (value: boolean) => void;
-  setHighContrast: (value: boolean) => void;
-  setColorblindSafe: (value: boolean) => void;
 }
 
-const AppearanceContext = createContext<AppearanceContextValue | undefined>(undefined);
+/**
+ * The app's single theming seam. It carries no state any more — the dyslexia-font and
+ * high-contrast toggles were removed along with the Display & accessibility settings
+ * section — but every component still reads its colors and fonts through here rather than
+ * importing the token files directly, so a future theme (dark mode, a restored
+ * accessibility palette) plugs in at this one point instead of at ~30 call sites.
+ *
+ * Module-level constant, not built per render: the value is fixed, so this identity never
+ * changes and no consumer re-renders on account of the provider.
+ */
+const APPEARANCE: AppearanceContextValue = {
+  colors: baseColors,
+  fonts: fontFamily,
+};
+
+const AppearanceContext = createContext<AppearanceContextValue>(APPEARANCE);
 
 export function AppearanceProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<AppearanceSettings>(DEFAULT_SETTINGS);
-
-  useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((stored) => {
-      if (stored) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(stored) });
-    });
-  }, []);
-
-  const persist = (next: AppearanceSettings) => {
-    setSettings(next);
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  };
-
-  const value = useMemo<AppearanceContextValue>(
-    () => ({
-      ...settings,
-      colors: settings.highContrast ? highContrastColors : baseColors,
-      fonts: settings.dyslexiaFont ? dyslexiaFontFamily : fontFamily,
-      setDyslexiaFont: (dyslexiaFont) => persist({ ...settings, dyslexiaFont }),
-      setHighContrast: (highContrast) => persist({ ...settings, highContrast }),
-      setColorblindSafe: (colorblindSafe) => persist({ ...settings, colorblindSafe }),
-    }),
-    [settings]
-  );
-
-  return <AppearanceContext.Provider value={value}>{children}</AppearanceContext.Provider>;
+  return <AppearanceContext.Provider value={APPEARANCE}>{children}</AppearanceContext.Provider>;
 }
 
 export function useAppearance(): AppearanceContextValue {
-  const ctx = useContext(AppearanceContext);
-  if (!ctx) throw new Error("useAppearance must be used within an AppearanceProvider");
-  return ctx;
+  return useContext(AppearanceContext);
 }

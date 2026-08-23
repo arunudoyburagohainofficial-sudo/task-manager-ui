@@ -1,10 +1,16 @@
 import React, { useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useAppearance } from "../state/AppearanceContext";
 import { infoCopy, type InfoTopic } from "../theme/infoCopy";
 import { fontSize } from "../theme/typography";
 import { BottomSheet } from "./BottomSheet";
 import { Body, Text } from "./Text";
+
+const styles = StyleSheet.create({
+  body: {
+    gap: 4,
+  },
+});
 
 interface InfoTooltipProps {
   topic: InfoTopic;
@@ -37,7 +43,7 @@ export function InfoTooltip({ topic, color }: InfoTooltipProps) {
         <Text size={fontSize.xl} weight="bold">
           {title}
         </Text>
-        <View style={{ gap: 4 }}>
+        <View style={styles.body}>
           <Body color={colors.textMuted}>{body}</Body>
         </View>
       </BottomSheet>

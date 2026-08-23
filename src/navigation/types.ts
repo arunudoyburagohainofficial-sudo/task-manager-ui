@@ -10,7 +10,6 @@ export type RootStackParamList = {
   Completion: { taskId: string; taskName: string; durationSeconds: number; pointsEarned: number };
   Capture: undefined;
   ConfirmOrganize: { drafts: CapturedTaskDraft[] };
-  Categories: undefined;
 };
 
 export type MainTabParamList = {
@@ -24,7 +23,12 @@ export interface CapturedTaskDraft {
   localId: string;
   name: string;
   taskType: "focus" | "reminder";
-  categoryId: string | null;
+  /**
+   * Which longer-term goal this task counts toward, chosen at capture time. Only focus
+   * tasks actually move a goal forward server-side, but the association is allowed on
+   * either type — changing the type later shouldn't silently discard the choice.
+   */
+  goalId: string | null;
   /**
    * Chosen while organizing, but not sent anywhere until the task itself exists — reminders
    * are created against a real taskId, which a draft doesn't have yet. Held here so the

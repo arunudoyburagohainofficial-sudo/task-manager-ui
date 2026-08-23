@@ -1,6 +1,4 @@
-// Fonts: Inter (400/500/600/700/800). Dyslexia toggle swaps the whole app to
-// Atkinson Hyperlegible — see useAccessibilitySettings / AccessibilityContext.
-// Both are loaded via @expo-google-fonts in App.tsx.
+// Fonts: Inter (400/500/600/700/800), loaded via @expo-google-fonts in App.tsx.
 
 export const fontFamily = {
   regular: "Inter_400Regular",
@@ -12,14 +10,6 @@ export const fontFamily = {
 
 export type FontWeightKey = keyof typeof fontFamily;
 export type FontFamilyMap = Record<FontWeightKey, string>;
-
-export const dyslexiaFontFamily: FontFamilyMap = {
-  regular: "AtkinsonHyperlegible_400Regular",
-  medium: "AtkinsonHyperlegible_400Regular",
-  semiBold: "AtkinsonHyperlegible_700Bold",
-  bold: "AtkinsonHyperlegible_700Bold",
-  extraBold: "AtkinsonHyperlegible_700Bold",
-} as const;
 
 export const fontSize = {
   timer: 88,

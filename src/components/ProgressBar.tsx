@@ -1,7 +1,18 @@
 import React, { useEffect, useRef } from "react";
-import { Animated, Easing, View } from "react-native";
+import { Animated, Easing, StyleSheet, View } from "react-native";
 import { useAppearance } from "../state/AppearanceContext";
 import { radii } from "../theme/spacing";
+
+const styles = StyleSheet.create({
+  track: {
+    borderRadius: radii.pill,
+    overflow: "hidden",
+  },
+  fill: {
+    height: "100%",
+    borderRadius: radii.pill,
+  },
+});
 
 interface ProgressBarProps {
   /** 0-100 */
@@ -30,14 +41,15 @@ export function ProgressBar({ percent, height = 12, color, linear = false }: Pro
   }, [percent, linear, widthAnim]);
 
   return (
-    <View style={{ height, borderRadius: radii.pill, backgroundColor: colors.neutralFill, overflow: "hidden" }}>
+    <View style={[styles.track, { height, backgroundColor: colors.neutralFill }]}>
       <Animated.View
-        style={{
-          height: "100%",
-          borderRadius: radii.pill,
-          backgroundColor: color ?? colors.primary,
-          width: widthAnim.interpolate({ inputRange: [0, 100], outputRange: ["0%", "100%"] }),
-        }}
+        style={[
+          styles.fill,
+          {
+            backgroundColor: color ?? colors.primary,
+            width: widthAnim.interpolate({ inputRange: [0, 100], outputRange: ["0%", "100%"] }),
+          },
+        ]}
       />
     </View>
   );

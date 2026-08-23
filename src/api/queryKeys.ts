@@ -8,7 +8,7 @@ import type { TaskStatus } from "./types";
 export const queryKeys = {
   tasks: (status?: TaskStatus) => ["tasks", status ?? "all"] as const,
   task: (taskId: string) => ["task", taskId] as const,
-  categories: () => ["categories"] as const,
+  goals: () => ["goals"] as const,
   reminders: () => ["reminders"] as const,
   intervalReminders: () => ["intervalReminders"] as const,
   streak: () => ["streak"] as const,

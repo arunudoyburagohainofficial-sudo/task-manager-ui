@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { focusSessionsApi } from "../api";
 import { ApiError } from "../api/client";
-import { useCategoriesQuery } from "../api/queries/useCategories";
+import { useGoalsQuery } from "../api/queries/useGoals";
 import {
   useCreateReminderMutation,
   useDeleteReminderMutation,
@@ -19,8 +19,6 @@ import {
   Body,
   Button,
   Card,
-  CategoryPickerSheet,
-  CategoryTag,
   ConfirmModal,
   ReminderTimeSheet,
   ScreenContainer,
@@ -41,6 +39,105 @@ import type { RootStackParamList } from "../navigation/types";
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, "TaskDetail">;
 
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scrollContent: {
+    padding: 16,
+    gap: 12,
+  },
+  topSection: {
+    paddingHorizontal: 8,
+  },
+  title: {
+    marginTop: 12,
+  },
+  typeBadge: {
+    marginTop: 10,
+  },
+  reminderCard: {
+    gap: 10,
+  },
+  reminderHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  reminderActionsRow: {
+    flexDirection: "row",
+    gap: 20,
+  },
+  progressCard: {
+    gap: 8,
+  },
+  progressTintRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: radii.control,
+    padding: 12,
+  },
+  sessionCard: {
+    gap: 12,
+  },
+  modeTabRow: {
+    flexDirection: "row",
+    borderRadius: radii.control,
+    padding: 4,
+    gap: 4,
+  },
+  modeTab: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 6,
+  },
+  cyclesSection: {
+    gap: 6,
+  },
+  cyclesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  cyclesCounterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  dndRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderRadius: radii.control,
+    padding: 12,
+  },
+  dndLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+    marginRight: 8,
+  },
+  dndTextFlex: {
+    flex: 1,
+  },
+  centerCaption: {
+    textAlign: "center",
+  },
+  dashedCard: {
+    borderStyle: "dashed",
+  },
+  deleteSection: {
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+});
+
 export function TaskDetailScreen() {
   const { colors } = useAppearance();
   const { user } = useSession();
@@ -53,7 +150,7 @@ export function TaskDetailScreen() {
   // longer blocks on its own round trip in the common case of navigating here from Home.
   const taskQuery = useTaskQuery(params.taskId);
   const remindersQuery = useRemindersQuery();
-  const categoriesQuery = useCategoriesQuery();
+  const goalsQuery = useGoalsQuery();
   const updateTaskMutation = useUpdateTaskMutation();
   const deleteTaskMutation = useDeleteTaskMutation();
   const createReminderMutation = useCreateReminderMutation();
@@ -62,8 +159,8 @@ export function TaskDetailScreen() {
   const markDoneMutation = useMarkTaskDoneMutation();
 
   const task = taskQuery.data ?? null;
-  const categories = categoriesQuery.data ?? [];
-  const category = task?.categoryId ? categories.find((c) => c.id === task.categoryId) ?? null : null;
+  const goals = goalsQuery.data ?? [];
+  const goal = task?.goalId ? goals.find((g) => g.id === task.goalId) ?? null : null;
   const reminder = remindersQuery.data?.find((r) => r.taskId === params.taskId) ?? null;
 
   const [focusMode, setFocusMode] = useState<FocusMode>("regular");
@@ -72,7 +169,6 @@ export function TaskDetailScreen() {
   // whenever the global default changes (e.g. once AsyncStorage finishes loading it).
   const [sessionDndEnabled, setSessionDndEnabled] = useState(dndDuringFocusEnabled);
   const [reminderSheetOpen, setReminderSheetOpen] = useState(false);
-  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [starting, setStarting] = useState(false);
 
@@ -107,14 +203,6 @@ export function TaskDetailScreen() {
     // place so createReminder keeps 409ing. This actually frees the task up.
     await deleteReminderMutation.mutateAsync(reminder.id);
     void syncReminders();
-  }
-
-  async function handleCategoryChange(categoryId: string | null) {
-    setCategoryPickerOpen(false);
-    await updateTaskMutation.mutateAsync({
-      taskId: params.taskId,
-      request: categoryId === null ? { clearCategory: true } : { categoryId },
-    });
   }
 
   // Optimistic update (instant toggle, rolled back on failure) now lives inside
@@ -190,7 +278,7 @@ export function TaskDetailScreen() {
   if (!task) {
     return (
       <ScreenContainer>
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <View style={styles.loadingContainer}>
           <ActivityIndicator color={colors.primary} />
         </View>
       </ScreenContainer>
@@ -199,36 +287,27 @@ export function TaskDetailScreen() {
 
   return (
     <ScreenContainer>
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-        <View style={{ paddingHorizontal: 8 }}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.topSection}>
           <Pressable onPress={() => navigation.goBack()}>
             <Body weight="semiBold" color={colors.primary}>
               ← Back
             </Body>
           </Pressable>
-          <TaskDetailTitle style={{ marginTop: 12 }}>{task.name}</TaskDetailTitle>
-          <View style={{ marginTop: 10 }}>
+          <TaskDetailTitle style={styles.title}>{task.name}</TaskDetailTitle>
+          <View style={styles.typeBadge}>
             <TaskTypeBadge value={task.taskType} onChange={handleTaskTypeChange} />
           </View>
-          <Pressable
-            onPress={() => setCategoryPickerOpen(true)}
-            style={{ flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", marginTop: 10 }}
-          >
-            <CategoryTag category={category} />
-            <Body size={fontSize.micro} color={colors.textFaint}>
-              ▾
-            </Body>
-          </Pressable>
         </View>
 
-        <Card style={{ gap: 10 }}>
+        <Card style={styles.reminderCard}>
           <SectionLabel>Reminder</SectionLabel>
           {reminder ? (
             <>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View style={styles.reminderHeaderRow}>
                 <Text weight="semiBold">⏰ {formatClockTime(reminder.reminderTime)}</Text>
               </View>
-              <View style={{ flexDirection: "row", gap: 20 }}>
+              <View style={styles.reminderActionsRow}>
                 <Pressable onPress={() => setReminderSheetOpen(true)} hitSlop={8}>
                   <Body size={fontSize.caption} weight="semiBold" color={colors.primary}>
                     Edit time
@@ -248,9 +327,9 @@ export function TaskDetailScreen() {
 
         {task.taskType === "focus" ? (
           <>
-            <Card style={{ gap: 8 }}>
+            <Card style={styles.progressCard}>
               <SectionLabel>Progress tracking</SectionLabel>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.primaryTintBg, borderRadius: radii.control, padding: 12 }}>
+              <View style={[styles.progressTintRow, { backgroundColor: colors.primaryTintBg }]}>
                 <Text>🔥</Text>
                 <View>
                   <Body size={fontSize.caption} weight="semiBold" color={colors.primaryTintText}>
@@ -261,25 +340,33 @@ export function TaskDetailScreen() {
                   </Body>
                 </View>
               </View>
+              {/* Read-only: a task's goal is chosen at capture time (Confirm & Organize).
+                  Shown here so it's visible where the work actually happens. */}
+              {goal ? (
+                <View style={[styles.progressTintRow, { backgroundColor: colors.neutralFill }]}>
+                  <Text>🎯</Text>
+                  <View>
+                    <Body size={fontSize.caption} weight="semiBold">
+                      {goal.name}
+                    </Body>
+                    <Body size={fontSize.tiny} color={colors.textFaint}>
+                      {goal.totalDaysActive} of {goal.targetDays} days · finishing this today adds one
+                    </Body>
+                  </View>
+                </View>
+              ) : null}
             </Card>
 
-            <Card style={{ gap: 12 }}>
+            <Card style={styles.sessionCard}>
               <SectionLabel>Focus session</SectionLabel>
-              <View style={{ flexDirection: "row", backgroundColor: colors.neutralFill, borderRadius: radii.control, padding: 4, gap: 4 }}>
+              <View style={[styles.modeTabRow, { backgroundColor: colors.neutralFill }]}>
                 {(["regular", "pomodoro"] as const).map((mode) => {
                   const active = focusMode === mode;
                   return (
                     <Pressable
                       key={mode}
                       onPress={() => setFocusMode(mode)}
-                      style={{
-                        flex: 1,
-                        minHeight: 44,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        borderRadius: 6,
-                        backgroundColor: active ? colors.bgCard : "transparent",
-                      }}
+                      style={[styles.modeTab, { backgroundColor: active ? colors.bgCard : "transparent" }]}
                     >
                       <Text size={fontSize.label} weight={active ? "bold" : "semiBold"} color={active ? colors.textDark : colors.textMuted}>
                         {mode === "regular" ? `Regular · ${formatMinutes(defaultFocusDurationMinutes)}` : "Pomodoro"}
@@ -289,12 +376,12 @@ export function TaskDetailScreen() {
                 })}
               </View>
               {focusMode === "pomodoro" ? (
-                <View style={{ gap: 6 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={styles.cyclesSection}>
+                  <View style={styles.cyclesRow}>
                     <Body size={fontSize.caption} color={colors.textMuted}>
                       Cycles
                     </Body>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                    <View style={styles.cyclesCounterRow}>
                       <Pressable onPress={() => setPomodoroCycles((c) => Math.max(1, c - 1))} hitSlop={8}>
                         <Text size={fontSize.lg} weight="bold">
                           −
@@ -315,18 +402,11 @@ export function TaskDetailScreen() {
               ) : null}
 
               <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  backgroundColor: sessionDndEnabled ? colors.primaryTintBg : colors.neutralFill,
-                  borderRadius: radii.control,
-                  padding: 12,
-                }}
+                style={[styles.dndRow, { backgroundColor: sessionDndEnabled ? colors.primaryTintBg : colors.neutralFill }]}
               >
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, marginRight: 8 }}>
+                <View style={styles.dndLeft}>
                   <Text>🔕</Text>
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.dndTextFlex}>
                     <Body size={fontSize.caption} weight="semiBold" color={sessionDndEnabled ? colors.primaryTintText : colors.textMuted}>
                       Do Not Disturb
                     </Body>
@@ -339,14 +419,14 @@ export function TaskDetailScreen() {
               </View>
 
               <Button label="Start Focus Session" large loading={starting} onPress={handleStartSession} />
-              <Body size={fontSize.micro} color={colors.textFaint} style={{ textAlign: "center" }}>
+              <Body size={fontSize.micro} color={colors.textFaint} style={styles.centerCaption}>
                 Starts only when you tap — never automatic
               </Body>
             </Card>
           </>
         ) : (
           <>
-            <Card style={{ borderStyle: "dashed" }}>
+            <Card style={styles.dashedCard}>
               <Body size={fontSize.micro} color={colors.textFaint}>
                 Reminder tasks don&rsquo;t count toward streak or weekly progress — those track focused work only.
               </Body>
@@ -355,7 +435,7 @@ export function TaskDetailScreen() {
           </>
         )}
 
-        <View style={{ alignItems: "center", paddingVertical: 8 }}>
+        <View style={styles.deleteSection}>
           <Pressable onPress={() => setDeleteConfirmOpen(true)} hitSlop={8}>
             <Body weight="semiBold" color={colors.destructive}>
               Delete task
@@ -371,13 +451,6 @@ export function TaskDetailScreen() {
         submitting={createReminderMutation.isPending || updateReminderMutation.isPending}
         initialReminderTime={reminder?.reminderTime}
         initialReminderDate={reminder?.reminderDate}
-      />
-      <CategoryPickerSheet
-        visible={categoryPickerOpen}
-        onClose={() => setCategoryPickerOpen(false)}
-        categories={categories}
-        selectedCategoryId={task.categoryId}
-        onSelect={handleCategoryChange}
       />
       <ConfirmModal
         visible={deleteConfirmOpen}

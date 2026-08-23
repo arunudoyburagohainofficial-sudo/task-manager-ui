@@ -1,9 +1,17 @@
 import React from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useAppearance } from "../state/AppearanceContext";
 import { CompanionOrb } from "./CompanionOrb";
 import { Text } from "./Text";
 import { fontSize } from "../theme/typography";
+
+const styles = StyleSheet.create({
+  container: {
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 20,
+  },
+});
 
 interface PulseCaptureButtonProps {
   onPress: () => void;
@@ -19,7 +27,7 @@ export function PulseCaptureButton({ onPress }: PulseCaptureButtonProps) {
   const { colors } = useAppearance();
 
   return (
-    <View style={{ alignItems: "center", gap: 10, paddingVertical: 20 }}>
+    <View style={styles.container}>
       <Pressable
         onPress={onPress}
         hitSlop={12}

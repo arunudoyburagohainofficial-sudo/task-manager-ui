@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Platform, Pressable, View } from "react-native";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import { useAppearance } from "../state/AppearanceContext";
 import { radii } from "../theme/spacing";
@@ -10,6 +10,45 @@ import { Body, Text } from "./Text";
 import { Button } from "./Button";
 
 const MINUTE_PRESETS = [10, 20, 30, 45, 60];
+
+const styles = StyleSheet.create({
+  segmentedRow: {
+    flexDirection: "row",
+    borderRadius: radii.control,
+    padding: 3,
+    gap: 3,
+  },
+  segmentedItem: {
+    flex: 1,
+    minHeight: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 6,
+  },
+  androidTimeButton: {
+    minHeight: 48,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radii.control,
+    borderWidth: 1,
+  },
+  section: {
+    gap: 8,
+  },
+  chipRow: {
+    flexDirection: "row",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  chip: {
+    minHeight: 40,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radii.pill,
+  },
+});
 
 /**
  * "YYYY-MM-DD" from the device's local calendar day — never date.toISOString(), which
@@ -172,19 +211,12 @@ export function ReminderTimeSheet({
       <Text size={fontSize.xl} weight="bold">
         {isEditing ? "Edit reminder" : "Set a reminder"}
       </Text>
-      <View style={{ flexDirection: "row", backgroundColor: colors.neutralFill, borderRadius: radii.control, padding: 3, gap: 3 }}>
+      <View style={[styles.segmentedRow, { backgroundColor: colors.neutralFill }]}>
         {(["clock", "minutes"] as const).map((m) => (
           <Pressable
             key={m}
             onPress={() => setMode(m)}
-            style={{
-              flex: 1,
-              minHeight: 40,
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: 6,
-              backgroundColor: mode === m ? colors.bgCard : "transparent",
-            }}
+            style={[styles.segmentedItem, { backgroundColor: mode === m ? colors.bgCard : "transparent" }]}
           >
             <Text size={fontSize.caption} weight="bold" color={mode === m ? colors.textDark : colors.textMuted}>
               {m === "clock" ? "🕕 Clock time" : "⏳ In minutes"}
@@ -198,16 +230,7 @@ export function ReminderTimeSheet({
           {Platform.OS === "android" ? (
             <Pressable
               onPress={openAndroidTimePicker}
-              style={{
-                minHeight: 48,
-                paddingHorizontal: 14,
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: radii.control,
-                borderWidth: 1,
-                borderColor: colors.toggleOff,
-                backgroundColor: colors.bgCard,
-              }}
+              style={[styles.androidTimeButton, { borderColor: colors.toggleOff, backgroundColor: colors.bgCard }]}
             >
               <Text size={fontSize.bodyLg} weight="bold">
                 {clockTime.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
@@ -222,23 +245,16 @@ export function ReminderTimeSheet({
             />
           )}
 
-          <View style={{ gap: 8 }}>
+          <View style={styles.section}>
             <Body color={colors.textMuted} size={fontSize.caption}>
               Repeat
             </Body>
-            <View style={{ flexDirection: "row", backgroundColor: colors.neutralFill, borderRadius: radii.control, padding: 3, gap: 3 }}>
+            <View style={[styles.segmentedRow, { backgroundColor: colors.neutralFill }]}>
               {(["daily", "once"] as const).map((r) => (
                 <Pressable
                   key={r}
                   onPress={() => setRepeat(r)}
-                  style={{
-                    flex: 1,
-                    minHeight: 40,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderRadius: 6,
-                    backgroundColor: repeat === r ? colors.bgCard : "transparent",
-                  }}
+                  style={[styles.segmentedItem, { backgroundColor: repeat === r ? colors.bgCard : "transparent" }]}
                 >
                   <Text size={fontSize.caption} weight="bold" color={repeat === r ? colors.textDark : colors.textMuted}>
                     {r === "daily" ? "Every day" : "Just once"}
@@ -249,11 +265,11 @@ export function ReminderTimeSheet({
           </View>
 
           {repeat === "once" && (
-            <View style={{ gap: 8 }}>
+            <View style={styles.section}>
               <Body color={colors.textMuted} size={fontSize.caption}>
                 On…
               </Body>
-              <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+              <View style={styles.chipRow}>
                 {[
                   { label: "Today", date: today },
                   { label: "Tomorrow", date: tomorrow },
@@ -266,16 +282,14 @@ export function ReminderTimeSheet({
                         setSelectedDate(date);
                         setShowDatePicker(false);
                       }}
-                      style={{
-                        minHeight: 40,
-                        paddingHorizontal: 14,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        borderRadius: radii.pill,
-                        borderWidth: active ? 2 : 1,
-                        borderColor: active ? colors.primary : colors.toggleOff,
-                        backgroundColor: active ? colors.primaryTintBg : colors.bgCard,
-                      }}
+                      style={[
+                        styles.chip,
+                        {
+                          borderWidth: active ? 2 : 1,
+                          borderColor: active ? colors.primary : colors.toggleOff,
+                          backgroundColor: active ? colors.primaryTintBg : colors.bgCard,
+                        },
+                      ]}
                     >
                       <Text size={fontSize.label} weight={active ? "bold" : "semiBold"} color={active ? colors.primaryTintText : colors.textMuted}>
                         {label}
@@ -285,16 +299,14 @@ export function ReminderTimeSheet({
                 })}
                 <Pressable
                   onPress={() => (Platform.OS === "android" ? openAndroidDatePicker() : setShowDatePicker(true))}
-                  style={{
-                    minHeight: 40,
-                    paddingHorizontal: 14,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderRadius: radii.pill,
-                    borderWidth: showDatePicker ? 2 : 1,
-                    borderColor: showDatePicker ? colors.primary : colors.toggleOff,
-                    backgroundColor: showDatePicker ? colors.primaryTintBg : colors.bgCard,
-                  }}
+                  style={[
+                    styles.chip,
+                    {
+                      borderWidth: showDatePicker ? 2 : 1,
+                      borderColor: showDatePicker ? colors.primary : colors.toggleOff,
+                      backgroundColor: showDatePicker ? colors.primaryTintBg : colors.bgCard,
+                    },
+                  ]}
                 >
                   <Text size={fontSize.label} weight={showDatePicker ? "bold" : "semiBold"} color={showDatePicker ? colors.primaryTintText : colors.textMuted}>
                     {showDatePicker || (!isSameDay(selectedDate, today) && !isSameDay(selectedDate, tomorrow))
@@ -322,27 +334,25 @@ export function ReminderTimeSheet({
           )}
         </>
       ) : (
-        <View style={{ gap: 8 }}>
+        <View style={styles.section}>
           <Body color={colors.textMuted} size={fontSize.caption}>
             Remind me in…
           </Body>
-          <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+          <View style={styles.chipRow}>
             {MINUTE_PRESETS.map((preset) => {
               const active = preset === minutes;
               return (
                 <Pressable
                   key={preset}
                   onPress={() => setMinutes(preset)}
-                  style={{
-                    minHeight: 40,
-                    paddingHorizontal: 14,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderRadius: radii.pill,
-                    borderWidth: active ? 2 : 1,
-                    borderColor: active ? colors.primary : colors.toggleOff,
-                    backgroundColor: active ? colors.primaryTintBg : colors.bgCard,
-                  }}
+                  style={[
+                    styles.chip,
+                    {
+                      borderWidth: active ? 2 : 1,
+                      borderColor: active ? colors.primary : colors.toggleOff,
+                      backgroundColor: active ? colors.primaryTintBg : colors.bgCard,
+                    },
+                  ]}
                 >
                   <Text size={fontSize.label} weight={active ? "bold" : "semiBold"} color={active ? colors.primaryTintText : colors.textMuted}>
                     {preset}

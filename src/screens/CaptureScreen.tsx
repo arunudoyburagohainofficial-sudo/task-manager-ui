@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, View } from "react-native";
+import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Body, Button, CompanionOrb, ScreenContainer, ScreenTitle, TextField } from "../components";
@@ -13,6 +13,56 @@ import type { CapturedTaskDraft, RootStackParamList } from "../navigation/types"
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 let nextLocalId = 0;
+
+const styles = StyleSheet.create({
+  keyboardAvoiding: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  content: {
+    padding: 24,
+    gap: 16,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: radii.pill,
+    alignSelf: "center",
+  },
+  orbSection: {
+    alignItems: "center",
+    gap: 8,
+  },
+  title: {
+    textAlign: "center",
+  },
+  draftList: {
+    maxHeight: 160,
+  },
+  draftListContent: {
+    gap: 8,
+  },
+  draftRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: radii.control,
+    padding: 12,
+  },
+  draftName: {
+    flex: 1,
+  },
+  buttonRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+  },
+  confirmButton: {
+    flex: 1.4,
+  },
+});
 
 /**
  * Text-based stand-in for the mockup's voice-capture flow (screen 02) — see
@@ -32,7 +82,7 @@ export function CaptureScreen() {
     if (!trimmed) return;
     setDrafts((prev) => [
       ...prev,
-      { localId: String(nextLocalId++), name: trimmed, taskType: "focus", categoryId: null, reminder: null },
+      { localId: String(nextLocalId++), name: trimmed, taskType: "focus", goalId: null, reminder: null },
     ]);
     setText("");
   }
@@ -45,11 +95,13 @@ export function CaptureScreen() {
     const finalDrafts = text.trim()
       ? [
           ...drafts,
-          { localId: String(nextLocalId++), name: text.trim(), taskType: "focus" as const, categoryId: null, reminder: null },
+          { localId: String(nextLocalId++), name: text.trim(), taskType: "focus" as const, goalId: null, reminder: null },
         ]
       : drafts;
     if (finalDrafts.length === 0) return;
-    navigation.replace("ConfirmOrganize", { drafts: finalDrafts });
+    // navigate, not replace: keeps this screen on the stack underneath so Confirm &
+    // Organize's back button returns here with the drafts still exactly as they were.
+    navigation.navigate("ConfirmOrganize", { drafts: finalDrafts });
   }
 
   const canContinue = drafts.length > 0 || text.trim().length > 0;
@@ -58,36 +110,27 @@ export function CaptureScreen() {
     <ScreenContainer>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1, justifyContent: "flex-end" }}
+        style={styles.keyboardAvoiding}
       >
-      <View style={{ padding: 24, gap: 16 }}>
-        <View style={{ width: 40, height: 4, borderRadius: radii.pill, backgroundColor: colors.toggleOff, alignSelf: "center" }} />
-        <View style={{ alignItems: "center", gap: 8 }}>
+      <View style={styles.content}>
+        <View style={[styles.handle, { backgroundColor: colors.toggleOff }]} />
+        <View style={styles.orbSection}>
           <CompanionOrb state="listening" size={64} />
           <Body size={fontSize.caption} color={colors.textMuted}>
             {listeningLine(name)}
           </Body>
         </View>
-        <ScreenTitle style={{ textAlign: "center" }}>What&rsquo;s on your mind?</ScreenTitle>
+        <ScreenTitle style={styles.title}>What&rsquo;s on your mind?</ScreenTitle>
 
         {drafts.length > 0 ? (
           <FlatList
             data={drafts}
             keyExtractor={(d) => d.localId}
-            style={{ maxHeight: 160 }}
-            contentContainerStyle={{ gap: 8 }}
+            style={styles.draftList}
+            contentContainerStyle={styles.draftListContent}
             renderItem={({ item }) => (
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                  backgroundColor: colors.neutralFill,
-                  borderRadius: radii.control,
-                  padding: 12,
-                }}
-              >
-                <Body style={{ flex: 1 }}>{item.name}</Body>
+              <View style={[styles.draftRow, { backgroundColor: colors.neutralFill }]}>
+                <Body style={styles.draftName}>{item.name}</Body>
                 <Pressable onPress={() => removeDraft(item.localId)} hitSlop={8}>
                   <Body color={colors.destructive}>Remove</Body>
                 </Pressable>
@@ -105,13 +148,13 @@ export function CaptureScreen() {
 
         <Button label="+ Add another" variant="secondary" onPress={addDraft} disabled={!text.trim()} />
 
-        <View style={{ flexDirection: "row", gap: 12 }}>
-          <Button label="Cancel" variant="secondary" onPress={() => navigation.goBack()} style={{ flex: 1 }} />
+        <View style={styles.buttonRow}>
+          <Button label="Cancel" variant="secondary" onPress={() => navigation.goBack()} style={styles.cancelButton} />
           <Button
             label={`Confirm & Organize${drafts.length + (text.trim() ? 1 : 0) > 0 ? ` (${drafts.length + (text.trim() ? 1 : 0)})` : ""}`}
             onPress={handleContinue}
             disabled={!canContinue}
-            style={{ flex: 1.4 }}
+            style={styles.confirmButton}
           />
         </View>
       </View>

@@ -1,9 +1,24 @@
 import React from "react";
-import { ActivityIndicator, Pressable, StyleProp, ViewStyle } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, StyleProp, ViewStyle } from "react-native";
 import { useAppearance } from "../state/AppearanceContext";
 import { fontSize } from "../theme/typography";
 import { minTouchTarget, radii } from "../theme/spacing";
 import { Text } from "./Text";
+
+const styles = StyleSheet.create({
+  base: {
+    borderRadius: radii.control,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  regularHeight: {
+    minHeight: minTouchTarget,
+  },
+  largeHeight: {
+    minHeight: 52,
+  },
+});
 
 type Variant = "primary" | "secondary" | "destructive" | "destructiveSolid" | "outlinePrimary";
 
@@ -46,15 +61,12 @@ export function Button({
       onPress={onPress}
       disabled={isDisabled}
       style={({ pressed }) => [
+        styles.base,
+        large ? styles.largeHeight : styles.regularHeight,
         {
-          minHeight: large ? 52 : minTouchTarget,
-          borderRadius: radii.control,
           backgroundColor: variantStyle.backgroundColor,
           borderWidth: variantStyle.borderWidth,
           borderColor: (variantStyle as { borderColor?: string }).borderColor,
-          alignItems: "center",
-          justifyContent: "center",
-          paddingHorizontal: 24,
           opacity: isDisabled ? 0.4 : pressed ? 0.85 : 1,
         },
         style,

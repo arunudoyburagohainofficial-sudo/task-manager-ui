@@ -9,7 +9,6 @@ import { TaskDetailScreen } from "../screens/TaskDetailScreen";
 import { FocusSessionScreen } from "../screens/FocusSessionScreen";
 import { CompletionScreen } from "../screens/CompletionScreen";
 import { ConfirmOrganizeScreen } from "../screens/ConfirmOrganizeScreen";
-import { CategoriesScreen } from "../screens/CategoriesScreen";
 import { MainTabs } from "./MainTabs";
 import type { RootStackParamList } from "./types";
 
@@ -41,7 +40,6 @@ export function RootNavigator() {
           <Stack.Screen name="Completion" component={CompletionScreen} options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
           <Stack.Screen name="Capture" component={CaptureScreen} options={{ presentation: "modal" }} />
           <Stack.Screen name="ConfirmOrganize" component={ConfirmOrganizeScreen} />
-          <Stack.Screen name="Categories" component={CategoriesScreen} />
         </>
       )}
     </Stack.Navigator>

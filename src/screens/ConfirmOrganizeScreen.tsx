@@ -1,13 +1,13 @@
 import React, { useState } from "react";
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useCategoriesQuery } from "../api/queries/useCategories";
+import { useGoalsQuery } from "../api/queries/useGoals";
 import { useCreateReminderMutation } from "../api/queries/useReminders";
 import { useCreateTaskMutation } from "../api/queries/useTasks";
 import type { CreateReminderRequest } from "../api/types";
 import { syncReminders } from "../notifications/useReminderSync";
-import { Body, Button, Card, CategoryPickerSheet, CategoryTag, CompanionBubble, CompanionOrb, ReminderTimeSheet, ScreenContainer, ScreenTitle, TaskTypeBadge, TextField } from "../components";
+import { Body, Button, Card, CompanionBubble, CompanionOrb, GoalPickerSheet, ReminderTimeSheet, ScreenContainer, ScreenTitle, TaskTypeBadge, TextField } from "../components";
 import { useAppearance } from "../state/AppearanceContext";
 import { useCompanion } from "../state/CompanionContext";
 import { useSession } from "../state/SessionContext";
@@ -18,6 +18,53 @@ import type { CapturedTaskDraft, RootStackParamList } from "../navigation/types"
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, "ConfirmOrganize">;
+
+const styles = StyleSheet.create({
+  keyboardAvoiding: {
+    flex: 1,
+  },
+  header: {
+    padding: 24,
+    paddingBottom: 8,
+  },
+  backLink: {
+    marginBottom: 4,
+  },
+  subtitle: {
+    marginTop: 4,
+  },
+  companionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 12,
+  },
+  bubbleFlex: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    gap: 12,
+  },
+  draftCard: {
+    gap: 12,
+  },
+  reminderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  focusNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 8,
+    padding: 10,
+  },
+  submitBar: {
+    padding: 16,
+  },
+});
 
 /**
  * One-line summary of a not-yet-created reminder, so the choice stays visible on the card
@@ -42,17 +89,17 @@ export function ConfirmOrganizeScreen() {
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Route>();
 
-  const categoriesQuery = useCategoriesQuery();
+  const goalsQuery = useGoalsQuery();
   const createTaskMutation = useCreateTaskMutation();
   const createReminderMutation = useCreateReminderMutation();
 
   const [drafts, setDrafts] = useState<CapturedTaskDraft[]>(params.drafts);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [categoryPickerFor, setCategoryPickerFor] = useState<string | null>(null);
+  const [goalPickerFor, setGoalPickerFor] = useState<string | null>(null);
   const [reminderSheetFor, setReminderSheetFor] = useState<string | null>(null);
 
-  const categories = categoriesQuery.data ?? [];
+  const goals = goalsQuery.data ?? [];
 
   // Only a clock-time reminder can be re-opened pre-filled — "in N minutes" is relative to
   // the moment it was picked, so there's no fixed time for the sheet to seed itself from.
@@ -73,7 +120,7 @@ export function ConfirmOrganizeScreen() {
         const created = await createTaskMutation.mutateAsync({
           name: draft.name,
           taskType: draft.taskType,
-          categoryId: draft.categoryId ?? undefined,
+          goalId: draft.goalId ?? undefined,
         });
         // Only now does a real taskId exist to hang the reminder off. Its failure is
         // caught per-draft rather than aborting: the task itself is already saved by this
@@ -98,10 +145,9 @@ export function ConfirmOrganizeScreen() {
           "The tasks themselves were saved — open one to set its reminder again."
         );
       }
-      // Not goBack(): CaptureScreen uses navigation.replace to get here, so this screen sits
-      // directly on top of Main and popping just returns to whichever tab launched the
-      // capture — landing on Progress or Settings, never showing the task that was just
-      // created. Navigating to Main/Home pops AND selects the list the new tasks are on.
+      // Not goBack(): that would only pop back to Capture, still sitting underneath on the
+      // stack. Navigating to Main/Home pops both this screen and Capture at once, AND
+      // selects the list the new tasks are on.
       navigation.navigate("Main", { screen: "Home" });
     } catch {
       setError("Couldn't save one or more tasks — try again.");
@@ -112,15 +158,20 @@ export function ConfirmOrganizeScreen() {
 
   return (
     <ScreenContainer>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-      <View style={{ padding: 24, paddingBottom: 8 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardAvoiding}>
+      <View style={styles.header}>
+        <Pressable onPress={() => navigation.goBack()} style={styles.backLink}>
+          <Body weight="semiBold" color={colors.primary}>
+            ← Back
+          </Body>
+        </Pressable>
         <ScreenTitle>Organize your tasks</ScreenTitle>
-        <Body color={colors.textMuted} style={{ marginTop: 4 }}>
+        <Body color={colors.textMuted} style={styles.subtitle}>
           {drafts.length} task{drafts.length === 1 ? "" : "s"} captured — set a type, category &amp; reminder for each
         </Body>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 12 }}>
+        <View style={styles.companionRow}>
           <CompanionOrb state="thinking" size={42} />
-          <View style={{ flex: 1 }}>
+          <View style={styles.bubbleFlex}>
             <CompanionBubble
               text={organizeLine(
                 tone,
@@ -131,23 +182,13 @@ export function ConfirmOrganizeScreen() {
           </View>
         </View>
       </View>
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
         {drafts.map((draft) => {
-          const category = categories.find((c) => c.id === draft.categoryId) ?? null;
           return (
-            <Card key={draft.localId} style={{ gap: 12 }}>
+            <Card key={draft.localId} style={styles.draftCard}>
               <TextField value={draft.name} onChangeText={(name) => updateDraft(draft.localId, { name })} />
               <TaskTypeBadge value={draft.taskType} onChange={(taskType) => updateDraft(draft.localId, { taskType })} />
-              <Pressable
-                onPress={() => setCategoryPickerFor(draft.localId)}
-                style={{ flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start" }}
-              >
-                <CategoryTag category={category} />
-                <Body size={fontSize.micro} color={colors.textFaint}>
-                  ▾
-                </Body>
-              </Pressable>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+              <View style={styles.reminderRow}>
                 <Pressable onPress={() => setReminderSheetFor(draft.localId)} hitSlop={8}>
                   <Body
                     size={fontSize.caption}
@@ -166,7 +207,29 @@ export function ConfirmOrganizeScreen() {
                 ) : null}
               </View>
               {draft.taskType === "focus" ? (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.primaryTintBg, borderRadius: 8, padding: 10 }}>
+                <View style={styles.reminderRow}>
+                  <Pressable onPress={() => setGoalPickerFor(draft.localId)} hitSlop={8}>
+                    <Body
+                      size={fontSize.caption}
+                      weight="semiBold"
+                      color={draft.goalId ? colors.primary : colors.textMuted}
+                    >
+                      {draft.goalId
+                        ? `🎯 ${goals.find((g) => g.id === draft.goalId)?.name ?? "Goal"}`
+                        : "🎯 Count toward a goal"}
+                    </Body>
+                  </Pressable>
+                  {draft.goalId ? (
+                    <Pressable onPress={() => updateDraft(draft.localId, { goalId: null })} hitSlop={8}>
+                      <Body size={fontSize.caption} color={colors.destructive}>
+                        Remove
+                      </Body>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
+              {draft.taskType === "focus" ? (
+                <View style={[styles.focusNote, { backgroundColor: colors.primaryTintBg }]}>
                   <Body size={fontSize.caption} weight="semiBold" color={colors.primaryTintText}>
                     🔥 Counts toward your streak &amp; weekly progress
                   </Body>
@@ -177,7 +240,7 @@ export function ConfirmOrganizeScreen() {
         })}
         {error ? <Body color={colors.destructive}>{error}</Body> : null}
       </ScrollView>
-      <View style={{ padding: 16 }}>
+      <View style={styles.submitBar}>
         <Button
           label={`Confirm & Add ${drafts.length} task${drafts.length === 1 ? "" : "s"}`}
           large
@@ -187,13 +250,13 @@ export function ConfirmOrganizeScreen() {
       </View>
       </KeyboardAvoidingView>
 
-      <CategoryPickerSheet
-        visible={categoryPickerFor !== null}
-        onClose={() => setCategoryPickerFor(null)}
-        categories={categories}
-        selectedCategoryId={drafts.find((d) => d.localId === categoryPickerFor)?.categoryId ?? null}
-        onSelect={(categoryId) => {
-          if (categoryPickerFor) updateDraft(categoryPickerFor, { categoryId });
+      <GoalPickerSheet
+        visible={goalPickerFor !== null}
+        onClose={() => setGoalPickerFor(null)}
+        goals={goals}
+        selectedGoalId={drafts.find((d) => d.localId === goalPickerFor)?.goalId ?? null}
+        onSelect={(goalId) => {
+          if (goalPickerFor) updateDraft(goalPickerFor, { goalId });
         }}
       />
 
