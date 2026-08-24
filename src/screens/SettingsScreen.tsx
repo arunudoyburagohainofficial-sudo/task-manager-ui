@@ -219,6 +219,10 @@ export function SettingsScreen() {
           not yet available on iOS.
         </Meta>
 
+        <Pressable accessibilityRole="button" onPress={signOut} style={styles.signOutCard}>
+          <Body style={{ fontWeight: "800", color: color.text }}>Sign out</Body>
+        </Pressable>
+
         <Pressable
           accessibilityRole="button"
           onPress={() => setDeleteConfirmOpen(true)}
@@ -307,6 +311,16 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
     marginBottom: space.base,
   },
+  signOutCard: {
+    backgroundColor: color.card,
+    borderWidth: 1,
+    borderColor: color.border,
+    borderRadius: radius.card,
+    padding: space.card,
+    minHeight: 50,
+    justifyContent: "center",
+    marginTop: 16,
+  },
   deleteCard: {
     backgroundColor: color.card,
     borderWidth: 1,
@@ -315,6 +329,7 @@ const styles = StyleSheet.create({
     padding: space.card,
     minHeight: 50,
     justifyContent: "center",
+    marginTop: space.sm,
   },
   version: {
     color: color.textFaint,

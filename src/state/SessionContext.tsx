@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { prefetchAppData } from "../api/prefetch";
+import { queryClient } from "../api/queryClient";
 import type { UserDto } from "../api/types";
 
 const STORAGE_KEY = "session-user-v1";
@@ -86,6 +87,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       signOut: () => {
         setUser(null);
         AsyncStorage.removeItem(STORAGE_KEY);
+        // None of the query cache is keyed by user id (see queryKeys.ts) — without this,
+        // whoever signs in next on this device would see this account's tasks/goals/
+        // reminders/streak flash on screen until each query's own refetch overwrites it,
+        // and anything prefetchAppData doesn't explicitly cover would keep showing this
+        // account's data indefinitely. Clearing also wipes the AsyncStorage-persisted copy
+        // (see queryClient.ts's persister), so a cold relaunch can't resurrect it either.
+        queryClient.clear();
         // Locally scheduled reminders outlive the session otherwise — the next person to
         // sign in on this device would get the previous user's notifications.
         import("../notifications/localNotifications")
