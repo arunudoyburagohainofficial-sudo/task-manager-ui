@@ -70,6 +70,7 @@ export function HomeScreen() {
       new Map((remindersQuery.data ?? []).filter((r: ReminderDto) => r.isActive).map((r: ReminderDto) => [r.taskId, r])),
     [remindersQuery.data]
   );
+  const goalsById = useMemo(() => new Map(goals.map((g) => [g.id, g])), [goals]);
   const currentStreak = streakQuery.data?.currentStreak ?? 0;
   // Scoped to today deliberately: the "completed" query returns every task ever finished,
   // which would turn the done section into an ever-growing archive. Home is a today view —
@@ -223,6 +224,7 @@ export function HomeScreen() {
 
             <View style={styles.goalsHeader}>
               <Eyebrow>GOALS</Eyebrow>
+              <InfoTooltip topic="goals" />
             </View>
             {/* "+ Goal" leads rather than trails: it stays reachable without scrolling
                 past every existing goal once the list grows. */}
@@ -279,11 +281,14 @@ export function HomeScreen() {
             );
           }
           const reminder = remindersByTaskId.get(item.id);
+          const itemGoal = item.goalId ? goalsById.get(item.goalId) : undefined;
           return (
             <View style={styles.rowSpacing}>
               <TaskRow
                 title={item.name}
                 taskType={item.taskType}
+                goalName={itemGoal?.name}
+                goalColor={itemGoal?.color ?? undefined}
                 subtitle={reminder ? `⏰ ${formatClockTime(reminder.reminderTime)}` : null}
                 actionLabel={item.taskType === "focus" ? "Focus" : "Done"}
                 onPress={() => navigation.navigate("TaskDetail", { taskId: item.id })}
@@ -379,6 +384,9 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   goalsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     marginTop: space.gutter,
     marginBottom: space.sm,
   },

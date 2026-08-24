@@ -23,6 +23,7 @@ import {
   DoNotDisturbIcon,
   Eyebrow,
   FocusIcon,
+  GoalPickerSheet,
   InfoCard,
   Label,
   Meta,
@@ -75,6 +76,7 @@ export function TaskDetailScreen() {
   // Seeds from the global Settings preference but is overridable per session.
   const [sessionDndEnabled, setSessionDndEnabled] = useState(dndDuringFocusEnabled);
   const [reminderSheetOpen, setReminderSheetOpen] = useState(false);
+  const [goalSheetOpen, setGoalSheetOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [starting, setStarting] = useState(false);
 
@@ -106,6 +108,17 @@ export function TaskDetailScreen() {
     // place so createReminder keeps 409ing.
     await deleteReminderMutation.mutateAsync(reminder.id);
     void syncReminders();
+  }
+
+  async function handleSelectGoal(goalId: string | null) {
+    try {
+      await updateTaskMutation.mutateAsync({
+        taskId: params.taskId,
+        request: goalId ? { goalId } : { clearGoal: true },
+      });
+    } catch (e) {
+      Alert.alert("Couldn't update goal", e instanceof ApiError ? e.message : "Try again.");
+    }
   }
 
   // Optimistic update lives inside useUpdateTaskMutation itself — see its onMutate/onError.
@@ -218,6 +231,29 @@ export function TaskDetailScreen() {
           )}
         </Card>
 
+        <Card>
+          <View style={styles.cardHeader}>
+            <Eyebrow>GOAL</Eyebrow>
+          </View>
+          {goal ? (
+            <View style={styles.goalRow}>
+              <View style={[styles.goalSwatch, { backgroundColor: goal.color ?? color.goal }]} />
+              <View style={styles.goalText}>
+                <Label>{goal.name}</Label>
+                <Meta style={{ marginTop: 2 }}>
+                  {goal.totalDaysActive} of {goal.targetDays} days
+                  {isFocus ? " · finishing this today adds one" : ""}
+                </Meta>
+              </View>
+              <Pressable accessibilityRole="button" onPress={() => setGoalSheetOpen(true)} hitSlop={8}>
+                <Meta style={{ color: color.selectedText, fontWeight: "800" }}>Change</Meta>
+              </Pressable>
+            </View>
+          ) : (
+            <Button label="Attach to a goal" variant="secondary" onPress={() => setGoalSheetOpen(true)} />
+          )}
+        </Card>
+
         {isFocus ? (
           <>
             <Card>
@@ -230,20 +266,6 @@ export function TaskDetailScreen() {
                 <Label style={{ color: color.success }}>Counts toward your streak &amp; weekly progress</Label>
                 <Meta style={{ marginTop: 2 }}>Automatic for focus tasks</Meta>
               </InfoCard>
-
-              {/* Read-only: a task's goal is chosen at capture time. Shown here so it's
-                  visible where the work actually happens. */}
-              {goal ? (
-                <View style={styles.goalRow}>
-                  <View style={[styles.goalSwatch, { backgroundColor: goal.color ?? color.goal }]} />
-                  <View style={styles.goalText}>
-                    <Label>{goal.name}</Label>
-                    <Meta style={{ marginTop: 2 }}>
-                      {goal.totalDaysActive} of {goal.targetDays} days · finishing this today adds one
-                    </Meta>
-                  </View>
-                </View>
-              ) : null}
             </Card>
 
             <Card>
@@ -321,6 +343,13 @@ export function TaskDetailScreen() {
         initialReminderTime={reminder?.reminderTime}
         initialReminderDate={reminder?.reminderDate}
       />
+      <GoalPickerSheet
+        visible={goalSheetOpen}
+        onClose={() => setGoalSheetOpen(false)}
+        goals={goals}
+        selectedGoalId={task.goalId}
+        onSelect={handleSelectGoal}
+      />
       <ConfirmModal
         visible={deleteConfirmOpen}
         title="Delete this task?"
@@ -358,7 +387,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: space.md,
-    marginTop: 11,
     backgroundColor: color.track,
     borderRadius: radius.control,
     paddingVertical: 12,

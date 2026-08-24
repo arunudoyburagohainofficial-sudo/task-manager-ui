@@ -3,9 +3,17 @@
  * wording stays identical wherever a metric shows up (Home's streak badge, Progress
  * screen, Completion, FocusSession), rather than drifting screen to screen.
  */
-export type InfoTopic = "streak" | "xp" | "weeklyProgress";
+export type InfoTopic = "streak" | "xp" | "weeklyProgress" | "goals";
 
 export const infoCopy: Record<InfoTopic, { title: string; body: string }> = {
+  goals: {
+    title: "Goals",
+    body:
+      "A goal isn't a to-do — it's something you show up for repeatedly. Attach tasks to " +
+      "it, and each day you complete one, that day counts toward the goal.\n\n" +
+      "The point isn't finishing fast, it's staying consistent until you reach the number " +
+      "of days you set.",
+  },
   streak: {
     title: "Streak",
     body:

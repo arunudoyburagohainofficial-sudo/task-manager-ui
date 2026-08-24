@@ -72,6 +72,7 @@ export function ProgressScreen() {
             Read-only here — Home is the one place goals are created and edited. */}
         <View style={styles.goalsHeader}>
           <Eyebrow>GOALS</Eyebrow>
+          <InfoTooltip topic="goals" />
         </View>
         {goals.length > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.goalsRow}>
@@ -208,6 +209,9 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   goalsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     marginTop: 16,
     marginBottom: space.sm,
   },

@@ -1,5 +1,6 @@
 import React from "react";
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { color, space } from "../theme";
 
 const styles = StyleSheet.create({
@@ -17,7 +18,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     paddingTop: 12,
     paddingHorizontal: space.gutter,
-    paddingBottom: 22,
     maxHeight: "90%",
   },
   handle: {
@@ -41,6 +41,8 @@ interface BottomSheetProps {
 
 /** Slides up from the bottom over a dimmed backdrop (design §7: 200–300ms ease-out). */
 export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
+  const insets = useSafeAreaInsets();
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       {/* A RN Modal is its own native window, so it doesn't inherit the screen's keyboard
@@ -52,7 +54,12 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
         style={styles.keyboardAvoiding}
       >
         <Pressable style={styles.backdrop} onPress={onClose} />
-        <View style={styles.sheet}>
+        {/* The Modal's own content sits outside the screen's SafeAreaProvider tree (it's a
+            separate native window), so insets.bottom isn't inherited here — without adding
+            it explicitly, the card's fixed padding stops short of the home-indicator zone
+            on devices that have one, leaving a sliver where the real (undimmed) screen
+            behind shows through instead of the sheet's own background. */}
+        <View style={[styles.sheet, { paddingBottom: 22 + insets.bottom }]}>
           <View style={styles.handle} />
           <ScrollView
             contentContainerStyle={styles.content}

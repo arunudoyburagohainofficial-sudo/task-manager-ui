@@ -24,12 +24,25 @@ function TaskTypeTile({ taskType, completed = false, size: d = 36 }: { taskType:
   );
 }
 
-/** "Focus" / "Reminder", tinted to match the tile — the row's type label under the title. */
-function TaskTypeLabel({ taskType }: { taskType: TaskType }) {
+/**
+ * "Focus" / "Reminder", tinted to match the tile — the row's type label under the title.
+ * When the task is attached to a goal, the goal's own name follows in its own accent
+ * colour, " · "-separated — the same "coloured tag under the title" treatment the type
+ * itself gets, so which goal a task counts toward is visible without opening it.
+ */
+function TaskTypeLabel({ taskType, goalName, goalColor }: { taskType: TaskType; goalName?: string; goalColor?: string }) {
   const isFocus = taskType === "focus";
   return (
-    <Text style={t(T.meta, { fontWeight: "700", color: isFocus ? color.taskTypeFocusFg : color.taskTypeReminderFg })}>
-      {isFocus ? "Focus" : "Reminder"}
+    <Text style={t(T.meta, { fontWeight: "700" })}>
+      <Text style={{ color: isFocus ? color.taskTypeFocusFg : color.taskTypeReminderFg }}>
+        {isFocus ? "Focus" : "Reminder"}
+      </Text>
+      {goalName ? (
+        <>
+          <Text style={{ color: color.textFaint }}> · </Text>
+          <Text style={{ color: goalColor ?? color.goal }}>{goalName}</Text>
+        </>
+      ) : null}
     </Text>
   );
 }
@@ -83,6 +96,8 @@ export function SectionHeader({
 export function TaskRow({
   title,
   taskType,
+  goalName,
+  goalColor,
   subtitle,
   actionLabel,
   onPress,
@@ -90,6 +105,8 @@ export function TaskRow({
 }: {
   title: string;
   taskType: TaskType;
+  goalName?: string;
+  goalColor?: string;
   subtitle?: string | null;
   actionLabel: string;
   onPress: () => void;
@@ -100,7 +117,7 @@ export function TaskRow({
       <TaskTypeTile taskType={taskType} />
       <View style={styles.taskRowText}>
         <Text style={t(T.bodyLg, { color: color.text })}>{title}</Text>
-        <TaskTypeLabel taskType={taskType} />
+        <TaskTypeLabel taskType={taskType} goalName={goalName} goalColor={goalColor} />
         {subtitle ? <Text style={t(T.meta, { color: color.textFaint, marginTop: 2 })}>{subtitle}</Text> : null}
       </View>
       <Pressable

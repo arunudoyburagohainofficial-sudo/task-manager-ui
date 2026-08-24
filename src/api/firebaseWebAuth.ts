@@ -61,14 +61,24 @@ export async function signInWithGoogleIdToken(googleIdToken: string): Promise<st
 }
 
 /**
- * Firebase's real Anonymous Authentication product — a genuine, distinct Firebase user
- * per device (not a mock/fake session), verified through the same /auth/verify path as
- * every other sign-in method. Runs on the Web SDK like signInWithGoogleIdToken above, so
- * it needs no native module either — the one sign-in path that actually works in Expo Go,
- * where neither native Google Sign-In nor @react-native-firebase phone auth are available.
- * For testing only: exposed via a clearly-labeled button, not a default flow.
+ * Firebase's real Anonymous Authentication product (not a mock/fake session), verified
+ * through the same /auth/verify path as every other sign-in method. Runs on the Web SDK
+ * like signInWithGoogleIdToken above, so it needs no native module either — the one
+ * sign-in path that actually works in Expo Go, where neither native Google Sign-In nor
+ * @react-native-firebase phone auth are available. For testing only: exposed via a
+ * clearly-labeled button, not a default flow.
+ *
+ * Firebase's anonymous auth is one persistent account per device by design — calling
+ * signInAnonymously while already signed in (anonymously or otherwise) just resumes that
+ * same account rather than minting a new one, silently defeating the point of a "new test
+ * user" button (task-svc's account-provisioning seed logic only ever runs once, at
+ * creation, so resuming an old account looks identical to "nothing got seeded"). Signing
+ * out first — a harmless no-op if nobody's currently signed in — guarantees this button
+ * always produces a genuinely fresh account, regardless of whether the screen it was
+ * pressed from already signed the previous session out.
  */
 export async function signInAsTestUser(): Promise<string> {
+  await webSignOut(auth);
   const userCredential = await signInAnonymously(auth);
   return getIdToken(userCredential.user);
 }
