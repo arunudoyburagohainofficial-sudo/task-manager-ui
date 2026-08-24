@@ -6,7 +6,15 @@ export type RootStackParamList = {
   PhoneSignIn: undefined;
   Main: NavigatorScreenParams<MainTabParamList>;
   TaskDetail: { taskId: string };
-  FocusSession: { sessionId: string; taskId: string; focusMode: "regular" | "pomodoro"; totalCycles: number; dndEnabled: boolean };
+  FocusSession: {
+    sessionId: string;
+    taskId: string;
+    focusMode: "regular" | "pomodoro";
+    totalCycles: number;
+    /** Minutes per work block, chosen on Task Detail — a pomodoro cycle's length in that mode, the whole session's length in Regular mode. */
+    sessionMinutes: number;
+    dndEnabled: boolean;
+  };
   Completion: { taskId: string; taskName: string; durationSeconds: number; pointsEarned: number };
   Capture: undefined;
   ConfirmOrganize: { drafts: CapturedTaskDraft[] };

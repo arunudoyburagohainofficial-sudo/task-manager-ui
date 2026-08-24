@@ -120,6 +120,7 @@ export function Stepper({
   onChange,
   min = 1,
   max = 99,
+  step = 1,
   suffix,
   label,
 }: {
@@ -127,6 +128,7 @@ export function Stepper({
   onChange: (value: number) => void;
   min?: number;
   max?: number;
+  step?: number;
   suffix?: string;
   label: string;
 }) {
@@ -136,7 +138,7 @@ export function Stepper({
         accessibilityRole="button"
         accessibilityLabel={`Decrease ${label}`}
         hitSlop={12}
-        onPress={() => onChange(Math.max(min, value - 1))}
+        onPress={() => onChange(Math.max(min, value - step))}
       >
         <Text style={t(T.bodyLg, { color: color.textMuted })}>−</Text>
       </Pressable>
@@ -148,7 +150,7 @@ export function Stepper({
         accessibilityRole="button"
         accessibilityLabel={`Increase ${label}`}
         hitSlop={12}
-        onPress={() => onChange(Math.min(max, value + 1))}
+        onPress={() => onChange(Math.min(max, value + step))}
       >
         <Text style={t(T.bodyLg, { color: color.textMuted })}>+</Text>
       </Pressable>

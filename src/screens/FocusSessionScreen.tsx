@@ -19,7 +19,6 @@ import {
   Timer,
 } from "../components";
 import { useCompanion } from "../state/CompanionContext";
-import { usePreferences } from "../state/PreferencesContext";
 import { color, radius, space, text as t, type as T } from "../theme";
 import { restingLine } from "../theme/companionCopy";
 import { formatMMSS, formatMinutes } from "../utils/format";
@@ -28,21 +27,16 @@ import type { RootStackParamList } from "../navigation/types";
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, "FocusSession">;
 
-// Pomodoro work blocks are always 25 min per the design handoff; Regular-mode length comes
-// from the user's "Default focus duration" preference (client-only — task-svc has no field
-// for a planned session length at all).
-const POMODORO_WORK_SECONDS = 25 * 60;
 const BREAK_SECONDS = 5 * 60;
 
 type Phase = "working" | "break" | "completePrompt";
 
 export function FocusSessionScreen() {
   const { name } = useCompanion();
-  const { defaultFocusDurationMinutes } = usePreferences();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Route>();
-  const { sessionId, taskId, focusMode, totalCycles } = params;
-  const WORK_SECONDS = focusMode === "pomodoro" ? POMODORO_WORK_SECONDS : defaultFocusDurationMinutes * 60;
+  const { sessionId, taskId, focusMode, totalCycles, sessionMinutes } = params;
+  const WORK_SECONDS = sessionMinutes * 60;
 
   // Almost always an instant cache hit: TaskDetailScreen (the only screen that navigates
   // here) already has this exact task cached under this exact key.
@@ -261,9 +255,7 @@ export function FocusSessionScreen() {
             <View style={styles.progressFooter}>
               <Meta>{Math.round(percent)}% complete</Meta>
               <Meta>
-                {focusMode === "pomodoro"
-                  ? `Cycle ${currentCycle} of ${totalCycles}`
-                  : `${defaultFocusDurationMinutes} min session`}
+                {focusMode === "pomodoro" ? `Cycle ${currentCycle} of ${totalCycles}` : `${sessionMinutes} min session`}
               </Meta>
             </View>
           </View>

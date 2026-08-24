@@ -45,7 +45,7 @@ import type { RootStackParamList } from "../navigation/types";
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, "TaskDetail">;
 
-const POMODORO_MINUTES = 25;
+const DEFAULT_POMODORO_MINUTES = 25;
 
 export function TaskDetailScreen() {
   const { user } = useSession();
@@ -73,6 +73,10 @@ export function TaskDetailScreen() {
 
   const [focusMode, setFocusMode] = useState<FocusMode>("regular");
   const [pomodoroCycles, setPomodoroCycles] = useState(3);
+  const [pomodoroMinutes, setPomodoroMinutes] = useState(DEFAULT_POMODORO_MINUTES);
+  // Seeds from the global Settings preference but is overridable per session, same as
+  // sessionDndEnabled below — this is "today's session," not a rewrite of the default.
+  const [regularMinutes, setRegularMinutes] = useState(defaultFocusDurationMinutes);
   // Seeds from the global Settings preference but is overridable per session.
   const [sessionDndEnabled, setSessionDndEnabled] = useState(dndDuringFocusEnabled);
   const [reminderSheetOpen, setReminderSheetOpen] = useState(false);
@@ -83,6 +87,10 @@ export function TaskDetailScreen() {
   useEffect(() => {
     setSessionDndEnabled(dndDuringFocusEnabled);
   }, [dndDuringFocusEnabled]);
+
+  useEffect(() => {
+    setRegularMinutes(defaultFocusDurationMinutes);
+  }, [defaultFocusDurationMinutes]);
 
   async function handleSaveReminder(request: CreateReminderRequest) {
     try {
@@ -152,6 +160,7 @@ export function TaskDetailScreen() {
         taskId: params.taskId,
         focusMode,
         totalCycles: pomodoroCycles,
+        sessionMinutes: focusMode === "pomodoro" ? pomodoroMinutes : regularMinutes,
         dndEnabled: sessionDndEnabled,
       });
     } catch (e) {
@@ -160,11 +169,15 @@ export function TaskDetailScreen() {
         if (current) {
           // numPomodoroCycles is only recorded when a session completes, so it's still
           // null on one in progress — fall back to a sane default rather than guessing.
+          // Same reasoning for the session length: task-svc has no field for it at all
+          // (see FocusSessionScreen), so a resumed session can't recover whatever was
+          // chosen when it was originally started.
           navigation.navigate("FocusSession", {
             sessionId: current.id,
             taskId: current.taskId,
             focusMode: current.focusMode,
             totalCycles: current.numPomodoroCycles ?? 4,
+            sessionMinutes: current.focusMode === "pomodoro" ? DEFAULT_POMODORO_MINUTES : defaultFocusDurationMinutes,
             dndEnabled: sessionDndEnabled,
           });
         } else {
@@ -276,10 +289,25 @@ export function TaskDetailScreen() {
                 value={focusMode}
                 onChange={setFocusMode}
                 options={[
-                  { value: "regular", label: `Regular · ${formatMinutes(defaultFocusDurationMinutes)}` },
+                  { value: "regular", label: `Regular · ${formatMinutes(regularMinutes)}` },
                   { value: "pomodoro", label: "Pomodoro" },
                 ]}
               />
+
+              {focusMode === "regular" ? (
+                <View style={styles.cyclesRow}>
+                  <Body style={{ fontWeight: "700" }}>Session length</Body>
+                  <Stepper
+                    value={regularMinutes}
+                    onChange={setRegularMinutes}
+                    min={5}
+                    max={90}
+                    step={5}
+                    suffix="min"
+                    label="session length"
+                  />
+                </View>
+              ) : null}
 
               {/* Pomodoro-only — absent in regular mode, not disabled (design §3). */}
               {focusMode === "pomodoro" ? (
@@ -288,8 +316,20 @@ export function TaskDetailScreen() {
                     <Body style={{ fontWeight: "700" }}>Cycles</Body>
                     <Stepper value={pomodoroCycles} onChange={setPomodoroCycles} min={1} max={10} label="cycles" />
                   </View>
+                  <View style={styles.cyclesRow}>
+                    <Body style={{ fontWeight: "700" }}>Session length</Body>
+                    <Stepper
+                      value={pomodoroMinutes}
+                      onChange={setPomodoroMinutes}
+                      min={5}
+                      max={60}
+                      step={5}
+                      suffix="min"
+                      label="pomodoro session length"
+                    />
+                  </View>
                   <Meta style={{ color: color.textFaint, marginTop: 4 }}>
-                    {pomodoroCycles} cycles × {POMODORO_MINUTES} min = {pomodoroCycles * POMODORO_MINUTES} minutes total
+                    {pomodoroCycles} cycles × {pomodoroMinutes} min = {pomodoroCycles * pomodoroMinutes} minutes total
                   </Meta>
                 </>
               ) : null}
