@@ -1,16 +1,26 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Modal, Pressable, StyleSheet, View } from "react-native";
-import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { Modal, StyleSheet, Text, View } from "react-native";
+import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { focusSessionsApi } from "../api";
 import { useCompleteTaskMutation, useTaskQuery } from "../api/queries/useTasks";
 import type { FocusSessionDto } from "../api/types";
-import { Body, Button, CompanionOrb, ConfirmModal, InfoTooltip, ProgressBar, ScreenContainer, Text } from "../components";
-import { useAppearance } from "../state/AppearanceContext";
+import {
+  Body,
+  Button,
+  ConfirmModal,
+  DoNotDisturbIcon,
+  Ferne,
+  H2,
+  InfoTooltip,
+  Meta,
+  ProgressBar,
+  ScreenContainer,
+  Timer,
+} from "../components";
 import { useCompanion } from "../state/CompanionContext";
 import { usePreferences } from "../state/PreferencesContext";
-import { radii, spacing } from "../theme/spacing";
-import { fontSize } from "../theme/typography";
+import { color, radius, space, text as t, type as T } from "../theme";
 import { restingLine } from "../theme/companionCopy";
 import { formatMMSS, formatMinutes } from "../utils/format";
 import type { RootStackParamList } from "../navigation/types";
@@ -18,139 +28,15 @@ import type { RootStackParamList } from "../navigation/types";
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, "FocusSession">;
 
-// Pomodoro work blocks are always 25 min per the design handoff; Regular-mode length
-// comes from the user's "Default focus duration" preference (client-only — task-svc has
-// no field for a planned session length at all).
+// Pomodoro work blocks are always 25 min per the design handoff; Regular-mode length comes
+// from the user's "Default focus duration" preference (client-only — task-svc has no field
+// for a planned session length at all).
 const POMODORO_WORK_SECONDS = 25 * 60;
 const BREAK_SECONDS = 5 * 60;
 
 type Phase = "working" | "break" | "completePrompt";
 
-const styles = StyleSheet.create({
-  breakContainer: {
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 32,
-  },
-  breakHeader: {
-    alignItems: "center",
-    gap: 8,
-    paddingTop: 20,
-  },
-  breakContent: {
-    alignItems: "center",
-    gap: 16,
-    paddingHorizontal: 32,
-  },
-  iconCircle72: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  tabularNums: {
-    fontVariant: ["tabular-nums"],
-  },
-  dotsRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  centerText: {
-    textAlign: "center",
-  },
-  bottomButtons: {
-    width: "100%",
-    paddingHorizontal: 16,
-    gap: 10,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(26,26,26,.45)",
-    justifyContent: "center",
-  },
-  modalCard: {
-    marginHorizontal: 16,
-    borderRadius: radii.modal,
-    padding: spacing.md,
-    gap: 14,
-    alignItems: "center",
-  },
-  iconCircle64: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  statsRow: {
-    flexDirection: "row",
-    gap: 20,
-  },
-  statItem: {
-    alignItems: "center",
-  },
-  xpRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  modalActions: {
-    width: "100%",
-    gap: 10,
-  },
-  workingHeader: {
-    alignItems: "center",
-    gap: 8,
-    paddingTop: 8,
-  },
-  dndPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: radii.pill,
-  },
-  centerContent: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 28,
-    paddingHorizontal: 32,
-  },
-  progressSection: {
-    width: "100%",
-    gap: 10,
-  },
-  progressFooterRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  restingSection: {
-    alignItems: "center",
-    gap: 6,
-  },
-  bottomActionRow: {
-    flexDirection: "row",
-    gap: 12,
-    padding: 16,
-  },
-  pauseButton: {
-    flex: 1.4,
-  },
-  endButton: {
-    flex: 1,
-  },
-});
-
 export function FocusSessionScreen() {
-  const { colors } = useAppearance();
   const { name } = useCompanion();
   const { defaultFocusDurationMinutes } = usePreferences();
   const navigation = useNavigation<Nav>();
@@ -159,8 +45,7 @@ export function FocusSessionScreen() {
   const WORK_SECONDS = focusMode === "pomodoro" ? POMODORO_WORK_SECONDS : defaultFocusDurationMinutes * 60;
 
   // Almost always an instant cache hit: TaskDetailScreen (the only screen that navigates
-  // here) already has this exact task cached under this exact key from viewing it right
-  // before pressing "Start Focus Session".
+  // here) already has this exact task cached under this exact key.
   const taskQuery = useTaskQuery(taskId);
   const completeTaskMutation = useCompleteTaskMutation();
   const task = taskQuery.data ?? null;
@@ -183,7 +68,8 @@ export function FocusSessionScreen() {
       try {
         const completed = await focusSessionsApi.completeFocusSession(sessionId, {
           wasInterrupted,
-          numPomodoroCycles: focusMode === "pomodoro" ? (wasInterrupted ? cycleRef.current - 1 : totalCycles) : undefined,
+          numPomodoroCycles:
+            focusMode === "pomodoro" ? (wasInterrupted ? cycleRef.current - 1 : totalCycles) : undefined,
         });
         setCompletedSession(completed);
         setPhase("completePrompt");
@@ -248,57 +134,55 @@ export function FocusSessionScreen() {
 
   if (!task) return null;
 
+  const cycleDots = (filled: (i: number) => boolean) => (
+    <View style={styles.dotsRow}>
+      {Array.from({ length: totalCycles }, (_, i) => (
+        <View
+          key={i}
+          style={[
+            styles.dot,
+            filled(i)
+              ? { backgroundColor: color.interactive }
+              : { backgroundColor: color.fill, borderWidth: 1, borderColor: color.border },
+          ]}
+        />
+      ))}
+    </View>
+  );
+
   if (phase === "break") {
     return (
-      <ScreenContainer backgroundColor={colors.bgFocusSession} style={styles.breakContainer}>
-        <View style={styles.breakHeader}>
-          <Body weight="semiBold" color={colors.textMuted}>
-            {task.name}
-          </Body>
-        </View>
-        <View style={styles.breakContent}>
-          <View style={[styles.iconCircle72, { backgroundColor: colors.primaryTintBg }]}>
-            <Text size={32}>☕</Text>
+      <ScreenContainer>
+        <View style={styles.breakContainer}>
+          <Meta style={styles.centerText}>{task.name}</Meta>
+
+          <View style={styles.breakContent}>
+            <View style={styles.breakIcon}>
+              <Text style={{ fontSize: 32 }}>☕</Text>
+            </View>
+            <H2>Cycle {currentCycle} complete</H2>
+            <Meta style={styles.centerText}>Break time — stretch, breathe, hydrate.</Meta>
+            <Text style={t(T.timer, { fontSize: 56, color: color.textMuted, textAlign: "center" })}>
+              {formatMMSS(secondsLeft)}
+            </Text>
+            {cycleDots((i) => i === currentCycle - 1)}
+            <Meta style={[styles.centerText, { color: color.textFaint }]}>
+              Break countdown · cycle {currentCycle + 1} will not start on its own
+            </Meta>
           </View>
-          <Text size={fontSize.xl} weight="extraBold">
-            Cycle {currentCycle} complete!
-          </Text>
-          <Body color={colors.textMuted} style={styles.centerText}>
-            Break time — stretch, breathe, hydrate.
-          </Body>
-          <Text size={56} weight="extraBold" color={colors.textMuted} style={styles.tabularNums}>
-            {formatMMSS(secondsLeft)}
-          </Text>
-          <View style={styles.dotsRow}>
-            {Array.from({ length: totalCycles }, (_, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.dot,
-                  {
-                    backgroundColor: i === currentCycle - 1 ? colors.secondary : colors.neutralFill,
-                    borderWidth: i === currentCycle - 1 ? 0 : 1,
-                    borderColor: colors.toggleOff,
-                  },
-                ]}
-              />
-            ))}
+
+          <View style={styles.bottomStack}>
+            <Button label={`Start Cycle ${currentCycle + 1}`} onPress={handleStartNextCycle} />
+            <Button label="End session here" variant="secondary" onPress={() => setEndConfirmOpen(true)} />
           </View>
-          <Body size={fontSize.caption} color={colors.textFaint} style={styles.centerText}>
-            Break countdown · cycle {currentCycle + 1} will <Text weight="bold" size={fontSize.caption}>not</Text> start on its own
-          </Body>
         </View>
-        <View style={styles.bottomButtons}>
-          <Button label={`Start Cycle ${currentCycle + 1}`} large onPress={handleStartNextCycle} />
-          <Button label="End session here" variant="secondary" onPress={() => setEndConfirmOpen(true)} />
-        </View>
+
         <ConfirmModal
           visible={endConfirmOpen}
           title="End this session early?"
-          message={`It still counts toward your total time.`}
+          message="It still counts toward your total time."
           confirmLabel="End session"
           cancelLabel="Keep going"
-          confirmVariant="destructive"
           onConfirm={handleEndSessionConfirm}
           onCancel={() => setEndConfirmOpen(false)}
         />
@@ -312,39 +196,32 @@ export function FocusSessionScreen() {
       <ScreenContainer>
         <Modal visible transparent animationType="fade">
           <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, { backgroundColor: colors.bgCard }]}>
-              <View style={[styles.iconCircle64, { backgroundColor: colors.primaryTintBg }]}>
-                <Text size={28}>✓</Text>
+            <View style={styles.modalCard}>
+              <View style={styles.completeIcon}>
+                <Text style={{ fontSize: 28 }}>✓</Text>
               </View>
-              <Text size={fontSize.xl} weight="bold">
-                Session complete
-              </Text>
+              <H2>Session complete</H2>
+
               <View style={styles.statsRow}>
                 <View style={styles.statItem}>
-                  <Text size={fontSize.body} weight="bold">
-                    {formatMinutes(minutes)}
-                  </Text>
-                  <Body size={fontSize.micro} color={colors.textFaint}>
-                    focused
-                  </Body>
+                  <Body style={{ fontWeight: "800", color: color.text }}>{formatMinutes(minutes)}</Body>
+                  <Meta style={{ color: color.textFaint }}>focused</Meta>
                 </View>
                 <View style={styles.statItem}>
                   <View style={styles.xpRow}>
-                    <Text size={fontSize.body} weight="bold" color={colors.secondaryText}>
+                    <Body style={{ fontWeight: "800", color: color.success }}>
                       +{completedSession.pointsEarned ?? 0} XP
-                    </Text>
-                    <InfoTooltip topic="xp" color={colors.secondaryText} />
+                    </Body>
+                    <InfoTooltip topic="xp" color={color.success} />
                   </View>
-                  <Body size={fontSize.micro} color={colors.textFaint}>
-                    earned
-                  </Body>
+                  <Meta style={{ color: color.textFaint }}>earned</Meta>
                 </View>
               </View>
-              <Body color={colors.textMuted} style={styles.centerText}>
-                Is <Text weight="bold">{task.name}</Text> done, or will you come back to it?
-              </Body>
+
+              <Meta style={styles.centerText}>Is “{task.name}” done, or will you come back to it?</Meta>
+
               <View style={styles.modalActions}>
-                <Button label="Mark task complete 🎉" onPress={handleMarkTaskComplete} loading={finishing} />
+                <Button label="Mark task complete 🎉" loading={finishing} onPress={handleMarkTaskComplete} />
                 <Button label="Keep task open" variant="secondary" onPress={handleKeepTaskOpen} />
               </View>
             </View>
@@ -355,86 +232,209 @@ export function FocusSessionScreen() {
   }
 
   const percent = ((WORK_SECONDS - secondsLeft) / WORK_SECONDS) * 100;
+  const minutesLeft = Math.floor(secondsLeft / 60);
 
   return (
-    <ScreenContainer backgroundColor={colors.bgFocusSession}>
-      <View style={styles.workingHeader}>
-        <Body weight="semiBold" color={colors.textMuted}>
-          {task.name}
-        </Body>
+    <ScreenContainer>
+      <View style={styles.sessionContainer}>
+        <Meta style={[styles.centerText, { fontWeight: "800", color: color.text }]}>{task.name}</Meta>
+
         {params.dndEnabled ? (
-          <View style={[styles.dndPill, { backgroundColor: colors.primaryTintBg }]}>
-            <Text size={fontSize.tiny}>🔕</Text>
-            <Body size={fontSize.tiny} weight="semiBold" color={colors.primaryTintText}>
-              Do Not Disturb · preview
-            </Body>
+          <View style={styles.dndPillWrap}>
+            <View style={styles.dndPill}>
+              <DoNotDisturbIcon size={18} />
+              <Meta style={{ fontWeight: "800", color: color.success }}>Do Not Disturb · preview</Meta>
+            </View>
           </View>
         ) : null}
-      </View>
-      <View style={styles.centerContent}>
-        <Text size={fontSize.timer} weight="extraBold" style={styles.tabularNums}>
-          {formatMMSS(secondsLeft)}
-        </Text>
-        <View style={styles.progressSection}>
-          <ProgressBar percent={percent} height={10} linear />
-          <View style={styles.progressFooterRow}>
-            <Body size={fontSize.caption} color={colors.textFaint}>
-              {Math.round(percent)}% complete
-            </Body>
-            {focusMode === "pomodoro" ? (
-              <Body size={fontSize.caption} color={colors.textFaint}>
-                Cycle {currentCycle} of {totalCycles}
-              </Body>
-            ) : (
-              <Body size={fontSize.caption} color={colors.textFaint}>
-                25 min session
-              </Body>
-            )}
+
+        <View style={styles.timerBlock}>
+          <Timer
+            accessibilityLabel={`${minutesLeft} minutes remaining`}
+            style={styles.timerText}
+          >
+            {formatMMSS(secondsLeft)}
+          </Timer>
+
+          <View style={styles.progressSection}>
+            <ProgressBar pct={percent} height={7} />
+            <View style={styles.progressFooter}>
+              <Meta>{Math.round(percent)}% complete</Meta>
+              <Meta>
+                {focusMode === "pomodoro"
+                  ? `Cycle ${currentCycle} of ${totalCycles}`
+                  : `${defaultFocusDurationMinutes} min session`}
+              </Meta>
+            </View>
           </View>
-        </View>
-        <View style={styles.restingSection}>
-          <CompanionOrb state="resting" size={40} />
-          <Body size={fontSize.micro} color={colors.textFaint}>
-            {restingLine(name)}
-          </Body>
-        </View>
-        {focusMode === "pomodoro" ? (
-          <View style={styles.dotsRow}>
-            {Array.from({ length: totalCycles }, (_, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.dot,
-                  {
-                    backgroundColor: i < currentCycle ? colors.primary : colors.neutralFill,
-                    borderWidth: i < currentCycle ? 0 : 1,
-                    borderColor: colors.toggleOff,
-                  },
-                ]}
-              />
-            ))}
+
+          <View style={styles.restingSection}>
+            <Ferne size={54} asleep />
+            <Meta>{restingLine(name)}</Meta>
           </View>
-        ) : null}
+
+          {focusMode === "pomodoro" ? cycleDots((i) => i < currentCycle) : null}
+        </View>
       </View>
-      <View style={styles.bottomActionRow}>
+
+      <View style={styles.bottomRow}>
         <Button
           label={paused ? "▶ Resume" : "❙❙ Pause"}
           variant="secondary"
           onPress={() => setPaused((p) => !p)}
-          style={styles.pauseButton}
+          style={styles.bottomButton}
         />
-        <Button label="End Session" variant="destructive" onPress={() => setEndConfirmOpen(true)} style={styles.endButton} />
+        <Button
+          label="End Session"
+          variant="destructive"
+          onPress={() => setEndConfirmOpen(true)}
+          style={styles.bottomButton}
+        />
       </View>
+
       <ConfirmModal
         visible={endConfirmOpen}
         title="End this session early?"
         message="It still counts toward your total time."
         confirmLabel="End session"
         cancelLabel="Keep going"
-        confirmVariant="destructive"
         onConfirm={handleEndSessionConfirm}
         onCancel={() => setEndConfirmOpen(false)}
       />
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  sessionContainer: {
+    flex: 1,
+    paddingHorizontal: space.gutter,
+    paddingTop: space.md,
+  },
+  centerText: {
+    textAlign: "center",
+  },
+  dndPillWrap: {
+    alignItems: "center",
+    marginTop: space.sm,
+  },
+  dndPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+    borderWidth: 1,
+    borderColor: color.successBorder,
+    backgroundColor: color.successFill,
+    borderRadius: radius.pill,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+  },
+  timerBlock: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  timerText: {
+    textAlign: "center",
+    lineHeight: 76,
+    fontVariant: ["tabular-nums"],
+  },
+  progressSection: {
+    marginTop: 26,
+  },
+  progressFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: space.sm,
+  },
+  restingSection: {
+    alignItems: "center",
+    gap: 9,
+    marginTop: 26,
+  },
+  dotsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: space.sm,
+    marginTop: 16,
+  },
+  dot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+  },
+  bottomRow: {
+    flexDirection: "row",
+    gap: space.md,
+    paddingHorizontal: space.gutter,
+    paddingTop: space.base,
+    paddingBottom: 18,
+  },
+  bottomButton: {
+    flex: 1,
+  },
+  breakContainer: {
+    flex: 1,
+    paddingHorizontal: space.gutter,
+    paddingTop: space.md,
+  },
+  breakContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: space.base,
+  },
+  breakIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: color.successFill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bottomStack: {
+    gap: space.md,
+    paddingBottom: 18,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(26,26,26,.42)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: space.gutter,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 340,
+    backgroundColor: color.card,
+    borderRadius: 16,
+    padding: 22,
+    alignItems: "center",
+    gap: space.base,
+  },
+  completeIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: color.successFill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statsRow: {
+    flexDirection: "row",
+    gap: space.lg,
+  },
+  statItem: {
+    alignItems: "center",
+    gap: 2,
+  },
+  xpRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  modalActions: {
+    width: "100%",
+    gap: space.md,
+    marginTop: space.xs,
+  },
+});

@@ -1,30 +1,18 @@
 import React from "react";
 import { StyleSheet, View, ViewProps } from "react-native";
-import { useAppearance } from "../state/AppearanceContext";
-import { radii } from "../theme/spacing";
+import { color, radius, space } from "../theme";
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: radii.control,
-    padding: 16,
+    backgroundColor: color.card,
+    borderWidth: 1,
+    borderColor: color.border,
+    borderRadius: radius.card,
+    padding: space.card,
   },
 });
 
-/** White, 1px-bordered card with 16px padding — the base building block for most screens. */
+/** White, 1px bordered, radius 12, padding 15 — and deliberately no shadow (design §5). */
 export function Card({ style, ...rest }: ViewProps) {
-  const { colors } = useAppearance();
-  return (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.bgCard,
-          borderWidth: 1,
-          borderColor: colors.borderCard,
-        },
-        style,
-      ]}
-      {...rest}
-    />
-  );
+  return <View style={[styles.card, style]} {...rest} />;
 }

@@ -41,6 +41,7 @@ yarn-error.*
 /android
 
 .idea
+designdocs
 
 # google-services.json / GoogleService-Info.plist are deliberately tracked, not
 # ignored — they're client-side Firebase config (project ID + a domain-restricted API

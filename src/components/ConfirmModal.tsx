@@ -1,36 +1,37 @@
 import React from "react";
-import { Modal, Pressable, StyleSheet, View } from "react-native";
-import { useAppearance } from "../state/AppearanceContext";
-import { radii, spacing } from "../theme/spacing";
-import { fontSize } from "../theme/typography";
+import { Modal, StyleSheet, View } from "react-native";
+import { color, space } from "../theme";
 import { Button } from "./Button";
-import { Body, Text } from "./Text";
+import { H2, Meta } from "./Text";
 
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(26,26,26,.45)",
+    backgroundColor: "rgba(26,26,26,.42)",
+    alignItems: "center",
     justifyContent: "center",
   },
   card: {
-    marginHorizontal: 24,
-    borderRadius: radii.modal,
-    padding: spacing.md,
-    gap: 14,
-    alignItems: "center",
+    width: 302,
+    maxWidth: "90%",
+    backgroundColor: color.card,
+    borderRadius: 16,
+    padding: 22,
   },
-  title: {
+  centered: {
     textAlign: "center",
   },
   message: {
     textAlign: "center",
+    marginTop: 7,
+    lineHeight: 20,
   },
-  buttonRow: {
+  actions: {
     flexDirection: "row",
-    gap: 10,
-    width: "100%",
+    gap: space.md,
+    marginTop: 18,
   },
-  buttonFlex: {
+  action: {
     flex: 1,
   },
 });
@@ -41,48 +42,42 @@ interface ConfirmModalProps {
   message: string;
   confirmLabel: string;
   cancelLabel?: string;
-  /**
-   * Per the design handoff's S3 confirmation modals, the confirm button's style depends
-   * on the action, not just "is this destructive": deleting a task uses a solid red fill,
-   * while ending a session early uses the outlined red style. Default to the solid style
-   * since most confirm-modal actions are irreversible deletes.
-   */
-  confirmVariant?: "destructiveSolid" | "destructive" | "primary";
   onConfirm: () => void;
   onCancel: () => void;
+  /** Renders the confirm action in the destructive style. */
+  destructive?: boolean;
+  loading?: boolean;
 }
 
-/** Centered confirmation card, fade+scale — used for delete-task / end-session-early, etc. */
 export function ConfirmModal({
   visible,
   title,
   message,
   confirmLabel,
-  cancelLabel = "Cancel",
-  confirmVariant = "destructiveSolid",
+  cancelLabel = "Keep going",
   onConfirm,
   onCancel,
+  destructive = true,
+  loading = false,
 }: ConfirmModalProps) {
-  const { colors } = useAppearance();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable style={styles.backdrop} onPress={onCancel}>
-        <Pressable
-          onPress={(e) => e.stopPropagation()}
-          style={[styles.card, { backgroundColor: colors.bgCard }]}
-        >
-          <Text size={fontSize.lg} weight="bold" style={styles.title}>
-            {title}
-          </Text>
-          <Body color={colors.textMuted} style={styles.message}>
-            {message}
-          </Body>
-          <View style={styles.buttonRow}>
-            <Button label={cancelLabel} variant="secondary" onPress={onCancel} style={styles.buttonFlex} />
-            <Button label={confirmLabel} variant={confirmVariant} onPress={onConfirm} style={styles.buttonFlex} />
+      <View style={styles.backdrop}>
+        <View style={styles.card}>
+          <H2 style={styles.centered}>{title}</H2>
+          <Meta style={styles.message}>{message}</Meta>
+          <View style={styles.actions}>
+            <Button label={cancelLabel} variant="secondary" onPress={onCancel} style={styles.action} />
+            <Button
+              label={confirmLabel}
+              variant={destructive ? "destructive" : "primary"}
+              loading={loading}
+              onPress={onConfirm}
+              style={styles.action}
+            />
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

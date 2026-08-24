@@ -1,56 +1,29 @@
-import React, { useEffect, useRef } from "react";
-import { Animated, Easing, StyleSheet, View } from "react-native";
-import { useAppearance } from "../state/AppearanceContext";
-import { radii } from "../theme/spacing";
-
-const styles = StyleSheet.create({
-  track: {
-    borderRadius: radii.pill,
-    overflow: "hidden",
-  },
-  fill: {
-    height: "100%",
-    borderRadius: radii.pill,
-  },
-});
+import React from "react";
+import { View } from "react-native";
+import { color } from "../theme";
 
 interface ProgressBarProps {
-  /** 0-100 */
-  percent: number;
+  /** 0–100; clamped, so callers can hand over raw ratios without guarding. */
+  pct: number;
   height?: number;
-  color?: string;
-  /** Session timer bar updates every second with a linear fill instead of ease-out. */
-  linear?: boolean;
+  /** Overrides the teal progress colour — goals tint their own bar with the goal colour. */
+  fill?: string;
+  track?: string;
 }
 
 /**
- * Self-contained progress module — per the design handoff this is meant to stay
- * swappable for a themed variant (e.g. tree growth) later; keep all fill logic here.
+ * Teal by default and never interactive — the design reserves `color.interactive` for
+ * things you can press, so a progress fill must not use it.
  */
-export function ProgressBar({ percent, height = 12, color, linear = false }: ProgressBarProps) {
-  const { colors } = useAppearance();
-  const widthAnim = useRef(new Animated.Value(percent)).current;
-
-  useEffect(() => {
-    Animated.timing(widthAnim, {
-      toValue: percent,
-      duration: linear ? 1000 : 400,
-      easing: linear ? Easing.linear : Easing.out(Easing.ease),
-      useNativeDriver: false,
-    }).start();
-  }, [percent, linear, widthAnim]);
-
+export function ProgressBar({ pct, height = 9, fill = color.progress, track = color.fill }: ProgressBarProps) {
+  const clamped = Math.max(0, Math.min(100, pct));
   return (
-    <View style={[styles.track, { height, backgroundColor: colors.neutralFill }]}>
-      <Animated.View
-        style={[
-          styles.fill,
-          {
-            backgroundColor: color ?? colors.primary,
-            width: widthAnim.interpolate({ inputRange: [0, 100], outputRange: ["0%", "100%"] }),
-          },
-        ]}
-      />
+    <View
+      accessibilityRole="progressbar"
+      accessibilityValue={{ now: Math.round(clamped), min: 0, max: 100 }}
+      style={{ height, backgroundColor: track, borderRadius: height / 2, overflow: "hidden" }}
+    >
+      <View style={{ width: `${clamped}%`, height, backgroundColor: fill, borderRadius: height / 2 }} />
     </View>
   );
 }

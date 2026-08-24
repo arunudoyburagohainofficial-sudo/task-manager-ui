@@ -1,38 +1,9 @@
 import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { useAppearance } from "../state/AppearanceContext";
-import { radii } from "../theme/spacing";
-import { fontSize } from "../theme/typography";
 import type { GoalDto } from "../api/types";
+import { color, radius, space, size } from "../theme";
 import { BottomSheet } from "./BottomSheet";
-import { Body, Text } from "./Text";
-
-const styles = StyleSheet.create({
-  list: {
-    gap: 8,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    minHeight: 48,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: radii.control,
-  },
-  swatch: {
-    width: 14,
-    height: 14,
-    borderRadius: 4,
-  },
-  nameColumn: {
-    flex: 1,
-  },
-  emptyState: {
-    paddingVertical: 8,
-    gap: 4,
-  },
-});
+import { Body, H2, Meta } from "./Text";
 
 interface GoalPickerSheetProps {
   visible: boolean;
@@ -47,87 +18,84 @@ interface GoalPickerSheetProps {
  * passing your target isn't a reason to stop logging honest work against it.
  */
 export function GoalPickerSheet({ visible, onClose, goals, selectedGoalId, onSelect }: GoalPickerSheetProps) {
-  const { colors } = useAppearance();
-
   function handleSelect(goalId: string | null) {
     onSelect(goalId);
     onClose();
   }
 
+  function row(key: string, selected: boolean, swatch: string, title: string, detail: string | null, onPress: () => void) {
+    return (
+      <Pressable
+        key={key}
+        accessibilityRole="radio"
+        accessibilityState={{ selected }}
+        onPress={onPress}
+        style={[styles.row, selected && styles.rowSelected]}
+      >
+        <View style={[styles.swatch, { backgroundColor: swatch }]} />
+        <View style={styles.rowText}>
+          <Body style={{ color: selected ? color.selectedText : color.text, fontWeight: "700" }}>{title}</Body>
+          {detail ? <Meta style={{ marginTop: 2 }}>{detail}</Meta> : null}
+        </View>
+        {selected ? <Body style={{ color: color.selectedText, fontWeight: "800" }}>✓</Body> : null}
+      </Pressable>
+    );
+  }
+
   return (
     <BottomSheet visible={visible} onClose={onClose}>
-      <Text size={fontSize.xl} weight="bold">
-        Count toward a goal
-      </Text>
+      <H2>Count toward a goal</H2>
       <View style={styles.list}>
-        <Pressable
-          onPress={() => handleSelect(null)}
-          style={[
-            styles.row,
-            {
-              borderWidth: selectedGoalId === null ? 2 : 1,
-              borderColor: selectedGoalId === null ? colors.primary : colors.borderCard,
-              backgroundColor: selectedGoalId === null ? colors.primaryTintBg : colors.bgCard,
-            },
-          ]}
-        >
-          <View style={[styles.swatch, { backgroundColor: colors.textFaint }]} />
-          <Text
-            weight="semiBold"
-            style={styles.nameColumn}
-            color={selectedGoalId === null ? colors.primaryTintText : colors.textDark}
-          >
-            No goal
-          </Text>
-          {selectedGoalId === null ? (
-            <Text weight="bold" color={colors.primaryTintText}>
-              ✓
-            </Text>
-          ) : null}
-        </Pressable>
+        {row("none", selectedGoalId === null, color.textFaint, "No goal", null, () => handleSelect(null))}
 
-        {goals.map((goal) => {
-          const selected = goal.id === selectedGoalId;
-          return (
-            <Pressable
-              key={goal.id}
-              onPress={() => handleSelect(goal.id)}
-              style={[
-                styles.row,
-                {
-                  borderWidth: selected ? 2 : 1,
-                  borderColor: selected ? colors.primary : colors.borderCard,
-                  backgroundColor: selected ? colors.primaryTintBg : colors.bgCard,
-                },
-              ]}
-            >
-              <View style={[styles.swatch, { backgroundColor: goal.color ?? colors.primary }]} />
-              <View style={styles.nameColumn}>
-                <Text weight="semiBold" color={selected ? colors.primaryTintText : colors.textDark}>
-                  {goal.name}
-                </Text>
-                <Body size={fontSize.micro} color={selected ? colors.primaryTintText : colors.textFaint}>
-                  {goal.totalDaysActive}/{goal.targetDays} days
-                  {goal.status === "completed" ? " · reached 🎯" : ""}
-                </Body>
-              </View>
-              {selected ? (
-                <Text weight="bold" color={colors.primaryTintText}>
-                  ✓
-                </Text>
-              ) : null}
-            </Pressable>
-          );
-        })}
+        {goals.map((goal) =>
+          row(
+            goal.id,
+            goal.id === selectedGoalId,
+            goal.color ?? color.goal,
+            goal.name,
+            `${goal.totalDaysActive}/${goal.targetDays} days${goal.status === "completed" ? " · reached" : ""}`,
+            () => handleSelect(goal.id)
+          )
+        )}
 
         {goals.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Body size={fontSize.caption} color={colors.textMuted}>
-              No goals yet — create one from Home to start tracking longer-term work.
-            </Body>
-          </View>
+          <Meta style={styles.empty}>No goals yet — create one from Home to start tracking longer-term work.</Meta>
         ) : null}
       </View>
     </BottomSheet>
   );
 }
+
+const styles = StyleSheet.create({
+  list: {
+    gap: space.sm,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.base,
+    minHeight: size.minTouch,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: color.border,
+  },
+  rowSelected: {
+    borderWidth: 1.5,
+    borderColor: color.interactive,
+    backgroundColor: color.selectedTint,
+  },
+  swatch: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
+  },
+  rowText: {
+    flex: 1,
+  },
+  empty: {
+    paddingVertical: 8,
+  },
+});

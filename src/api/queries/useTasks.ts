@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { tasksApi } from "..";
-import type { CreateTaskRequest, TaskDto, TaskStatus, UpdateTaskRequest } from "../types";
+import type { CreateTaskRequest, ReminderDto, TaskDto, TaskStatus, UpdateTaskRequest } from "../types";
 import { queryKeys } from "../queryKeys";
 import { useSession } from "../../state/SessionContext";
+import { syncReminders } from "../../notifications/useReminderSync";
 
 export const ALL_TASK_STATUSES = [undefined, "pending", "completed", "archived"] as const;
 /** The two list caches every task belongs to, regardless of status: its status-specific list, and the unfiltered "all" list. */
@@ -143,6 +144,15 @@ export function useDeleteTaskMutation() {
  * streak/grace-day/points and the goal's day count itself), so those specifically still
  * invalidate — that's a real "we know something changed but not to what," not a leftover
  * habit. Goals are only invalidated when this task actually had one.
+ *
+ * The server already stops this task's reminder as part of completing it (see
+ * TaskService.completeTask -> ReminderService.stopReminders), but that's server-side state
+ * only. Without the two lines below, a reminder already scheduled on the device for later
+ * today keeps ticking toward firing — nothing else here touches the reminders cache or the
+ * on-device notification queue, and the next real sync only happens on the app's next
+ * foreground transition (see useReminderSync). Patching isActive locally matches what
+ * useMarkTaskDoneMutation already does for the other completion path; syncReminders is
+ * what actually cancels the stale notification now instead of at that next foreground.
  */
 export function useCompleteTaskMutation() {
   const queryClient = useQueryClient();
@@ -159,6 +169,11 @@ export function useCompleteTaskMutation() {
       if (completedTask.goalId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.goals() });
       }
+
+      queryClient.setQueryData<ReminderDto[]>(queryKeys.reminders(), (old) =>
+        old?.map((r) => (r.taskId === completedTask.id ? { ...r, isActive: false } : r))
+      );
+      void syncReminders();
     },
   });
 }

@@ -5,14 +5,12 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as WebBrowser from "expo-web-browser";
 import { authApi } from "../api";
 import { ApiError } from "../api/client";
-import { useGoogleSignIn } from "../auth/googleSignIn";
 import { isPhoneAuthAvailable } from "../api/firebaseAuth";
 import { signInAsTestUser, signInWithGoogleIdToken } from "../api/firebaseWebAuth";
-import { Body, Button, Caption, GoogleIcon, ScreenContainer, ScreenTitle } from "../components";
-import { useAppearance } from "../state/AppearanceContext";
+import { useGoogleSignIn } from "../auth/googleSignIn";
+import { Body, Button, Ferne, GoogleIcon, H1, Meta, ScreenContainer } from "../components";
 import { useSession } from "../state/SessionContext";
-import { radii } from "../theme/spacing";
-import { fontSize } from "../theme/typography";
+import { color, radius, size, space } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -20,59 +18,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 // Required once per app for expo-auth-session's browser flow to close/return properly.
 WebBrowser.maybeCompleteAuthSession();
 
-const styles = StyleSheet.create({
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: "center",
-    padding: 24,
-    gap: 12,
-  },
-  logo: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-    alignSelf: "flex-start",
-  },
-  logoBars: {
-    flexDirection: "row",
-    gap: 3,
-    alignItems: "center",
-    height: 22,
-  },
-  logoBar: {
-    width: 4,
-    backgroundColor: "#fff",
-    borderRadius: 2,
-  },
-  buttonsSection: {
-    gap: 12,
-    marginTop: 12,
-  },
-  googleButton: {
-    minHeight: 52,
-    borderRadius: radii.control,
-    borderWidth: 1.5,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-  testUserButton: {
-    marginTop: 4,
-    minHeight: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  centerText: {
-    textAlign: "center",
-  },
-});
-
 export function AuthScreen() {
-  const { colors } = useAppearance();
   const { signIn } = useSession();
   const navigation = useNavigation<Nav>();
 
@@ -84,9 +30,7 @@ export function AuthScreen() {
   const [error, setError] = useState<string | null>(null);
 
   // Whichever implementation Metro picked for this platform — see src/auth/. Everything
-  // environment-specific (browser flow vs native picker, Expo Go detection, client-id
-  // checks, cancel-vs-error) lives behind this one object, so nothing below branches on
-  // platform at all.
+  // environment-specific lives behind this one object, so nothing below branches on platform.
   const google = useGoogleSignIn();
 
   async function handleGoogleToken(googleIdToken: string) {
@@ -97,36 +41,29 @@ export function AuthScreen() {
       const user = await authApi.verifyToken({ idToken });
       signIn(user);
     } catch (e) {
-      setError(e instanceof ApiError || e instanceof Error ? e.message : "Something went wrong signing in with Google.");
+      setError(
+        e instanceof ApiError || e instanceof Error ? e.message : "Something went wrong signing in with Google."
+      );
     } finally {
       setSubmitting(false);
     }
   }
 
   /**
-   * Testing only — see signInAsTestUser's own doc comment. Left reachable from every
-   * build (not stripped in release) on the same "no dev-only branches" principle as the
-   * rest of this app: it's a real sign-in path hitting the real backend, not a mock, so
-   * there's nothing to strip.
+   * Testing only — see signInAsTestUser's own doc comment. Left reachable from every build
+   * on the same "no dev-only branches" principle as the rest of this app: it's a real
+   * sign-in path hitting the real backend, not a mock, so there's nothing to strip.
    */
   async function handleTestUserPress() {
     setError(null);
     setTestUserLoading(true);
     try {
-      // Logged so a hang (as opposed to a thrown/caught error) is visible in the Metro
-      // terminal — which of these two awaits it's stuck on tells us whether it's Firebase
-      // Auth itself or our own /auth/verify call that isn't responding.
-      console.log("[test-user] starting signInAnonymously...");
       const idToken = await signInAsTestUser();
-      console.log("[test-user] got Firebase idToken, calling /auth/verify...");
-      // Already a Firebase ID token (signInAsTestUser completes the Firebase sign-in
-      // itself) — straight to /auth/verify, unlike handleGoogleToken which starts from a
-      // *Google* OAuth token and still has to exchange it for a Firebase one first.
+      // Already a Firebase ID token — straight to /auth/verify, unlike handleGoogleToken
+      // which starts from a *Google* OAuth token and has to exchange it first.
       const user = await authApi.verifyToken({ idToken });
-      console.log("[test-user] verified, signing in as", user.username);
       signIn(user);
     } catch (e) {
-      console.log("[test-user] failed:", e);
       setError(e instanceof ApiError || e instanceof Error ? e.message : "Couldn't sign in as a test user.");
     } finally {
       setTestUserLoading(false);
@@ -147,75 +84,67 @@ export function AuthScreen() {
     }
   }
 
+  const googleDisabled = !google.isReady || !google.isAvailable || submitting || testUserLoading;
+
   return (
     <ScreenContainer>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={[styles.logo, { backgroundColor: colors.primary }]}>
-          <View style={styles.logoBars}>
-            <View style={[styles.logoBar, { height: 10 }]} />
-            <View style={[styles.logoBar, { height: 20 }]} />
-            <View style={[styles.logoBar, { height: 14 }]} />
-          </View>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.hero}>
+          <Ferne size={88} />
+          <H1 style={styles.centered}>Welcome</H1>
+          <Meta style={styles.centered}>Capture tasks fast. Focus without friction.</Meta>
         </View>
 
-        <ScreenTitle size={fontSize.taskDetailTitle}>Welcome</ScreenTitle>
-        <Body color={colors.textMuted}>Capture tasks fast. Focus without friction.</Body>
+        {error ? <Body style={{ color: color.danger }}>{error}</Body> : null}
 
-        {error ? <Body color={colors.destructive}>{error}</Body> : null}
-
-        <View style={styles.buttonsSection}>
+        <View style={styles.actions}>
           <Button
             label="Continue with phone"
-            large
             disabled={!isPhoneAuthAvailable || submitting || testUserLoading}
             onPress={() => navigation.navigate("PhoneSignIn")}
           />
           {!isPhoneAuthAvailable ? (
-            <Caption style={styles.centerText}>
+            <Meta style={[styles.centered, { color: color.textFaint }]}>
               Phone sign-in needs a development build — it isn&rsquo;t part of Expo Go.
-            </Caption>
+            </Meta>
           ) : null}
 
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Continue with Google"
+            accessibilityState={{ disabled: googleDisabled }}
             onPress={handleGooglePress}
-            disabled={!google.isReady || !google.isAvailable || submitting || testUserLoading}
-            style={({ pressed }) => [
-              styles.googleButton,
-              {
-                backgroundColor: colors.bgCard,
-                borderColor: colors.borderCard,
-                opacity: !google.isReady || !google.isAvailable || submitting ? 0.5 : pressed ? 0.85 : 1,
-              },
-            ]}
+            disabled={googleDisabled}
+            style={({ pressed }) => [styles.googleButton, { opacity: googleDisabled ? 0.5 : pressed ? 0.85 : 1 }]}
           >
             {submitting ? (
-              <ActivityIndicator color={colors.textDark} />
+              <ActivityIndicator color={color.text} />
             ) : (
               <>
                 <GoogleIcon size={20} />
-                <Body weight="semiBold" size={fontSize.bodyLg}>
-                  Continue with Google
-                </Body>
+                <Body style={{ fontWeight: "800", color: color.text }}>Continue with Google</Body>
               </>
             )}
           </Pressable>
 
           {google.unavailableReason ? (
-            <Caption style={styles.centerText}>{google.unavailableReason}</Caption>
+            <Meta style={[styles.centered, { color: color.textFaint }]}>{google.unavailableReason}</Meta>
           ) : null}
 
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Continue as test user"
             onPress={handleTestUserPress}
             disabled={submitting || testUserLoading}
             hitSlop={8}
-            style={styles.testUserButton}
+            style={styles.testUser}
           >
             {testUserLoading ? (
-              <ActivityIndicator size="small" color={colors.textFaint} />
+              <ActivityIndicator size="small" color={color.textFaint} />
             ) : (
-              <Caption style={[styles.centerText, { opacity: submitting ? 0.5 : 1 }]}>
+              <Meta style={[styles.centered, { color: color.textFaint, opacity: submitting ? 0.5 : 1 }]}>
                 Continue as test user
-              </Caption>
+              </Meta>
             )}
           </Pressable>
         </View>
@@ -223,3 +152,40 @@ export function AuthScreen() {
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  content: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: space.gutter,
+    paddingVertical: space.lg,
+    gap: space.base,
+  },
+  hero: {
+    alignItems: "center",
+    gap: space.md,
+    marginBottom: space.sm,
+  },
+  centered: {
+    textAlign: "center",
+  },
+  actions: {
+    gap: space.base,
+  },
+  googleButton: {
+    minHeight: size.button,
+    borderRadius: radius.control,
+    backgroundColor: color.card,
+    borderWidth: 1.5,
+    borderColor: color.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: space.md,
+  },
+  testUser: {
+    minHeight: size.minTouch,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});

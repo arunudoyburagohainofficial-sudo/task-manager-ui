@@ -2,132 +2,33 @@ import React, { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { usersApi } from "../api";
 import { ApiError } from "../api/client";
-import { BottomSheet, Body, Button, ConfirmModal, Label, ScreenContainer, ScreenTitle, SectionLabel, Text, TextField, Toggle } from "../components";
-import { useAppearance } from "../state/AppearanceContext";
+import {
+  Badge,
+  BottomSheet,
+  Body,
+  Button,
+  Card,
+  ConfirmModal,
+  DoNotDisturbIcon,
+  Eyebrow,
+  H1,
+  H2,
+  IconRow,
+  Meta,
+  ScreenContainer,
+  SettingsRow,
+  Stepper,
+  TextField,
+  Toggle,
+} from "../components";
 import { usePreferences } from "../state/PreferencesContext";
 import { useSession } from "../state/SessionContext";
-import { radii } from "../theme/spacing";
-import { fontSize } from "../theme/typography";
+import { color, radius, space } from "../theme";
 import { formatMinutes } from "../utils/format";
 
 const FOCUS_DURATION_PRESETS = [15, 25, 45, 60];
 
-const styles = StyleSheet.create({
-  row: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    minHeight: 48,
-    flexDirection: "row",
-    // justifyContent: "space-between" alone doesn't stop either side overflowing the
-    // row — it only ever gave in-bounds children breathing room between them. Neither
-    // side had a flex/shrink constraint, so a long email or a long label+badge just
-    // ran past the row's edge instead of wrapping. flexShrink on the label lets it
-    // wrap onto a second line (minHeight, not a fixed height, so the row grows to fit);
-    // flexShrink: 0 + a fixed gap keeps the value side from being crushed by that.
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-    borderBottomWidth: 1,
-  },
-  rowLabel: {
-    flexShrink: 1,
-  },
-  rowValue: {
-    flexShrink: 0,
-  },
-  soonBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: radii.pill,
-  },
-  group: {
-    borderWidth: 1,
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  header: {
-    padding: 24,
-    paddingBottom: 8,
-  },
-  scrollContent: {
-    padding: 16,
-    gap: 6,
-  },
-  sectionLabel: {
-    paddingHorizontal: 8,
-    marginTop: 12,
-  },
-  dndCaption: {
-    paddingHorizontal: 8,
-  },
-  dndLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  weeklyGoalRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-  },
-  savePreferencesRow: {
-    paddingHorizontal: 8,
-    paddingTop: 4,
-  },
-  deleteAccountButton: {
-    padding: 14,
-    minHeight: 48,
-    justifyContent: "center",
-  },
-  versionText: {
-    textAlign: "center",
-    marginTop: 8,
-  },
-  sheetContent: {
-    gap: 12,
-    marginTop: 4,
-  },
-  readOnlyField: {
-    gap: 6,
-  },
-});
-
-function SettingsRow({ label, right, onPress }: { label: React.ReactNode; right: React.ReactNode; onPress?: () => void }) {
-  const { colors } = useAppearance();
-  const Wrapper = onPress ? Pressable : View;
-  return (
-    <Wrapper onPress={onPress} style={[styles.row, { borderBottomColor: colors.divider }]}>
-      <View style={styles.rowLabel}>
-        {typeof label === "string" ? <Text size={fontSize.bodySm}>{label}</Text> : label}
-      </View>
-      <View style={styles.rowValue}>{right}</View>
-    </Wrapper>
-  );
-}
-
-/** Small tinted pill for rows that are UI-complete but not wired to a real OS capability yet. */
-function SoonBadge() {
-  const { colors } = useAppearance();
-  return (
-    <View style={[styles.soonBadge, { backgroundColor: colors.warningTintBg }]}>
-      <Text size={fontSize.tiny} weight="bold" color={colors.warningTintText}>
-        SOON
-      </Text>
-    </View>
-  );
-}
-
-function SettingsGroup({ children }: { children: React.ReactNode }) {
-  const { colors } = useAppearance();
-  return (
-    <View style={[styles.group, { backgroundColor: colors.bgCard, borderColor: colors.borderCard }]}>
-      {children}
-    </View>
-  );
-}
-
 export function SettingsScreen() {
-  const { colors } = useAppearance();
   const {
     defaultFocusDurationMinutes,
     notificationsEnabled,
@@ -137,6 +38,7 @@ export function SettingsScreen() {
     setDndDuringFocusEnabled,
   } = usePreferences();
   const { user, updateUser, signOut } = useSession();
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [profileSheetOpen, setProfileSheetOpen] = useState(false);
@@ -180,9 +82,7 @@ export function SettingsScreen() {
     try {
       // Display name only — email and phone are Firebase identity and the API won't take
       // them (see UpdateUserRequest).
-      const updated = await usersApi.updateProfile({
-        displayName: editDisplayName.trim() || undefined,
-      });
+      const updated = await usersApi.updateProfile({ displayName: editDisplayName.trim() || undefined });
       updateUser(updated);
       setProfileSheetOpen(false);
     } catch (e) {
@@ -215,8 +115,7 @@ export function SettingsScreen() {
   /**
    * The one place preferences reach anything durable. Focus duration and notifications are
    * client-only (see PreferencesContext), so the sole network call here is the weekly goal
-   * — and only when it actually changed, so saving after toggling something local costs
-   * nothing.
+   * — and only when it actually changed.
    *
    * Local writes go first because they can't fail. If the goal request then errors, the
    * local half stays saved, the goal draft keeps the value the user asked for, and the
@@ -242,125 +141,187 @@ export function SettingsScreen() {
 
   return (
     <ScreenContainer>
-      <View style={styles.header}>
-        <ScreenTitle>Settings</ScreenTitle>
-      </View>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <H1>Settings</H1>
+
         {/* Only Name is pressable — email and phone are shown for reference but can't be
             changed, so giving them a tap target would promise an editor that isn't there. */}
-        <SettingsGroup>
+        <Card style={styles.group}>
           <SettingsRow
             label="Name"
             onPress={openProfileSheet}
-            right={<Body color={colors.textMuted}>{user.displayName || user.username} ▾</Body>}
+            right={<Body style={{ color: color.text }}>{user.displayName || user.username} ▾</Body>}
           />
-          <SettingsRow
-            label="Email"
-            right={<Body size={fontSize.label} color={colors.textFaint}>{user.email ?? "—"}</Body>}
-          />
+          <SettingsRow label="Email" right={<Body style={{ color: color.textFaint }}>{user.email ?? "—"}</Body>} />
           <SettingsRow
             label="Phone"
-            right={<Body size={fontSize.label} color={colors.textFaint}>{user.phoneNumber ?? "—"}</Body>}
+            last
+            right={<Body style={{ color: color.textFaint }}>{user.phoneNumber ?? "—"}</Body>}
           />
-        </SettingsGroup>
+        </Card>
 
-        <SectionLabel style={styles.sectionLabel}>Preferences</SectionLabel>
-        <SettingsGroup>
+        <View style={styles.sectionLabel}>
+          <Eyebrow>PREFERENCES</Eyebrow>
+        </View>
+        <Card style={styles.group}>
           <SettingsRow
             label="Reminder notifications"
-            right={<Toggle value={draftNotifications} onChange={setDraftNotifications} />}
+            right={
+              <Toggle value={draftNotifications} onChange={setDraftNotifications} label="Reminder notifications" />
+            }
           />
           <SettingsRow
             label="Default focus duration"
             onPress={cycleFocusDuration}
-            right={<Body color={colors.textMuted}>{formatMinutes(draftFocusMinutes)} ▾</Body>}
+            right={<Body style={{ color: color.text }}>{formatMinutes(draftFocusMinutes)} ▾</Body>}
           />
           <SettingsRow
             label="Weekly goal"
+            last
             right={
-              <View style={styles.weeklyGoalRow}>
-                <Pressable onPress={() => setDraftWeeklyGoal((g) => Math.max(1, g - 1))} hitSlop={8}>
-                  <Text weight="bold" size={fontSize.lg}>−</Text>
-                </Pressable>
-                <Body color={colors.textMuted}>{draftWeeklyGoal} tasks</Body>
-                <Pressable onPress={() => setDraftWeeklyGoal((g) => g + 1)} hitSlop={8}>
-                  <Text weight="bold" size={fontSize.lg}>+</Text>
-                </Pressable>
-              </View>
+              <Stepper
+                value={draftWeeklyGoal}
+                onChange={setDraftWeeklyGoal}
+                min={1}
+                max={50}
+                suffix="tasks"
+                label="weekly goal"
+              />
             }
           />
-        </SettingsGroup>
+        </Card>
+
         {/* Appears only once something actually changed, so the section reads as settled
             the rest of the time rather than permanently asking to be saved. */}
         {preferencesDirty ? (
-          <View style={styles.savePreferencesRow}>
-            <Button
-              label="Save preferences"
-              loading={savingPreferences}
-              onPress={handleSavePreferences}
-            />
-          </View>
+          <Button
+            label="Save preferences"
+            loading={savingPreferences}
+            onPress={handleSavePreferences}
+            style={styles.savePreferences}
+          />
         ) : null}
 
-        <SectionLabel style={styles.sectionLabel}>Focus sessions</SectionLabel>
-        <SettingsGroup>
-          <SettingsRow
-            label={
-              <View style={styles.dndLabelRow}>
-                <Text size={fontSize.bodySm}>🔕 Do Not Disturb during focus</Text>
-                <SoonBadge />
-              </View>
-            }
-            right={<Toggle value={dndDuringFocusEnabled} onChange={setDndDuringFocusEnabled} />}
-          />
-        </SettingsGroup>
-        <Body size={fontSize.micro} color={colors.textFaint} style={styles.dndCaption}>
-          Silences your phone while a session runs. Needs a one-time Android permission — coming in a future update; not yet available on iOS.
-        </Body>
+        <View style={styles.sectionLabel}>
+          <Eyebrow>FOCUS SESSIONS</Eyebrow>
+        </View>
+        <Card style={styles.dndCard}>
+          <View style={styles.dndLabel}>
+            <IconRow icon={<DoNotDisturbIcon />} gap={9}>
+              <Body>Do Not Disturb during focus</Body>
+            </IconRow>
+            <Badge label="SOON" />
+          </View>
+          <Toggle value={dndDuringFocusEnabled} onChange={setDndDuringFocusEnabled} label="Do Not Disturb during focus" />
+        </Card>
+        <Meta style={styles.dndCaption}>
+          Silences your phone while a session runs. Needs a one-time Android permission — coming in a future update;
+          not yet available on iOS.
+        </Meta>
 
-        <SettingsGroup>
-          <Pressable onPress={() => setDeleteConfirmOpen(true)} style={styles.deleteAccountButton}>
-            <Text weight="semiBold" color={colors.destructive}>
-              Delete my account
-            </Text>
-          </Pressable>
-        </SettingsGroup>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setDeleteConfirmOpen(true)}
+          style={styles.deleteCard}
+        >
+          <Body style={{ fontWeight: "800", color: color.danger }}>Delete my account</Body>
+        </Pressable>
 
-        <Body size={fontSize.micro} color={colors.textFaint} style={styles.versionText}>
-          Version 1.0.0 · Support &amp; feedback
-        </Body>
+        <Meta style={styles.version}>Version 1.0.0 · Support &amp; feedback</Meta>
       </ScrollView>
 
       <ConfirmModal
         visible={deleteConfirmOpen}
         title="Delete my account?"
-        message="This permanently deletes your account and everything in it — tasks, categories, reminders, streak, and progress history. This can't be undone."
-        confirmLabel={deleting ? "Deleting…" : "Delete account"}
+        message="This permanently deletes your account and everything in it — tasks, goals, reminders, streak, and progress history. This can't be undone."
+        confirmLabel="Delete account"
+        cancelLabel="Cancel"
+        loading={deleting}
         onConfirm={handleDeleteAccount}
         onCancel={() => setDeleteConfirmOpen(false)}
       />
 
       <BottomSheet visible={profileSheetOpen} onClose={() => setProfileSheetOpen(false)}>
-        <ScreenTitle size={fontSize.lg}>Edit profile</ScreenTitle>
-        <View style={styles.sheetContent}>
-          <TextField label="Display name" value={editDisplayName} onChangeText={setEditDisplayName} placeholder={user.username} />
+        <H2>Edit profile</H2>
+        <TextField
+          label="Display name"
+          value={editDisplayName}
+          onChangeText={setEditDisplayName}
+          placeholder={user.username}
+        />
 
-          <View style={styles.readOnlyField}>
-            <Label>Email</Label>
-            <Body color={colors.textMuted}>{user.email ?? "—"}</Body>
-          </View>
-          <View style={styles.readOnlyField}>
-            <Label>Phone</Label>
-            <Body color={colors.textMuted}>{user.phoneNumber ?? "—"}</Body>
-          </View>
-          <Body size={fontSize.micro} color={colors.textFaint}>
-            Email and phone come from how you signed in and can&rsquo;t be changed here.
-          </Body>
-
-          {profileError ? <Body color={colors.destructive}>{profileError}</Body> : null}
-          <Button label="Save changes" large loading={savingProfile} onPress={handleSaveProfile} />
+        <View style={styles.readOnlyField}>
+          <Meta>Email</Meta>
+          <Body>{user.email ?? "—"}</Body>
         </View>
+        <View style={styles.readOnlyField}>
+          <Meta>Phone</Meta>
+          <Body>{user.phoneNumber ?? "—"}</Body>
+        </View>
+        <Meta style={{ color: color.textFaint }}>
+          Email and phone come from how you signed in and can&rsquo;t be changed here.
+        </Meta>
+
+        {profileError ? <Body style={{ color: color.danger }}>{profileError}</Body> : null}
+        <Button label="Save changes" loading={savingProfile} onPress={handleSaveProfile} />
       </BottomSheet>
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  content: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.sm,
+    paddingBottom: 24,
+  },
+  group: {
+    marginTop: 16,
+    padding: 0,
+    overflow: "hidden",
+  },
+  sectionLabel: {
+    marginTop: 18,
+    marginBottom: space.sm,
+  },
+  savePreferences: {
+    marginTop: space.base,
+  },
+  dndCard: {
+    paddingVertical: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.md,
+  },
+  dndLabel: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    flexWrap: "wrap",
+  },
+  dndCaption: {
+    color: color.textLabel,
+    lineHeight: 20,
+    marginTop: space.sm,
+    marginHorizontal: 2,
+    marginBottom: space.base,
+  },
+  deleteCard: {
+    backgroundColor: color.card,
+    borderWidth: 1,
+    borderColor: "#F1D8D8",
+    borderRadius: radius.card,
+    padding: space.card,
+    minHeight: 50,
+    justifyContent: "center",
+  },
+  version: {
+    color: color.textFaint,
+    textAlign: "center",
+    marginTop: 16,
+  },
+  readOnlyField: {
+    gap: 6,
+  },
+});

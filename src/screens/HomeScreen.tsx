@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Pressable, RefreshControl, SectionList, StyleSheet, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
@@ -8,152 +8,45 @@ import {
   useGoalsQuery,
   useUpdateGoalMutation,
 } from "../api/queries/useGoals";
-import { useMarkTaskDoneMutation, useRemindersQuery } from "../api/queries/useReminders";
 import { useStreakQuery } from "../api/queries/useProgress";
+import { useMarkTaskDoneMutation, useRemindersQuery } from "../api/queries/useReminders";
 import { useTasksQuery } from "../api/queries/useTasks";
 import type { GoalDto, ReminderDto } from "../api/types";
-import { Body, Button, Card, CompanionBubble, GoalEditSheet, GoalStrip, HeroGreeting, InfoTooltip, Label, ScreenContainer, SectionLabel, Text } from "../components";
-import { PulseCaptureButton } from "../components/PulseCaptureButton";
-import { useAppearance } from "../state/AppearanceContext";
+import {
+  AddGoalCard,
+  Card,
+  CompletedRow,
+  Eyebrow,
+  Ferne,
+  GoalCard,
+  GoalEditSheet,
+  H1,
+  InfoTooltip,
+  Meta,
+  ScreenContainer,
+  SectionHeader,
+  StreakIconInline,
+  TaskRow,
+} from "../components";
+import { syncReminders } from "../notifications/useReminderSync";
 import { useCompanion } from "../state/CompanionContext";
 import { useSession } from "../state/SessionContext";
-import { radii } from "../theme/spacing";
-import { fontSize } from "../theme/typography";
+import { color, radius, space, text as t, type as T } from "../theme";
 import { homeLine } from "../theme/companionCopy";
 import { formatClockTime, formatFirstName, formatGreetingDate, greetingForHour, isToday } from "../utils/format";
 import type { RootStackParamList } from "../navigation/types";
-import { syncReminders } from "../notifications/useReminderSync";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-const styles = StyleSheet.create({
-  header: {
-    paddingHorizontal: 24,
-    paddingTop: 8,
-  },
-  greetingRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  greetingText: {
-    flex: 1,
-    marginRight: 12,
-  },
-  dateText: {
-    marginTop: 4,
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  statsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: radii.control,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    marginTop: 12,
-  },
-  statItem: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 5,
-    flex: 1,
-  },
-  statDivider: {
-    width: 1,
-    height: 16,
-    marginHorizontal: 14,
-  },
-  list: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  listContent: {
-    gap: 10,
-    paddingBottom: 16,
-  },
-  bubbleWrapper: {
-    alignItems: "center",
-    paddingHorizontal: 8,
-    marginTop: 4,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 8,
-    // Taller than the label needs, to give the whole row a comfortable tap target
-    // rather than asking for a precise hit on ~13px of text.
-    minHeight: 36,
-  },
-  goalsSection: {
-    marginBottom: 4,
-  },
-  goalsSectionHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 8,
-    marginBottom: 8,
-  },
-  footerSpacer: {
-    height: 8,
-  },
-  emptyState: {
-    alignItems: "center",
-    padding: 32,
-    gap: 8,
-  },
-  emptyBody: {
-    textAlign: "center",
-  },
-  taskCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  taskCardDone: {
-    // Recedes the finished pile without hiding it — the live list stays the brighter one.
-    opacity: 0.7,
-  },
-  taskName: {
-    flex: 1,
-  },
-  taskNameDone: {
-    textDecorationLine: "line-through",
-  },
-  taskTagRow: {
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "center",
-    marginTop: 6,
-  },
-  taskButton: {
-    minHeight: 48,
-    paddingHorizontal: 16,
-  },
-});
-
 export function HomeScreen() {
-  const { colors } = useAppearance();
   const { tone } = useCompanion();
   const { user } = useSession();
   const navigation = useNavigation<Nav>();
   const [refreshing, setRefreshing] = useState(false);
 
-  // Cache-backed now (see src/api/queries/) instead of one local useState blob filled by
-  // a hand-written Promise.all — every query here is shared with every other screen that
-  // reads the same data, so e.g. navigating to Task Detail no longer re-fetches what Home
-  // just fetched seconds earlier.
   const tasksQuery = useTasksQuery("pending");
   // task-svc has no "completed today" endpoint — fetch completed tasks too and filter
-  // client-side by completedAt's date for the "done today" stat card.
+  // client-side by completedAt's date.
   const completedTasksQuery = useTasksQuery("completed");
   const remindersQuery = useRemindersQuery();
   const streakQuery = useStreakQuery();
@@ -169,8 +62,12 @@ export function HomeScreen() {
   const tasks = tasksQuery.data ?? [];
   const goals = goalsQuery.data ?? [];
   const savingGoal = createGoalMutation.isPending || updateGoalMutation.isPending;
+  // Filtered to isActive for the same reason as TaskDetailScreen's lookup — the server
+  // keeps a stopped reminder's row around rather than deleting it, so an unfiltered map
+  // would still show its ⏰ time on the To do row it belongs to.
   const remindersByTaskId = useMemo(
-    () => new Map((remindersQuery.data ?? []).map((r: ReminderDto) => [r.taskId, r])),
+    () =>
+      new Map((remindersQuery.data ?? []).filter((r: ReminderDto) => r.isActive).map((r: ReminderDto) => [r.taskId, r])),
     [remindersQuery.data]
   );
   const currentStreak = streakQuery.data?.currentStreak ?? 0;
@@ -195,13 +92,12 @@ export function HomeScreen() {
   // `count` is the real number of items and drives the header and the empty state; `data`
   // is what the list actually renders and goes empty when collapsed. Keeping them separate
   // is what stops a collapsed To do section from claiming there's nothing left to do.
-  // The done section is omitted entirely rather than rendered empty — an empty
-  // "Completed · 0" is noise on a fresh day.
+  // The done section is omitted entirely rather than rendered empty.
   const sections = useMemo(
     () => [
       {
         key: "todo",
-        title: `To do · ${tasks.length}`,
+        title: "TO DO",
         count: tasks.length,
         data: collapsedSections.todo ? [] : tasks,
       },
@@ -209,7 +105,7 @@ export function HomeScreen() {
         ? [
             {
               key: "done",
-              title: `Completed today · ${completedToday.length}`,
+              title: "COMPLETED TODAY",
               count: completedToday.length,
               data: collapsedSections.done ? [] : completedToday,
             },
@@ -218,9 +114,7 @@ export function HomeScreen() {
     ],
     [tasks, completedToday, collapsedSections]
   );
-  // Only true once every query has resolved at least once — same intent as the old
-  // `data === null` check, so the greeting/companion bubble don't flash in before the
-  // first real fetch completes.
+
   const hasLoaded = tasksQuery.isSuccess && goalsQuery.isSuccess && remindersQuery.isSuccess && streakQuery.isSuccess;
 
   async function handleRefresh() {
@@ -258,149 +152,148 @@ export function HomeScreen() {
 
   if (!user) return null;
 
+  const displayName = user.displayName || user.username;
+
   return (
     <ScreenContainer>
-      <View style={styles.header}>
-        <View style={styles.greetingRow}>
-          <View style={styles.greetingText}>
-            <HeroGreeting numberOfLines={2} ellipsizeMode="tail">
-              {greetingForHour()}, {formatFirstName(user.displayName || user.username)}
-            </HeroGreeting>
-            <Body color={colors.textMuted} style={styles.dateText} numberOfLines={1}>
-              {formatGreetingDate()}
-            </Body>
-          </View>
-          <Pressable
-            onPress={() => navigation.navigate("Main", { screen: "Settings" })}
-            style={[styles.avatar, { backgroundColor: colors.primaryTintBg }]}
-          >
-            <Text weight="bold" color={colors.primaryTintText}>
-              {(user.displayName || user.username).charAt(0).toUpperCase()}
-            </Text>
-          </Pressable>
-        </View>
-
-        <View style={[styles.statsRow, { backgroundColor: colors.primaryTintBg }]}>
-          <View style={styles.statItem}>
-            <Text weight="bold" color={colors.primary}>
-              {doneTodayCount}
-            </Text>
-            <Label>done today</Label>
-          </View>
-          <View style={[styles.statDivider, { backgroundColor: colors.toggleOff }]} />
-          <View style={styles.statItem}>
-            <Text weight="bold" color={colors.secondaryText}>
-              {currentStreak}-day
-            </Text>
-            <Label>streak 🔥</Label>
-            <InfoTooltip topic="streak" color={colors.textFaint} />
-          </View>
-        </View>
-      </View>
-
       <SectionList
-        style={styles.list}
         sections={sections}
         keyExtractor={(item) => String(item.id)}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         // Headers scroll away with their section — sticking them would leave a label
         // pinned over the greeting and goals while those are still on screen.
         stickySectionHeadersEnabled={false}
+        contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <View>
+            <View style={styles.greetingRow}>
+              <View style={styles.greetingText}>
+                <H1 numberOfLines={2}>
+                  {greetingForHour()}, {formatFirstName(displayName)}
+                </H1>
+                <Meta style={styles.date} numberOfLines={1}>
+                  {formatGreetingDate()}
+                </Meta>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Account"
+                onPress={() => navigation.navigate("Main", { screen: "Settings" })}
+                style={styles.avatar}
+              >
+                <Text style={t(T.body, { fontWeight: "800", color: "#6A4F6A" })}>
+                  {displayName.charAt(0).toUpperCase()}
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* today strip */}
+            <View style={styles.todayStrip}>
+              <Text style={t(T.label, { fontWeight: "600", color: color.textBody, flex: 1 })}>
+                <Text style={t(T.label, { color: color.success })}>{doneTodayCount}</Text> done today
+              </Text>
+              <View style={styles.stripDivider} />
+              <View style={styles.stripRight}>
+                <Text style={t(T.label, { fontWeight: "600", color: color.textBody })}>
+                  <Text style={t(T.label, { color: color.success })}>{currentStreak}-day</Text> streak
+                </Text>
+                <StreakIconInline />
+                <InfoTooltip topic="streak" />
+              </View>
+            </View>
+
             {hasLoaded ? (
-              <View style={styles.bubbleWrapper}>
-                <CompanionBubble text={homeLine(tone, currentStreak, doneTodayCount)} />
+              <View style={styles.bubbleWrap}>
+                <Card style={styles.bubbleCard}>
+                  <Meta style={{ color: color.textBody }}>{homeLine(tone, currentStreak, doneTodayCount)}</Meta>
+                </Card>
               </View>
             ) : null}
-            <PulseCaptureButton onPress={() => navigation.navigate("Capture")} />
 
-            <View style={styles.goalsSection}>
-              <View style={styles.goalsSectionHeaderRow}>
-                <SectionLabel>Goals</SectionLabel>
-              </View>
-              <GoalStrip goals={goals} onSelectGoal={setEditingGoal} onCreateGoal={() => setCreatingGoal(true)} />
+            {/* capture — Ferne is the hero, tap opens capture */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Capture a task"
+              onPress={() => navigation.navigate("Capture")}
+              style={styles.capture}
+            >
+              <Ferne size={92} />
+              <Text style={t(T.body, { fontWeight: "700", color: color.success })}>Tap to capture</Text>
+            </Pressable>
+
+            <View style={styles.goalsHeader}>
+              <Eyebrow>GOALS</Eyebrow>
             </View>
+            {/* "+ Goal" leads rather than trails: it stays reachable without scrolling
+                past every existing goal once the list grows. */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.goalsRow}
+            >
+              <AddGoalCard onPress={() => setCreatingGoal(true)} />
+              {goals.map((goal) => (
+                <GoalCard key={goal.id} goal={goal} width={150} onPress={() => setEditingGoal(goal)} />
+              ))}
+            </ScrollView>
           </View>
         }
-        renderSectionHeader={({ section }) => {
-          const isCollapsed = !!collapsedSections[section.key];
-          return (
-            <Pressable
-              onPress={() => toggleSection(section.key)}
-              style={styles.sectionHeader}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: !isCollapsed }}
-              accessibilityLabel={`${section.title}, ${isCollapsed ? "collapsed" : "expanded"}`}
-            >
-              <SectionLabel>{section.title}</SectionLabel>
-              <Body size={fontSize.micro} color={colors.textFaint}>
-                {isCollapsed ? "▸" : "▾"}
-              </Body>
-            </Pressable>
-          );
-        }}
+        renderSectionHeader={({ section }) => (
+          <SectionHeader
+            label={section.title}
+            count={section.count}
+            collapsed={!!collapsedSections[section.key]}
+            onToggle={() => toggleSection(section.key)}
+            labelColor={section.key === "done" ? color.doneCheck : color.amberLabel}
+            countStyle={
+              section.key === "done"
+                ? { bg: color.fill, fg: color.textMuted }
+                : { bg: color.amberFill, fg: "#8A6112" }
+            }
+          />
+        )}
         // SectionList has no per-section empty state, and ListEmptyComponent only fires
         // when *every* section is empty — which would hide this the moment one task is
         // done. Rendering it as the To do section's footer keeps "nothing left to do"
         // correct even while the completed section below is full.
         renderSectionFooter={({ section }) =>
           section.key === "todo" && section.count === 0 ? (
-            <View style={styles.emptyState}>
-              <Body weight="semiBold">{doneTodayCount > 0 ? "All done for today 🎉" : "No tasks yet"}</Body>
-              <Body color={colors.textMuted} style={styles.emptyBody}>
-                Capture something above to get started.
-              </Body>
-            </View>
+            <Card style={styles.emptyCard}>
+              <Text style={t(T.bodyLg, { color: color.text })}>
+                {doneTodayCount > 0 ? "All done for today" : "No tasks yet"}
+              </Text>
+              <Meta style={{ marginTop: 4 }}>Tap Ferne above to capture something.</Meta>
+            </Card>
           ) : null
         }
-        ListFooterComponent={<View style={styles.footerSpacer} />}
-        contentContainerStyle={styles.listContent}
         renderItem={({ item, section }) => {
-          const done = section.key === "done";
+          if (section.key === "done") {
+            return (
+              <View style={styles.rowSpacing}>
+                <CompletedRow
+                  title={item.name}
+                  taskType={item.taskType}
+                  onPress={() => navigation.navigate("TaskDetail", { taskId: item.id })}
+                />
+              </View>
+            );
+          }
           const reminder = remindersByTaskId.get(item.id);
           return (
-            <Pressable onPress={() => navigation.navigate("TaskDetail", { taskId: item.id })}>
-              <Card style={[styles.taskCard, done ? styles.taskCardDone : null]}>
-                <View style={styles.taskName}>
-                  <Body
-                    weight="semiBold"
-                    size={fontSize.body}
-                    color={done ? colors.textMuted : undefined}
-                    style={done ? styles.taskNameDone : undefined}
-                  >
-                    {item.name}
-                  </Body>
-                  {/* A reminder on a finished task is spent — showing its time would read
-                      as something still scheduled. */}
-                  {reminder && !done ? (
-                    <View style={styles.taskTagRow}>
-                      <Body size={fontSize.micro} color={colors.textFaint}>
-                        ⏰ {formatClockTime(reminder.reminderTime)}
-                      </Body>
-                    </View>
-                  ) : null}
-                </View>
-                {done ? (
-                  <Text size={fontSize.bodyLg} color={colors.primary}>
-                    ✓
-                  </Text>
-                ) : item.taskType === "focus" ? (
-                  <Button
-                    label="Focus"
-                    onPress={() => navigation.navigate("TaskDetail", { taskId: item.id })}
-                    style={styles.taskButton}
-                  />
-                ) : (
-                  <Button
-                    label="Done"
-                    variant="outlinePrimary"
-                    onPress={() => handleMarkReminderDone(item.id)}
-                    style={styles.taskButton}
-                  />
-                )}
-              </Card>
-            </Pressable>
+            <View style={styles.rowSpacing}>
+              <TaskRow
+                title={item.name}
+                taskType={item.taskType}
+                subtitle={reminder ? `⏰ ${formatClockTime(reminder.reminderTime)}` : null}
+                actionLabel={item.taskType === "focus" ? "Focus" : "Done"}
+                onPress={() => navigation.navigate("TaskDetail", { taskId: item.id })}
+                onAction={() =>
+                  item.taskType === "focus"
+                    ? navigation.navigate("TaskDetail", { taskId: item.id })
+                    : handleMarkReminderDone(item.id)
+                }
+              />
+            </View>
           );
         }}
       />
@@ -422,3 +315,83 @@ export function HomeScreen() {
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  listContent: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.sm,
+    paddingBottom: 24,
+  },
+  greetingRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: space.base,
+  },
+  greetingText: {
+    flex: 1,
+  },
+  date: {
+    marginTop: 4,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.card,
+    backgroundColor: "#F7F1E6",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  todayStrip: {
+    marginTop: 16,
+    backgroundColor: "#F7F1E6",
+    borderRadius: radius.card,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  stripDivider: {
+    width: 1,
+    height: 16,
+    backgroundColor: "#DED4C2",
+  },
+  stripRight: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 4,
+  },
+  bubbleWrap: {
+    alignItems: "center",
+    marginTop: space.base,
+  },
+  bubbleCard: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  capture: {
+    alignItems: "center",
+    gap: space.md,
+    marginTop: 16,
+  },
+  goalsHeader: {
+    marginTop: space.gutter,
+    marginBottom: space.sm,
+  },
+  goalsRow: {
+    flexDirection: "row",
+    gap: space.md,
+    paddingRight: space.xs,
+  },
+  rowSpacing: {
+    marginBottom: 9,
+  },
+  emptyCard: {
+    alignItems: "center",
+    paddingVertical: 24,
+  },
+});

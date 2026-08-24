@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { authApi } from "../api";
@@ -10,40 +10,19 @@ import {
   sendPhoneVerificationCode,
   type PhoneConfirmation,
 } from "../api/firebaseAuth";
-import { Body, Button, ScreenContainer, ScreenTitle, TextField } from "../components";
-import { useAppearance } from "../state/AppearanceContext";
+import { Body, Button, H1, Meta, ScreenContainer, TextField } from "../components";
 import { useSession } from "../state/SessionContext";
-import { spacing } from "../theme/spacing";
-import { fontSize } from "../theme/typography";
+import { color, size, space } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-const styles = StyleSheet.create({
-  keyboardAvoiding: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: "center",
-    padding: 24,
-    gap: 12,
-  },
-  submitButton: {
-    marginTop: spacing.xs,
-  },
-  backLink: {
-    textAlign: "center",
-  },
-});
-
 /**
  * Requires a real Firebase project + a custom EAS dev client build — see
- * docs/token-auth-and-completed-query-design.md and src/api/firebaseAuth.ts. Will fail
- * with a clear error (not a crash) on plain Expo Go or without Firebase configured.
+ * src/api/firebaseAuth.ts. Fails with a clear error (not a crash) on plain Expo Go or
+ * without Firebase configured.
  */
 export function PhoneSignInScreen() {
-  const { colors } = useAppearance();
   const { signIn } = useSession();
   const navigation = useNavigation<Nav>();
 
@@ -86,50 +65,60 @@ export function PhoneSignInScreen() {
     }
   }
 
+  const isPhoneStep = step === "phone";
+
   return (
     <ScreenContainer>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardAvoiding}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          <ScreenTitle>{step === "phone" ? "Sign in with phone" : "Enter the code"}</ScreenTitle>
-          <Body color={colors.textMuted}>
-            {step === "phone"
-              ? "We'll text you a 6-digit code."
-              : `Sent to ${phoneNumber}.`}
-          </Body>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <H1>{isPhoneStep ? "Sign in with phone" : "Enter the code"}</H1>
+          <Meta>{isPhoneStep ? "We'll text you a 6-digit code." : `Sent to ${phoneNumber}.`}</Meta>
 
           <TextField
-            label={step === "phone" ? "Phone number" : undefined}
-            value={step === "phone" ? phoneNumber : code}
-            onChangeText={step === "phone" ? setPhoneNumber : setCode}
-            placeholder={step === "phone" ? "+1 555 0123" : "123456"}
-            keyboardType={step === "phone" ? "phone-pad" : "number-pad"}
+            label={isPhoneStep ? "Phone number" : "Code"}
+            value={isPhoneStep ? phoneNumber : code}
+            onChangeText={isPhoneStep ? setPhoneNumber : setCode}
+            placeholder={isPhoneStep ? "+1 555 0123" : "123456"}
+            keyboardType={isPhoneStep ? "phone-pad" : "number-pad"}
             autoCapitalize="none"
           />
 
-          {error ? <Body color={colors.destructive}>{error}</Body> : null}
+          {error ? <Body style={{ color: color.danger }}>{error}</Body> : null}
 
           <Button
-            label={step === "phone" ? "Send code" : "Verify"}
-            large
+            label={isPhoneStep ? "Send code" : "Verify"}
             loading={submitting}
-            disabled={step === "phone" ? !phoneNumber.trim() : !code.trim()}
-            onPress={step === "phone" ? handleSendCode : handleConfirmCode}
-            style={styles.submitButton}
+            disabled={isPhoneStep ? !phoneNumber.trim() : !code.trim()}
+            onPress={isPhoneStep ? handleSendCode : handleConfirmCode}
           />
 
-          <Body
-            size={fontSize.caption}
-            color={colors.textFaint}
-            onPress={() => (step === "code" ? setStep("phone") : navigation.goBack())}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => (isPhoneStep ? navigation.goBack() : setStep("phone"))}
             style={styles.backLink}
           >
-            {step === "code" ? "Use a different number" : "Back"}
-          </Body>
+            <Meta style={{ color: color.textFaint }}>{isPhoneStep ? "Back" : "Use a different number"}</Meta>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  content: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: space.gutter,
+    paddingVertical: space.lg,
+    gap: space.base,
+  },
+  backLink: {
+    minHeight: size.minTouch,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});

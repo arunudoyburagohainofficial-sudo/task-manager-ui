@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { focusSessionsApi } from "../api";
 import { ApiError } from "../api/client";
@@ -9,145 +9,49 @@ import {
   useCreateReminderMutation,
   useDeleteReminderMutation,
   useMarkTaskDoneMutation,
+  useRemindersQuery,
   useUpdateReminderMutation,
 } from "../api/queries/useReminders";
 import { useDeleteTaskMutation, useTaskQuery, useUpdateTaskMutation } from "../api/queries/useTasks";
-import { useRemindersQuery } from "../api/queries/useReminders";
 import type { CreateReminderRequest, FocusMode, TaskType } from "../api/types";
-import { syncReminders } from "../notifications/useReminderSync";
 import {
+  BackLink,
   Body,
   Button,
   Card,
   ConfirmModal,
+  DoNotDisturbIcon,
+  Eyebrow,
+  FocusIcon,
+  InfoCard,
+  Label,
+  Meta,
+  ReminderIcon,
   ReminderTimeSheet,
   ScreenContainer,
-  SectionLabel,
-  TaskDetailTitle,
-  TaskTypeBadge,
-  Text,
+  Segmented,
+  Stepper,
+  StreakIconInline,
   Toggle,
 } from "../components";
-import { useAppearance } from "../state/AppearanceContext";
-import { useSession } from "../state/SessionContext";
+import { syncReminders } from "../notifications/useReminderSync";
 import { usePreferences } from "../state/PreferencesContext";
-import { radii } from "../theme/spacing";
-import { fontSize } from "../theme/typography";
+import { useSession } from "../state/SessionContext";
+import { color, radius, space, text as t, type as T } from "../theme";
 import { formatClockTime, formatMinutes } from "../utils/format";
 import type { RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, "TaskDetail">;
 
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  scrollContent: {
-    padding: 16,
-    gap: 12,
-  },
-  topSection: {
-    paddingHorizontal: 8,
-  },
-  title: {
-    marginTop: 12,
-  },
-  typeBadge: {
-    marginTop: 10,
-  },
-  reminderCard: {
-    gap: 10,
-  },
-  reminderHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  reminderActionsRow: {
-    flexDirection: "row",
-    gap: 20,
-  },
-  progressCard: {
-    gap: 8,
-  },
-  progressTintRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    borderRadius: radii.control,
-    padding: 12,
-  },
-  sessionCard: {
-    gap: 12,
-  },
-  modeTabRow: {
-    flexDirection: "row",
-    borderRadius: radii.control,
-    padding: 4,
-    gap: 4,
-  },
-  modeTab: {
-    flex: 1,
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 6,
-  },
-  cyclesSection: {
-    gap: 6,
-  },
-  cyclesRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  cyclesCounterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  dndRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderRadius: radii.control,
-    padding: 12,
-  },
-  dndLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    flex: 1,
-    marginRight: 8,
-  },
-  dndTextFlex: {
-    flex: 1,
-  },
-  centerCaption: {
-    textAlign: "center",
-  },
-  dashedCard: {
-    borderStyle: "dashed",
-  },
-  deleteSection: {
-    alignItems: "center",
-    paddingVertical: 8,
-  },
-});
+const POMODORO_MINUTES = 25;
 
 export function TaskDetailScreen() {
-  const { colors } = useAppearance();
   const { user } = useSession();
   const { defaultFocusDurationMinutes, dndDuringFocusEnabled } = usePreferences();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Route>();
 
-  // Cache-backed (see src/api/queries/) — taskQuery seeds instantly from whatever tasks
-  // list Home already fetched (see useTaskQuery's own doc comment), so this screen no
-  // longer blocks on its own round trip in the common case of navigating here from Home.
   const taskQuery = useTaskQuery(params.taskId);
   const remindersQuery = useRemindersQuery();
   const goalsQuery = useGoalsQuery();
@@ -161,12 +65,14 @@ export function TaskDetailScreen() {
   const task = taskQuery.data ?? null;
   const goals = goalsQuery.data ?? [];
   const goal = task?.goalId ? goals.find((g) => g.id === task.goalId) ?? null : null;
-  const reminder = remindersQuery.data?.find((r) => r.taskId === params.taskId) ?? null;
+  // isActive matters here, not just taskId: the server never deletes a stopped reminder
+  // row (see ReminderService.stopReminders), so a completed task's now-inactive reminder
+  // would otherwise still match and render as a live, editable card.
+  const reminder = remindersQuery.data?.find((r) => r.taskId === params.taskId && r.isActive) ?? null;
 
   const [focusMode, setFocusMode] = useState<FocusMode>("regular");
   const [pomodoroCycles, setPomodoroCycles] = useState(3);
-  // Seeds from the global Settings preference but is overridable per session — synced
-  // whenever the global default changes (e.g. once AsyncStorage finishes loading it).
+  // Seeds from the global Settings preference but is overridable per session.
   const [sessionDndEnabled, setSessionDndEnabled] = useState(dndDuringFocusEnabled);
   const [reminderSheetOpen, setReminderSheetOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -185,11 +91,8 @@ export function TaskDetailScreen() {
       } else {
         await createReminderMutation.mutateAsync({ taskId: params.taskId, request });
       }
-      // Closed the moment the reminder is actually saved. syncReminders is deliberately not
-      // awaited: it's three API calls plus scheduleAll, which can sit on a notification
-      // permission prompt indefinitely — awaiting it left the sheet open long after the save
-      // had succeeded, which read as the save having silently failed. It never throws, so
-      // there's nothing here that needs its result.
+      // syncReminders is deliberately not awaited: it's three API calls plus scheduleAll,
+      // which can sit on a notification permission prompt indefinitely.
       setReminderSheetOpen(false);
       void syncReminders();
     } catch (e) {
@@ -200,14 +103,12 @@ export function TaskDetailScreen() {
   async function handleDeleteReminder() {
     if (!reminder) return;
     // Hard delete (not stopReminders) — that only sets isActive false, leaving the row in
-    // place so createReminder keeps 409ing. This actually frees the task up.
+    // place so createReminder keeps 409ing.
     await deleteReminderMutation.mutateAsync(reminder.id);
     void syncReminders();
   }
 
-  // Optimistic update (instant toggle, rolled back on failure) now lives inside
-  // useUpdateTaskMutation itself — see its onMutate/onError — reusable by any future
-  // caller instead of being hand-rolled local state just for this one screen.
+  // Optimistic update lives inside useUpdateTaskMutation itself — see its onMutate/onError.
   async function handleTaskTypeChange(next: TaskType) {
     if (!task || task.taskType === next) return;
     try {
@@ -219,8 +120,6 @@ export function TaskDetailScreen() {
 
   async function handleMarkDone() {
     await markDoneMutation.mutateAsync(params.taskId);
-    // Same reasoning as handleSaveReminder: leaving the user on a task they've already
-    // marked done, waiting on notification bookkeeping, is the lag — not the mutation.
     void syncReminders();
     navigation.goBack();
   }
@@ -246,9 +145,8 @@ export function TaskDetailScreen() {
       if (e instanceof ApiError && e.status === 409) {
         const current = user ? await focusSessionsApi.getCurrentSession() : null;
         if (current) {
-          // numPomodoroCycles is only ever recorded when a session completes, so it's
-          // still null on one that's already in progress — fall back to a sane default
-          // rather than guessing wrong.
+          // numPomodoroCycles is only recorded when a session completes, so it's still
+          // null on one in progress — fall back to a sane default rather than guessing.
           navigation.navigate("FocusSession", {
             sessionId: current.id,
             taskId: current.taskId,
@@ -270,53 +168,48 @@ export function TaskDetailScreen() {
     }
   }
 
-  // Was `return null` — that skips mounting ScreenContainer entirely, so the screen
-  // showed nothing at all (not even the themed background) for as long as the initial
-  // load() took, reading as a jarring blank white flash rather than a transition. Mounting
-  // the real container immediately, with just a spinner in place of content, means the
-  // background/chrome appears instantly and only the data itself visibly loads in.
+  // Mounting the real container immediately, with a spinner in place of content, means the
+  // background and chrome appear instantly and only the data itself visibly loads in.
   if (!task) {
     return (
       <ScreenContainer>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator color={colors.primary} />
+        <View style={styles.loading}>
+          <ActivityIndicator color={color.interactive} />
         </View>
       </ScreenContainer>
     );
   }
 
+  const isFocus = task.taskType === "focus";
+
   return (
     <ScreenContainer>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.topSection}>
-          <Pressable onPress={() => navigation.goBack()}>
-            <Body weight="semiBold" color={colors.primary}>
-              ← Back
-            </Body>
-          </Pressable>
-          <TaskDetailTitle style={styles.title}>{task.name}</TaskDetailTitle>
-          <View style={styles.typeBadge}>
-            <TaskTypeBadge value={task.taskType} onChange={handleTaskTypeChange} />
-          </View>
-        </View>
+      <ScrollView contentContainerStyle={styles.content}>
+        <BackLink onPress={() => navigation.goBack()} />
+        <Text style={t(T.h1, { fontSize: 27, color: color.text })}>{task.name}</Text>
 
-        <Card style={styles.reminderCard}>
-          <SectionLabel>Reminder</SectionLabel>
+        <Segmented<TaskType>
+          value={task.taskType}
+          onChange={handleTaskTypeChange}
+          options={[
+            { value: "focus", label: "Focus Task", icon: <FocusIcon size={18} /> },
+            { value: "reminder", label: "Reminder Task", icon: <ReminderIcon size={18} /> },
+          ]}
+        />
+
+        <Card>
+          <View style={styles.cardHeader}>
+            <Eyebrow>REMINDER</Eyebrow>
+          </View>
           {reminder ? (
             <>
-              <View style={styles.reminderHeaderRow}>
-                <Text weight="semiBold">⏰ {formatClockTime(reminder.reminderTime)}</Text>
-              </View>
-              <View style={styles.reminderActionsRow}>
-                <Pressable onPress={() => setReminderSheetOpen(true)} hitSlop={8}>
-                  <Body size={fontSize.caption} weight="semiBold" color={colors.primary}>
-                    Edit time
-                  </Body>
+              <Body style={{ fontWeight: "700", color: color.text }}>⏰ {formatClockTime(reminder.reminderTime)}</Body>
+              <View style={styles.reminderActions}>
+                <Pressable accessibilityRole="button" onPress={() => setReminderSheetOpen(true)} hitSlop={8}>
+                  <Meta style={{ color: color.selectedText, fontWeight: "800" }}>Edit time</Meta>
                 </Pressable>
-                <Pressable onPress={handleDeleteReminder} hitSlop={8}>
-                  <Body size={fontSize.caption} color={colors.destructive}>
-                    Delete reminder
-                  </Body>
+                <Pressable accessibilityRole="button" onPress={handleDeleteReminder} hitSlop={8}>
+                  <Meta style={{ color: color.danger, fontWeight: "800" }}>Delete reminder</Meta>
                 </Pressable>
               </View>
             </>
@@ -325,123 +218,99 @@ export function TaskDetailScreen() {
           )}
         </Card>
 
-        {task.taskType === "focus" ? (
+        {isFocus ? (
           <>
-            <Card style={styles.progressCard}>
-              <SectionLabel>Progress tracking</SectionLabel>
-              <View style={[styles.progressTintRow, { backgroundColor: colors.primaryTintBg }]}>
-                <Text>🔥</Text>
-                <View>
-                  <Body size={fontSize.caption} weight="semiBold" color={colors.primaryTintText}>
-                    Counts toward your streak &amp; weekly progress
-                  </Body>
-                  <Body size={fontSize.tiny} color={colors.primaryTintText}>
-                    Automatic for focus tasks
-                  </Body>
-                </View>
+            <Card>
+              <View style={styles.cardHeader}>
+                <Eyebrow>PROGRESS TRACKING</Eyebrow>
               </View>
-              {/* Read-only: a task's goal is chosen at capture time (Confirm & Organize).
-                  Shown here so it's visible where the work actually happens. */}
+              {/* Non-interactive indicator — determined by task type, no per-task opt-out.
+                  The design is explicit that this must never render as a Switch. */}
+              <InfoCard icon={<StreakIconInline />}>
+                <Label style={{ color: color.success }}>Counts toward your streak &amp; weekly progress</Label>
+                <Meta style={{ marginTop: 2 }}>Automatic for focus tasks</Meta>
+              </InfoCard>
+
+              {/* Read-only: a task's goal is chosen at capture time. Shown here so it's
+                  visible where the work actually happens. */}
               {goal ? (
-                <View style={[styles.progressTintRow, { backgroundColor: colors.neutralFill }]}>
-                  <Text>🎯</Text>
-                  <View>
-                    <Body size={fontSize.caption} weight="semiBold">
-                      {goal.name}
-                    </Body>
-                    <Body size={fontSize.tiny} color={colors.textFaint}>
+                <View style={styles.goalRow}>
+                  <View style={[styles.goalSwatch, { backgroundColor: goal.color ?? color.goal }]} />
+                  <View style={styles.goalText}>
+                    <Label>{goal.name}</Label>
+                    <Meta style={{ marginTop: 2 }}>
                       {goal.totalDaysActive} of {goal.targetDays} days · finishing this today adds one
-                    </Body>
+                    </Meta>
                   </View>
                 </View>
               ) : null}
             </Card>
 
-            <Card style={styles.sessionCard}>
-              <SectionLabel>Focus session</SectionLabel>
-              <View style={[styles.modeTabRow, { backgroundColor: colors.neutralFill }]}>
-                {(["regular", "pomodoro"] as const).map((mode) => {
-                  const active = focusMode === mode;
-                  return (
-                    <Pressable
-                      key={mode}
-                      onPress={() => setFocusMode(mode)}
-                      style={[styles.modeTab, { backgroundColor: active ? colors.bgCard : "transparent" }]}
-                    >
-                      <Text size={fontSize.label} weight={active ? "bold" : "semiBold"} color={active ? colors.textDark : colors.textMuted}>
-                        {mode === "regular" ? `Regular · ${formatMinutes(defaultFocusDurationMinutes)}` : "Pomodoro"}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+            <Card>
+              <View style={styles.cardHeader}>
+                <Eyebrow>FOCUS SESSION</Eyebrow>
               </View>
+              <Segmented<FocusMode>
+                value={focusMode}
+                onChange={setFocusMode}
+                options={[
+                  { value: "regular", label: `Regular · ${formatMinutes(defaultFocusDurationMinutes)}` },
+                  { value: "pomodoro", label: "Pomodoro" },
+                ]}
+              />
+
+              {/* Pomodoro-only — absent in regular mode, not disabled (design §3). */}
               {focusMode === "pomodoro" ? (
-                <View style={styles.cyclesSection}>
+                <>
                   <View style={styles.cyclesRow}>
-                    <Body size={fontSize.caption} color={colors.textMuted}>
-                      Cycles
-                    </Body>
-                    <View style={styles.cyclesCounterRow}>
-                      <Pressable onPress={() => setPomodoroCycles((c) => Math.max(1, c - 1))} hitSlop={8}>
-                        <Text size={fontSize.lg} weight="bold">
-                          −
-                        </Text>
-                      </Pressable>
-                      <Text weight="bold">{pomodoroCycles}</Text>
-                      <Pressable onPress={() => setPomodoroCycles((c) => Math.min(10, c + 1))} hitSlop={8}>
-                        <Text size={fontSize.lg} weight="bold">
-                          +
-                        </Text>
-                      </Pressable>
-                    </View>
+                    <Body style={{ fontWeight: "700" }}>Cycles</Body>
+                    <Stepper value={pomodoroCycles} onChange={setPomodoroCycles} min={1} max={10} label="cycles" />
                   </View>
-                  <Body size={fontSize.micro} color={colors.textFaint}>
-                    {pomodoroCycles} cycles × 25 min = {pomodoroCycles * 25} minutes total
-                  </Body>
-                </View>
+                  <Meta style={{ color: color.textFaint, marginTop: 4 }}>
+                    {pomodoroCycles} cycles × {POMODORO_MINUTES} min = {pomodoroCycles * POMODORO_MINUTES} minutes total
+                  </Meta>
+                </>
               ) : null}
 
-              <View
-                style={[styles.dndRow, { backgroundColor: sessionDndEnabled ? colors.primaryTintBg : colors.neutralFill }]}
-              >
-                <View style={styles.dndLeft}>
-                  <Text>🔕</Text>
-                  <View style={styles.dndTextFlex}>
-                    <Body size={fontSize.caption} weight="semiBold" color={sessionDndEnabled ? colors.primaryTintText : colors.textMuted}>
-                      Do Not Disturb
-                    </Body>
-                    <Body size={fontSize.tiny} color={sessionDndEnabled ? colors.primaryTintText : colors.textFaint}>
-                      Silences your phone for this session · coming soon
-                    </Body>
-                  </View>
+              <View style={styles.dndRow}>
+                <DoNotDisturbIcon />
+                <View style={styles.dndText}>
+                  <Label style={{ color: color.success }}>Do Not Disturb</Label>
+                  <Meta style={{ marginTop: 2 }}>Silences your phone for this session · coming soon</Meta>
                 </View>
-                <Toggle value={sessionDndEnabled} onChange={setSessionDndEnabled} />
+                <Toggle
+                  value={sessionDndEnabled}
+                  onChange={setSessionDndEnabled}
+                  label="Do Not Disturb for this session"
+                />
               </View>
 
-              <Button label="Start Focus Session" large loading={starting} onPress={handleStartSession} />
-              <Body size={fontSize.micro} color={colors.textFaint} style={styles.centerCaption}>
-                Starts only when you tap — never automatic
-              </Body>
+              <Button
+                label="Start Focus Session"
+                loading={starting}
+                onPress={handleStartSession}
+                style={styles.startButton}
+              />
+              <Meta style={styles.startCaption}>Starts only when you tap — never automatic</Meta>
             </Card>
           </>
         ) : (
           <>
-            <Card style={styles.dashedCard}>
-              <Body size={fontSize.micro} color={colors.textFaint}>
+            <View style={styles.dashedNote}>
+              <Meta style={{ lineHeight: 21 }}>
                 Reminder tasks don&rsquo;t count toward streak or weekly progress — those track focused work only.
-              </Body>
-            </Card>
-            <Button label="Mark as done ✓" large onPress={handleMarkDone} />
+              </Meta>
+            </View>
+            <Button label="Mark as done ✓" onPress={handleMarkDone} />
           </>
         )}
 
-        <View style={styles.deleteSection}>
-          <Pressable onPress={() => setDeleteConfirmOpen(true)} hitSlop={8}>
-            <Body weight="semiBold" color={colors.destructive}>
-              Delete task
-            </Body>
-          </Pressable>
-        </View>
+        <Button
+          label="Delete task"
+          variant="destructiveText"
+          onPress={() => setDeleteConfirmOpen(true)}
+          style={styles.deleteButton}
+        />
       </ScrollView>
 
       <ReminderTimeSheet
@@ -457,9 +326,90 @@ export function TaskDetailScreen() {
         title="Delete this task?"
         message={`"${task.name}" will be removed. This can't be undone.`}
         confirmLabel="Delete"
+        cancelLabel="Cancel"
         onConfirm={handleDelete}
         onCancel={() => setDeleteConfirmOpen(false)}
       />
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  loading: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  content: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.md,
+    paddingBottom: 24,
+    gap: space.base,
+  },
+  cardHeader: {
+    marginBottom: space.md,
+  },
+  reminderActions: {
+    flexDirection: "row",
+    gap: space.gutter,
+    marginTop: space.md,
+  },
+  goalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.md,
+    marginTop: 11,
+    backgroundColor: color.track,
+    borderRadius: radius.control,
+    paddingVertical: 12,
+    paddingHorizontal: 13,
+  },
+  goalSwatch: {
+    width: 10,
+    height: 10,
+    borderRadius: 3,
+  },
+  goalText: {
+    flex: 1,
+  },
+  cyclesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 13,
+  },
+  dndRow: {
+    borderWidth: 1,
+    borderColor: color.successBorder,
+    backgroundColor: color.successFill,
+    borderRadius: radius.control,
+    paddingVertical: 12,
+    paddingHorizontal: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.md,
+    marginTop: 11,
+  },
+  dndText: {
+    flex: 1,
+  },
+  startButton: {
+    marginTop: space.base,
+  },
+  startCaption: {
+    color: color.textFaint,
+    textAlign: "center",
+    marginTop: 9,
+  },
+  dashedNote: {
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: color.border,
+    borderRadius: radius.card,
+    paddingVertical: 14,
+    paddingHorizontal: space.card,
+  },
+  deleteButton: {
+    marginTop: space.gutter,
+  },
+});

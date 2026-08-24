@@ -1,145 +1,51 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Animated, Easing, Pressable, StyleSheet, View } from "react-native";
-import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import React from "react";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useGoalsQuery } from "../api/queries/useGoals";
 import { useStreakQuery, useWeeklyProgressQuery } from "../api/queries/useProgress";
 import { useTaskQuery } from "../api/queries/useTasks";
-import { Body, Button, Card, CompanionBubble, CompanionOrb, InfoTooltip, ProgressBar, ScreenContainer, Text } from "../components";
-import { useAppearance } from "../state/AppearanceContext";
+import {
+  Body,
+  Button,
+  Card,
+  Ferne,
+  H1,
+  InfoTooltip,
+  Meta,
+  ProgressBar,
+  ScreenContainer,
+  StreakIconInline,
+} from "../components";
 import { useCompanion } from "../state/CompanionContext";
-import { fontSize } from "../theme/typography";
+import { color, space, text as t, type as T } from "../theme";
 import { celebrationLine } from "../theme/companionCopy";
 import { formatMinutes } from "../utils/format";
 import type { RootStackParamList } from "../navigation/types";
+import { Text } from "react-native";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, "Completion">;
 
-const CONFETTI = [
-  { left: 30, color: "gold", delay: 0, duration: 2800 },
-  { left: 110, color: "primary", delay: 600, duration: 3400 },
-  { left: 190, color: "gold", delay: 1100, duration: 3000 },
-  { left: 260, color: "primary", delay: 300, duration: 2600 },
-  { left: 330, color: "gold", delay: 1500, duration: 3200 },
-] as const;
-
-const styles = StyleSheet.create({
-  confettiPiece: {
-    position: "absolute",
-    top: 0,
-    width: 8,
-    height: 8,
-    borderRadius: 2,
-  },
-  flex1: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 16,
-    paddingHorizontal: 24,
-  },
-  pointsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  streakRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  weeklyProgress: {
-    width: "100%",
-    gap: 8,
-    marginTop: 8,
-  },
-  weeklyHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  weeklyLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  statsCard: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-    marginTop: 8,
-  },
-  statItem: {
-    alignItems: "center",
-  },
-  footer: {
-    padding: 16,
-  },
-  skipCaption: {
-    textAlign: "center",
-    marginTop: 10,
-  },
-});
-
-function ConfettiPiece({ left, color, delay, duration }: (typeof CONFETTI)[number]) {
-  const { colors } = useAppearance();
-  const progress = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.timing(progress, { toValue: 1, duration, delay, easing: Easing.linear, useNativeDriver: true })
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [progress, duration, delay]);
-
-  return (
-    <Animated.View
-      style={[
-        styles.confettiPiece,
-        {
-          left,
-          backgroundColor: color === "gold" ? colors.secondary : colors.primary,
-          opacity: progress.interpolate({ inputRange: [0, 0.9, 1], outputRange: [1, 1, 0] }),
-          transform: [
-            { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [-20, 320] }) },
-            { rotate: progress.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "260deg"] }) },
-          ],
-        },
-      ]}
-    />
-  );
-}
-
+/**
+ * Celebration after a task is completed.
+ *
+ * No confetti or spring animations: design §7 limits motion to progress fills, sheet
+ * transitions and the segmented thumb — "no confetti, no bounce, no looping ambient
+ * animation in v1". The moment is carried by copy and colour instead.
+ */
 export function CompletionScreen() {
-  const { colors } = useAppearance();
   const { tone } = useCompanion();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Route>();
-  // Already invalidated by the completeTask mutation that navigated here (see
-  // useCompleteTaskMutation), so these refetch fresh automatically on mount rather than
-  // needing this screen to fetch them itself.
+
+  // Already invalidated by the completeTask mutation that navigated here, so these refetch
+  // fresh automatically on mount rather than needing this screen to fetch them itself.
   const streak = useStreakQuery().data ?? null;
   const weekly = useWeeklyProgressQuery().data ?? null;
-  // Both already cached — the task from the list this completion came out of, the goals
-  // list re-fetched by the completion mutation that navigated here (it invalidates goals
-  // whenever the completed task had one).
   const completedTask = useTaskQuery(params.taskId).data ?? null;
   const goals = useGoalsQuery().data ?? [];
   const goal = completedTask?.goalId ? goals.find((g) => g.id === completedTask.goalId) ?? null : null;
-
-  const pointsScale = useRef(new Animated.Value(0.5)).current;
-  const streakBounce = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.sequence([
-      Animated.timing(pointsScale, { toValue: 1, duration: 350, easing: Easing.out(Easing.back(1.6)), useNativeDriver: true }),
-      Animated.spring(streakBounce, { toValue: 1, friction: 3, useNativeDriver: true }),
-    ]).start();
-  }, [pointsScale, streakBounce]);
 
   function handleNext() {
     navigation.navigate("Main", { screen: "Home" });
@@ -149,102 +55,147 @@ export function CompletionScreen() {
 
   return (
     <ScreenContainer>
-      <Pressable style={styles.flex1} onPress={handleNext}>
-        {CONFETTI.map((piece, i) => (
-          <ConfettiPiece key={i} {...piece} />
-        ))}
-        <View style={styles.content}>
-          <CompanionOrb state="celebrating" size={88} />
-          <Text size={30} weight="extraBold">
-            Task complete!
-          </Text>
-          <Animated.View style={[styles.pointsRow, { transform: [{ scale: pointsScale }] }]}>
-            <Text size={40} weight="extraBold" color={colors.secondaryText}>
+      <Pressable style={styles.flex} onPress={handleNext} accessibilityRole="button" accessibilityLabel="Continue">
+        <ScrollView contentContainerStyle={styles.content}>
+          <Ferne size={88} />
+          <H1 style={styles.centered}>Task complete</H1>
+
+          <View style={styles.pointsRow}>
+            <Text style={t(T.timer, { fontSize: 40, letterSpacing: -1, color: color.success })}>
               +{params.pointsEarned} XP
             </Text>
-            <InfoTooltip topic="xp" color={colors.secondaryText} />
-          </Animated.View>
+            <InfoTooltip topic="xp" color={color.success} />
+          </View>
+
           {streak ? (
-            <CompanionBubble text={celebrationLine(tone, streak.currentStreak, params.pointsEarned)} />
+            <Card style={styles.bubble}>
+              <Meta style={{ color: color.textBody }}>
+                {celebrationLine(tone, streak.currentStreak, params.pointsEarned)}
+              </Meta>
+            </Card>
           ) : null}
+
           {streak && streak.currentStreak > 0 ? (
-            <Animated.View
-              style={[
-                styles.streakRow,
-                { transform: [{ scale: streakBounce.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.8, 1.15, 1] }) }] },
-              ]}
-            >
-              <Text weight="semiBold">
-                {streak.currentStreak}-day streak! 🔥
-              </Text>
-              <InfoTooltip topic="streak" color={colors.textFaint} />
-            </Animated.View>
+            <View style={styles.streakRow}>
+              <StreakIconInline />
+              <Body style={{ fontWeight: "700", color: color.text }}>{streak.currentStreak}-day streak</Body>
+              <InfoTooltip topic="streak" />
+            </View>
           ) : null}
 
           {goal ? (
-            <View style={styles.weeklyProgress}>
-              <View style={styles.weeklyHeaderRow}>
-                <Body size={fontSize.caption} color={colors.textMuted}>
-                  🎯 {goal.name}
-                </Body>
-                <Body size={fontSize.caption} weight="bold">
+            <View style={styles.progressBlock}>
+              <View style={styles.progressHeader}>
+                <Meta>🎯 {goal.name}</Meta>
+                <Meta style={{ fontWeight: "800", color: color.text }}>
                   {goal.totalDaysActive} of {goal.targetDays} days
-                </Body>
+                </Meta>
               </View>
               <ProgressBar
-                percent={Math.min(100, (goal.totalDaysActive / Math.max(1, goal.targetDays)) * 100)}
-                color={goal.color ?? colors.primary}
+                pct={Math.min(100, (goal.totalDaysActive / Math.max(1, goal.targetDays)) * 100)}
+                fill={goal.color ?? color.goal}
               />
             </View>
           ) : null}
 
           {weekly ? (
-            <View style={styles.weeklyProgress}>
-              <View style={styles.weeklyHeaderRow}>
-                <View style={styles.weeklyLabelRow}>
-                  <Body size={fontSize.caption} color={colors.textMuted}>
-                    Weekly progress
-                  </Body>
-                  <InfoTooltip topic="weeklyProgress" color={colors.textFaint} />
+            <View style={styles.progressBlock}>
+              <View style={styles.progressHeader}>
+                <View style={styles.progressLabel}>
+                  <Meta>Weekly progress</Meta>
+                  <InfoTooltip topic="weeklyProgress" />
                 </View>
-                <Body size={fontSize.caption} weight="bold">
+                <Meta style={{ fontWeight: "800", color: color.text }}>
                   {weekly.tasksCompleted} of {weekly.weeklyGoal} tasks
-                </Body>
+                </Meta>
               </View>
-              <ProgressBar percent={weeklyPercent} />
+              <ProgressBar pct={weeklyPercent} />
             </View>
           ) : null}
 
           <Card style={styles.statsCard}>
             <View style={styles.statItem}>
-              <Text weight="bold">{formatMinutes(Math.round(params.durationSeconds / 60))}</Text>
-              <Body size={fontSize.micro} color={colors.textFaint}>
-                time spent
+              <Body style={{ fontWeight: "800", color: color.text }}>
+                {formatMinutes(Math.round(params.durationSeconds / 60))}
               </Body>
+              <Meta style={{ color: color.textFaint }}>time spent</Meta>
             </View>
             <View style={styles.statItem}>
-              <Text weight="bold" color={colors.secondaryText}>
-                {params.pointsEarned}
-              </Text>
-              <Body size={fontSize.micro} color={colors.textFaint}>
-                points
-              </Body>
+              <Body style={{ fontWeight: "800", color: color.success }}>{params.pointsEarned}</Body>
+              <Meta style={{ color: color.textFaint }}>points</Meta>
             </View>
             <View style={styles.statItem}>
-              <Text weight="bold">{weekly?.totalFocusTimeMinutes ?? 0}</Text>
-              <Body size={fontSize.micro} color={colors.textFaint}>
-                focus min this week
-              </Body>
+              <Body style={{ fontWeight: "800", color: color.text }}>{weekly?.totalFocusTimeMinutes ?? 0}</Body>
+              <Meta style={{ color: color.textFaint }}>focus min this week</Meta>
             </View>
           </Card>
-        </View>
+        </ScrollView>
+
         <View style={styles.footer}>
-          <Button label="Next task →" large onPress={handleNext} />
-          <Body size={fontSize.micro} color={colors.textFaint} style={styles.skipCaption}>
-            Tap anywhere to skip animation
-          </Body>
+          <Button label="Next task →" onPress={handleNext} />
         </View>
       </Pressable>
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.lg,
+    paddingBottom: space.base,
+    alignItems: "center",
+    gap: space.base,
+  },
+  centered: {
+    textAlign: "center",
+  },
+  pointsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+  },
+  bubble: {
+    paddingVertical: 11,
+    paddingHorizontal: 13,
+  },
+  streakRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  progressBlock: {
+    width: "100%",
+    gap: 6,
+  },
+  progressHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: space.sm,
+  },
+  progressLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  statsCard: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: space.sm,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 2,
+  },
+  footer: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.base,
+    paddingBottom: 18,
+  },
+});

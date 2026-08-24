@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
-import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, Inter_800ExtraBold } from "@expo-google-fonts/inter";
+import {
+  useFonts,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+  PlusJakartaSans_800ExtraBold,
+} from "@expo-google-fonts/plus-jakarta-sans";
 import { NavigationContainer } from "@react-navigation/native";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { View } from "react-native";
 import { persistOptions, queryClient } from "./src/api/queryClient";
-import { AppearanceProvider } from "./src/state/AppearanceContext";
+import { color } from "./src/theme";
 import { SessionProvider, useSession } from "./src/state/SessionContext";
 import { PreferencesProvider } from "./src/state/PreferencesContext";
 import { CompanionProvider } from "./src/state/CompanionContext";
@@ -44,30 +49,29 @@ function AppContent() {
 }
 
 export default function App() {
+  // 600/700/800 only — the design uses no 400 weight anywhere in UI text.
   const [fontsLoaded] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
-    Inter_800ExtraBold,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+    PlusJakartaSans_800ExtraBold,
   });
 
   if (!fontsLoaded) return null;
 
   return (
-    <View style={{ flex: 1 }}>
+    // Root background matches the screen token so nothing flashes white behind a
+    // transition or during the splash handoff.
+    <View style={{ flex: 1, backgroundColor: color.screen }}>
       <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
         <SafeAreaProvider>
-          <AppearanceProvider>
-            <PreferencesProvider>
-              <CompanionProvider>
-                <SessionProvider>
-                  <AppContent />
-                  <StatusBar style="auto" />
-                </SessionProvider>
-              </CompanionProvider>
-            </PreferencesProvider>
-          </AppearanceProvider>
+          <PreferencesProvider>
+            <CompanionProvider>
+              <SessionProvider>
+                <AppContent />
+                <StatusBar style="dark" />
+              </SessionProvider>
+            </CompanionProvider>
+          </PreferencesProvider>
         </SafeAreaProvider>
       </PersistQueryClientProvider>
     </View>

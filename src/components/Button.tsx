@@ -1,93 +1,63 @@
 import React from "react";
-import { ActivityIndicator, Pressable, StyleSheet, StyleProp, ViewStyle } from "react-native";
-import { useAppearance } from "../state/AppearanceContext";
-import { fontSize } from "../theme/typography";
-import { minTouchTarget, radii } from "../theme/spacing";
-import { Text } from "./Text";
+import { ActivityIndicator, Pressable, StyleSheet, Text, ViewStyle } from "react-native";
+import { color, radius, size, space, text as t, type as T } from "../theme";
 
-const styles = StyleSheet.create({
-  base: {
-    borderRadius: radii.control,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-  },
-  regularHeight: {
-    minHeight: minTouchTarget,
-  },
-  largeHeight: {
-    minHeight: 52,
-  },
-});
-
-type Variant = "primary" | "secondary" | "destructive" | "destructiveSolid" | "outlinePrimary";
+export type ButtonVariant = "primary" | "secondary" | "destructive" | "destructiveText";
 
 interface ButtonProps {
   label: string;
-  onPress?: () => void;
-  variant?: Variant;
+  onPress: () => void;
+  variant?: ButtonVariant;
   disabled?: boolean;
+  /** Shows a spinner in place of the label and blocks presses while true. */
   loading?: boolean;
-  style?: StyleProp<ViewStyle>;
-  /** Slightly taller (52px) primary CTA used for hero actions like "Start Focus Session". */
-  large?: boolean;
+  style?: ViewStyle | ViewStyle[];
 }
 
-export function Button({
-  label,
-  onPress,
-  variant = "primary",
-  disabled = false,
-  loading = false,
-  style,
-  large = false,
-}: ButtonProps) {
-  const { colors } = useAppearance();
-  const isDisabled = disabled || loading;
+const VARIANTS: Record<ButtonVariant, { bg: string; fg: string; border: string; radius: number }> = {
+  primary: { bg: color.interactive, fg: color.onInteractive, border: "transparent", radius: radius.card },
+  secondary: { bg: color.fill, fg: color.text, border: "transparent", radius: radius.control },
+  destructive: { bg: "transparent", fg: color.danger, border: color.dangerBorder, radius: radius.card },
+  destructiveText: { bg: "transparent", fg: color.danger, border: "transparent", radius: 0 },
+};
 
-  const variantStyle = {
-    primary: { backgroundColor: colors.primary, borderWidth: 0, textColor: "#FFFFFF" },
-    secondary: { backgroundColor: colors.neutralFill, borderWidth: 0, textColor: colors.textDark },
-    destructive: { backgroundColor: colors.bgCard, borderWidth: 1.5, borderColor: colors.destructive, textColor: colors.destructive },
-    // Solid fill — reserved for the final confirm step inside a ConfirmModal (e.g. "Delete"),
-    // distinct from the outlined `destructive` variant used for standalone actions like "End Session".
-    destructiveSolid: { backgroundColor: colors.destructive, borderWidth: 0, textColor: "#FFFFFF" },
-    // Outlined green — e.g. the "Done" action on a reminder-task row, secondary in emphasis to "Focus".
-    outlinePrimary: { backgroundColor: colors.bgCard, borderWidth: 1.5, borderColor: colors.primary, textColor: colors.primary },
-  }[variant];
+export function Button({ label, onPress, variant = "primary", disabled, loading = false, style }: ButtonProps) {
+  const v = VARIANTS[variant];
+  const inert = disabled || loading;
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!inert, busy: loading }}
+      disabled={inert}
       onPress={onPress}
-      disabled={isDisabled}
       style={({ pressed }) => [
         styles.base,
-        large ? styles.largeHeight : styles.regularHeight,
         {
-          backgroundColor: variantStyle.backgroundColor,
-          borderWidth: variantStyle.borderWidth,
-          borderColor: (variantStyle as { borderColor?: string }).borderColor,
-          opacity: isDisabled ? 0.4 : pressed ? 0.85 : 1,
+          borderRadius: v.radius,
+          backgroundColor: variant === "primary" && pressed ? color.interactivePress : v.bg,
+          borderWidth: variant === "destructive" ? 1.5 : 0,
+          borderColor: v.border,
+          opacity: inert ? 0.45 : 1,
         },
         style,
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={variantStyle.textColor} />
+        <ActivityIndicator color={v.fg} />
       ) : (
-        <Text
-          size={large ? fontSize.bodyLg : fontSize.body}
-          weight="semiBold"
-          color={variantStyle.textColor}
-          numberOfLines={1}
-          // Truncates rather than wrapping to a second line — a button whose height
-          // silently doubles because a label is a touch too long for the width looks
-          // broken, especially next to other single-line buttons in the same row.
-          ellipsizeMode="tail"
-        >
-          {label}
-        </Text>
+        <Text style={t(T.button, { color: v.fg })}>{label}</Text>
       )}
     </Pressable>
   );
 }
+
+const styles = StyleSheet.create({
+  base: {
+    minHeight: size.button,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: space.gutter,
+  },
+});

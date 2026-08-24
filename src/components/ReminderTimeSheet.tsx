@@ -1,54 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
-import { useAppearance } from "../state/AppearanceContext";
-import { radii } from "../theme/spacing";
-import { fontSize } from "../theme/typography";
 import type { CreateReminderRequest } from "../api/types";
+import { color, radius, space, text as t, type as T } from "../theme";
 import { BottomSheet } from "./BottomSheet";
-import { Body, Text } from "./Text";
 import { Button } from "./Button";
+import { Segmented } from "./Segmented";
+import { H2, Meta } from "./Text";
 
 const MINUTE_PRESETS = [10, 20, 30, 45, 60];
-
-const styles = StyleSheet.create({
-  segmentedRow: {
-    flexDirection: "row",
-    borderRadius: radii.control,
-    padding: 3,
-    gap: 3,
-  },
-  segmentedItem: {
-    flex: 1,
-    minHeight: 40,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 6,
-  },
-  androidTimeButton: {
-    minHeight: 48,
-    paddingHorizontal: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radii.control,
-    borderWidth: 1,
-  },
-  section: {
-    gap: 8,
-  },
-  chipRow: {
-    flexDirection: "row",
-    gap: 8,
-    flexWrap: "wrap",
-  },
-  chip: {
-    minHeight: 40,
-    paddingHorizontal: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radii.pill,
-  },
-});
 
 /**
  * "YYYY-MM-DD" from the device's local calendar day — never date.toISOString(), which
@@ -80,6 +40,22 @@ function isSameDay(a: Date, b: Date): boolean {
   return toLocalDateString(a) === toLocalDateString(b);
 }
 
+/** Small selectable pill — shared by the date shortcuts and the minute presets. */
+function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={[styles.chip, active && styles.chipActive]}
+    >
+      <Text style={t(T.label, { fontWeight: active ? "800" : "600", color: active ? color.selectedText : color.textBody })}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 interface ReminderTimeSheetProps {
   visible: boolean;
   onClose: () => void;
@@ -92,15 +68,14 @@ interface ReminderTimeSheetProps {
 }
 
 /**
- * Simplified stand-in for the mockup's S4 reminder time picker — single-fire Reminder
- * only (clock time or "in N minutes"). Interval reminders (start/end window + nudge
- * cadence) aren't editable from here yet; see memory/project_design_handoff.md.
+ * Single-fire reminder only (clock time or "in N minutes"). Interval reminders
+ * (start/end window + nudge cadence) aren't editable from here yet.
  *
  * "Repeat" only applies to clock-time reminders — "remind me in N minutes" is inherently
  * a one-off relative to right now, so a date concept doesn't apply to it at all.
  *
  * Defaults to "Every day" when creating fresh, matching the server's own default when no
- * date is sent — existing behavior is unchanged unless someone actively picks "Just once".
+ * date is sent.
  */
 export function ReminderTimeSheet({
   visible,
@@ -110,7 +85,6 @@ export function ReminderTimeSheet({
   initialReminderTime,
   initialReminderDate,
 }: ReminderTimeSheetProps) {
-  const { colors } = useAppearance();
   const [mode, setMode] = useState<"clock" | "minutes">("clock");
   const [clockTime, setClockTime] = useState(new Date());
   const [minutes, setMinutes] = useState(30);
@@ -157,9 +131,7 @@ export function ReminderTimeSheet({
       const reminderTime = `${hh}:${mm}:00`;
 
       onSubmit(
-        repeat === "once"
-          ? { reminderTime, reminderDate: toLocalDateString(selectedDate) }
-          : { reminderTime }
+        repeat === "once" ? { reminderTime, reminderDate: toLocalDateString(selectedDate) } : { reminderTime }
       );
     } else {
       onSubmit({ remindInMinutes: minutes });
@@ -176,11 +148,8 @@ export function ReminderTimeSheet({
    * regardless of the `display` prop — it's never actually inline on Android. Mounting it
    * declaratively inside another Modal (this sheet is one) is what caused it to
    * intermittently render behind the sheet's own window, and why nothing here ever told
-   * it to close: there was no code path that considered it "closed" after Android's own
-   * dialog dismissed itself. DateTimePickerAndroid.open() is the library's actual
-   * intended API for Android — an imperative one-shot call with no JSX/mounted state at
-   * all, so there's nothing to end up on the wrong native window and nothing to forget
-   * to close.
+   * it to close. DateTimePickerAndroid.open() is the library's actual intended API for
+   * Android — an imperative one-shot call with no JSX/mounted state at all.
    */
   function openAndroidTimePicker() {
     DateTimePickerAndroid.open({
@@ -208,31 +177,22 @@ export function ReminderTimeSheet({
 
   return (
     <BottomSheet visible={visible} onClose={onClose}>
-      <Text size={fontSize.xl} weight="bold">
-        {isEditing ? "Edit reminder" : "Set a reminder"}
-      </Text>
-      <View style={[styles.segmentedRow, { backgroundColor: colors.neutralFill }]}>
-        {(["clock", "minutes"] as const).map((m) => (
-          <Pressable
-            key={m}
-            onPress={() => setMode(m)}
-            style={[styles.segmentedItem, { backgroundColor: mode === m ? colors.bgCard : "transparent" }]}
-          >
-            <Text size={fontSize.caption} weight="bold" color={mode === m ? colors.textDark : colors.textMuted}>
-              {m === "clock" ? "🕕 Clock time" : "⏳ In minutes"}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      <H2>{isEditing ? "Edit reminder" : "Set a reminder"}</H2>
+
+      <Segmented<"clock" | "minutes">
+        value={mode}
+        onChange={setMode}
+        options={[
+          { value: "clock", label: "Clock time" },
+          { value: "minutes", label: "In minutes" },
+        ]}
+      />
 
       {mode === "clock" ? (
         <>
           {Platform.OS === "android" ? (
-            <Pressable
-              onPress={openAndroidTimePicker}
-              style={[styles.androidTimeButton, { borderColor: colors.toggleOff, backgroundColor: colors.bgCard }]}
-            >
-              <Text size={fontSize.bodyLg} weight="bold">
+            <Pressable accessibilityRole="button" onPress={openAndroidTimePicker} style={styles.androidTimeButton}>
+              <Text style={t(T.h2, { color: color.text })}>
                 {clockTime.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
               </Text>
             </Pressable>
@@ -246,74 +206,44 @@ export function ReminderTimeSheet({
           )}
 
           <View style={styles.section}>
-            <Body color={colors.textMuted} size={fontSize.caption}>
-              Repeat
-            </Body>
-            <View style={[styles.segmentedRow, { backgroundColor: colors.neutralFill }]}>
-              {(["daily", "once"] as const).map((r) => (
-                <Pressable
-                  key={r}
-                  onPress={() => setRepeat(r)}
-                  style={[styles.segmentedItem, { backgroundColor: repeat === r ? colors.bgCard : "transparent" }]}
-                >
-                  <Text size={fontSize.caption} weight="bold" color={repeat === r ? colors.textDark : colors.textMuted}>
-                    {r === "daily" ? "Every day" : "Just once"}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+            <Meta>Repeat</Meta>
+            <Segmented<"daily" | "once">
+              value={repeat}
+              onChange={setRepeat}
+              options={[
+                { value: "daily", label: "Every day" },
+                { value: "once", label: "Just once" },
+              ]}
+            />
           </View>
 
           {repeat === "once" && (
             <View style={styles.section}>
-              <Body color={colors.textMuted} size={fontSize.caption}>
-                On…
-              </Body>
+              <Meta>On…</Meta>
               <View style={styles.chipRow}>
                 {[
                   { label: "Today", date: today },
                   { label: "Tomorrow", date: tomorrow },
-                ].map(({ label, date }) => {
-                  const active = isSameDay(selectedDate, date) && !showDatePicker;
-                  return (
-                    <Pressable
-                      key={label}
-                      onPress={() => {
-                        setSelectedDate(date);
-                        setShowDatePicker(false);
-                      }}
-                      style={[
-                        styles.chip,
-                        {
-                          borderWidth: active ? 2 : 1,
-                          borderColor: active ? colors.primary : colors.toggleOff,
-                          backgroundColor: active ? colors.primaryTintBg : colors.bgCard,
-                        },
-                      ]}
-                    >
-                      <Text size={fontSize.label} weight={active ? "bold" : "semiBold"} color={active ? colors.primaryTintText : colors.textMuted}>
-                        {label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-                <Pressable
-                  onPress={() => (Platform.OS === "android" ? openAndroidDatePicker() : setShowDatePicker(true))}
-                  style={[
-                    styles.chip,
-                    {
-                      borderWidth: showDatePicker ? 2 : 1,
-                      borderColor: showDatePicker ? colors.primary : colors.toggleOff,
-                      backgroundColor: showDatePicker ? colors.primaryTintBg : colors.bgCard,
-                    },
-                  ]}
-                >
-                  <Text size={fontSize.label} weight={showDatePicker ? "bold" : "semiBold"} color={showDatePicker ? colors.primaryTintText : colors.textMuted}>
-                    {showDatePicker || (!isSameDay(selectedDate, today) && !isSameDay(selectedDate, tomorrow))
+                ].map(({ label, date }) => (
+                  <Chip
+                    key={label}
+                    label={label}
+                    active={isSameDay(selectedDate, date) && !showDatePicker}
+                    onPress={() => {
+                      setSelectedDate(date);
+                      setShowDatePicker(false);
+                    }}
+                  />
+                ))}
+                <Chip
+                  label={
+                    showDatePicker || (!isSameDay(selectedDate, today) && !isSameDay(selectedDate, tomorrow))
                       ? selectedDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-                      : "Pick a date"}
-                  </Text>
-                </Pressable>
+                      : "Pick a date"
+                  }
+                  active={showDatePicker}
+                  onPress={() => (Platform.OS === "android" ? openAndroidDatePicker() : setShowDatePicker(true))}
+                />
               </View>
 
               {/* Android's tap handler above opens DateTimePickerAndroid.open() imperatively
@@ -325,7 +255,7 @@ export function ReminderTimeSheet({
                   display="spinner"
                   // A dated reminder in the past can never fire again (see
                   // localNotifications.ts's nextOccurrence) — refusing to let one be
-                  // picked is better than silently creating a reminder that will never go off.
+                  // picked is better than silently creating a reminder that never goes off.
                   minimumDate={today}
                   onChange={(_, date) => date && setSelectedDate(date)}
                 />
@@ -335,36 +265,56 @@ export function ReminderTimeSheet({
         </>
       ) : (
         <View style={styles.section}>
-          <Body color={colors.textMuted} size={fontSize.caption}>
-            Remind me in…
-          </Body>
+          <Meta>Remind me in…</Meta>
           <View style={styles.chipRow}>
-            {MINUTE_PRESETS.map((preset) => {
-              const active = preset === minutes;
-              return (
-                <Pressable
-                  key={preset}
-                  onPress={() => setMinutes(preset)}
-                  style={[
-                    styles.chip,
-                    {
-                      borderWidth: active ? 2 : 1,
-                      borderColor: active ? colors.primary : colors.toggleOff,
-                      backgroundColor: active ? colors.primaryTintBg : colors.bgCard,
-                    },
-                  ]}
-                >
-                  <Text size={fontSize.label} weight={active ? "bold" : "semiBold"} color={active ? colors.primaryTintText : colors.textMuted}>
-                    {preset}
-                  </Text>
-                </Pressable>
-              );
-            })}
+            {MINUTE_PRESETS.map((preset) => (
+              <Chip
+                key={preset}
+                label={`${preset} min`}
+                active={preset === minutes}
+                onPress={() => setMinutes(preset)}
+              />
+            ))}
           </View>
         </View>
       )}
 
-      <Button label="Save reminder" large loading={submitting} onPress={handleSave} />
+      <Button label="Save reminder" loading={submitting} onPress={handleSave} />
     </BottomSheet>
   );
 }
+
+const styles = StyleSheet.create({
+  section: {
+    gap: space.sm,
+  },
+  androidTimeButton: {
+    minHeight: 52,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: color.card,
+  },
+  chipRow: {
+    flexDirection: "row",
+    gap: space.sm,
+    flexWrap: "wrap",
+  },
+  chip: {
+    minHeight: 44,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: color.border,
+  },
+  chipActive: {
+    borderWidth: 1.5,
+    borderColor: color.interactive,
+    backgroundColor: color.selectedTint,
+  },
+});

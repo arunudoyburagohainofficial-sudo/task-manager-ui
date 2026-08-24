@@ -1,7 +1,7 @@
 import React from "react";
-import { StyleSheet, StyleProp, View, ViewStyle } from "react-native";
+import { StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useAppearance } from "../state/AppearanceContext";
+import { color } from "../theme";
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -15,18 +15,15 @@ const styles = StyleSheet.create({
 interface ScreenContainerProps {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
-  /** Focus Session uses a deliberately calmer off-white background than the standard screen bg. */
+  /** Overrides the standard warm screen background — the focus session runs calmer. */
   backgroundColor?: string;
 }
 
 export function ScreenContainer({ children, style, backgroundColor }: ScreenContainerProps) {
-  const { colors } = useAppearance();
+  const bg = backgroundColor ?? color.screen;
   return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: backgroundColor ?? colors.bgScreen }]}
-      edges={["top", "bottom"]}
-    >
-      <View style={[styles.content, style]}>{children}</View>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: bg }]} edges={["top", "left", "right"]}>
+      <View style={[styles.content, { backgroundColor: bg }, style]}>{children}</View>
     </SafeAreaView>
   );
 }

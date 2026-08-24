@@ -1,17 +1,34 @@
 import React, { useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useGoalsQuery } from "../api/queries/useGoals";
 import { useCreateReminderMutation } from "../api/queries/useReminders";
 import { useCreateTaskMutation } from "../api/queries/useTasks";
-import type { CreateReminderRequest } from "../api/types";
+import type { CreateReminderRequest, TaskType } from "../api/types";
+import {
+  BackLink,
+  Body,
+  Button,
+  Card,
+  Ferne,
+  FocusIcon,
+  GoalPickerSheet,
+  H1,
+  InfoCard,
+  Label,
+  Meta,
+  ReminderIcon,
+  ReminderTimeSheet,
+  ScreenContainer,
+  Segmented,
+  StreakIconInline,
+  TextField,
+} from "../components";
 import { syncReminders } from "../notifications/useReminderSync";
-import { Body, Button, Card, CompanionBubble, CompanionOrb, GoalPickerSheet, ReminderTimeSheet, ScreenContainer, ScreenTitle, TaskTypeBadge, TextField } from "../components";
-import { useAppearance } from "../state/AppearanceContext";
 import { useCompanion } from "../state/CompanionContext";
 import { useSession } from "../state/SessionContext";
-import { fontSize } from "../theme/typography";
+import { color, space } from "../theme";
 import { organizeLine } from "../theme/companionCopy";
 import { formatClockTime } from "../utils/format";
 import type { CapturedTaskDraft, RootStackParamList } from "../navigation/types";
@@ -19,58 +36,11 @@ import type { CapturedTaskDraft, RootStackParamList } from "../navigation/types"
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, "ConfirmOrganize">;
 
-const styles = StyleSheet.create({
-  keyboardAvoiding: {
-    flex: 1,
-  },
-  header: {
-    padding: 24,
-    paddingBottom: 8,
-  },
-  backLink: {
-    marginBottom: 4,
-  },
-  subtitle: {
-    marginTop: 4,
-  },
-  companionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginTop: 12,
-  },
-  bubbleFlex: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    gap: 12,
-  },
-  draftCard: {
-    gap: 12,
-  },
-  reminderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-  },
-  focusNote: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderRadius: 8,
-    padding: 10,
-  },
-  submitBar: {
-    padding: 16,
-  },
-});
-
 /**
  * One-line summary of a not-yet-created reminder, so the choice stays visible on the card
- * without reopening the sheet. Deliberately spells out the repeat/date part too — a
- * bare time would leave "every day" (the server's default when no date is sent)
- * indistinguishable from a one-off.
+ * without reopening the sheet. Deliberately spells out the repeat/date part too — a bare
+ * time would leave "every day" (the server's default when no date is sent) indistinguishable
+ * from a one-off.
  */
 function describeReminder(request: CreateReminderRequest): string {
   if (request.remindInMinutes !== undefined) return `in ${request.remindInMinutes} min`;
@@ -83,7 +53,6 @@ function describeReminder(request: CreateReminderRequest): string {
 }
 
 export function ConfirmOrganizeScreen() {
-  const { colors } = useAppearance();
   const { tone } = useCompanion();
   const { user } = useSession();
   const navigation = useNavigation<Nav>();
@@ -122,10 +91,10 @@ export function ConfirmOrganizeScreen() {
           taskType: draft.taskType,
           goalId: draft.goalId ?? undefined,
         });
-        // Only now does a real taskId exist to hang the reminder off. Its failure is
-        // caught per-draft rather than aborting: the task itself is already saved by this
-        // point, and a reminder stays settable from Task Detail afterwards — throwing here
-        // would strand a created task behind a "couldn't save" message that isn't true.
+        // Only now does a real taskId exist to hang the reminder off. Its failure is caught
+        // per-draft rather than aborting: the task itself is already saved by this point,
+        // and a reminder stays settable from Task Detail afterwards — throwing here would
+        // strand a created task behind a "couldn't save" message that isn't true.
         if (draft.reminder) {
           try {
             await createReminderMutation.mutateAsync({ taskId: created.id, request: draft.reminder });
@@ -135,9 +104,7 @@ export function ConfirmOrganizeScreen() {
         }
       }
       // Deliberately not awaited: rescheduling the device's notifications is three more API
-      // calls plus a possible permission prompt, and syncReminders never throws — making the
-      // user wait through all of it before the screen even closes would undo the point of
-      // setting the reminder here. Skipped entirely when nothing asked for one.
+      // calls plus a possible permission prompt, and syncReminders never throws.
       if (drafts.some((d) => d.reminder)) void syncReminders();
       if (remindersFailed > 0) {
         Alert.alert(
@@ -158,96 +125,106 @@ export function ConfirmOrganizeScreen() {
 
   return (
     <ScreenContainer>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardAvoiding}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backLink}>
-          <Body weight="semiBold" color={colors.primary}>
-            ← Back
-          </Body>
-        </Pressable>
-        <ScreenTitle>Organize your tasks</ScreenTitle>
-        <Body color={colors.textMuted} style={styles.subtitle}>
-          {drafts.length} task{drafts.length === 1 ? "" : "s"} captured — set a type, category &amp; reminder for each
-        </Body>
-        <View style={styles.companionRow}>
-          <CompanionOrb state="thinking" size={42} />
-          <View style={styles.bubbleFlex}>
-            <CompanionBubble
-              text={organizeLine(
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <BackLink onPress={() => navigation.goBack()} />
+          <H1>Organize your tasks</H1>
+          <Meta style={styles.subtitle}>
+            {drafts.length} task{drafts.length === 1 ? "" : "s"} captured — set a type &amp; reminder for each
+          </Meta>
+
+          <View style={styles.ferne}>
+            <Ferne
+              message={organizeLine(
                 tone,
                 drafts.filter((d) => d.taskType === "focus").length,
                 drafts.filter((d) => d.taskType === "reminder").length
               )}
             />
           </View>
-        </View>
-      </View>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {drafts.map((draft) => {
-          return (
+
+          {drafts.map((draft) => (
             <Card key={draft.localId} style={styles.draftCard}>
               <TextField value={draft.name} onChangeText={(name) => updateDraft(draft.localId, { name })} />
-              <TaskTypeBadge value={draft.taskType} onChange={(taskType) => updateDraft(draft.localId, { taskType })} />
-              <View style={styles.reminderRow}>
-                <Pressable onPress={() => setReminderSheetFor(draft.localId)} hitSlop={8}>
-                  <Body
-                    size={fontSize.caption}
-                    weight="semiBold"
-                    color={draft.reminder ? colors.primary : colors.textMuted}
-                  >
-                    {draft.reminder ? `⏰ ${describeReminder(draft.reminder)}` : "⏰ Set a reminder"}
+
+              <Segmented<TaskType>
+                value={draft.taskType}
+                onChange={(taskType) => updateDraft(draft.localId, { taskType })}
+                options={[
+                  { value: "focus", label: "Focus Task", icon: <FocusIcon size={18} /> },
+                  { value: "reminder", label: "Reminder Task", icon: <ReminderIcon size={18} /> },
+                ]}
+              />
+
+              <View style={styles.affordanceRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setReminderSheetFor(draft.localId)}
+                  style={styles.affordance}
+                  hitSlop={4}
+                >
+                  <ReminderIcon size={20} />
+                  <Body style={{ color: draft.reminder ? color.selectedText : color.textBody }}>
+                    {draft.reminder ? describeReminder(draft.reminder) : "Set a reminder"}
                   </Body>
                 </Pressable>
                 {draft.reminder ? (
-                  <Pressable onPress={() => updateDraft(draft.localId, { reminder: null })} hitSlop={8}>
-                    <Body size={fontSize.caption} color={colors.destructive}>
-                      Remove
-                    </Body>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => updateDraft(draft.localId, { reminder: null })}
+                    hitSlop={8}
+                  >
+                    <Meta style={{ color: color.danger, fontWeight: "800" }}>Remove</Meta>
                   </Pressable>
                 ) : null}
               </View>
+
+              {/* Focus-only affordances (design §3). */}
               {draft.taskType === "focus" ? (
-                <View style={styles.reminderRow}>
-                  <Pressable onPress={() => setGoalPickerFor(draft.localId)} hitSlop={8}>
-                    <Body
-                      size={fontSize.caption}
-                      weight="semiBold"
-                      color={draft.goalId ? colors.primary : colors.textMuted}
+                <>
+                  <View style={styles.affordanceRow}>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setGoalPickerFor(draft.localId)}
+                      style={styles.affordance}
+                      hitSlop={4}
                     >
-                      {draft.goalId
-                        ? `🎯 ${goals.find((g) => g.id === draft.goalId)?.name ?? "Goal"}`
-                        : "🎯 Count toward a goal"}
-                    </Body>
-                  </Pressable>
-                  {draft.goalId ? (
-                    <Pressable onPress={() => updateDraft(draft.localId, { goalId: null })} hitSlop={8}>
-                      <Body size={fontSize.caption} color={colors.destructive}>
-                        Remove
+                      <FocusIcon size={20} />
+                      <Body style={{ color: draft.goalId ? color.selectedText : color.textBody }}>
+                        {draft.goalId
+                          ? goals.find((g) => g.id === draft.goalId)?.name ?? "Goal"
+                          : "Count toward a goal"}
                       </Body>
                     </Pressable>
-                  ) : null}
-                </View>
-              ) : null}
-              {draft.taskType === "focus" ? (
-                <View style={[styles.focusNote, { backgroundColor: colors.primaryTintBg }]}>
-                  <Body size={fontSize.caption} weight="semiBold" color={colors.primaryTintText}>
-                    🔥 Counts toward your streak &amp; weekly progress
-                  </Body>
-                </View>
+                    {draft.goalId ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => updateDraft(draft.localId, { goalId: null })}
+                        hitSlop={8}
+                      >
+                        <Meta style={{ color: color.danger, fontWeight: "800" }}>Remove</Meta>
+                      </Pressable>
+                    ) : null}
+                  </View>
+
+                  <InfoCard icon={<StreakIconInline />}>
+                    <Label style={{ color: color.success }}>Counts toward your streak &amp; weekly progress</Label>
+                  </InfoCard>
+                </>
               ) : null}
             </Card>
-          );
-        })}
-        {error ? <Body color={colors.destructive}>{error}</Body> : null}
-      </ScrollView>
-      <View style={styles.submitBar}>
-        <Button
-          label={`Confirm & Add ${drafts.length} task${drafts.length === 1 ? "" : "s"}`}
-          large
-          loading={submitting}
-          onPress={handleConfirm}
-        />
-      </View>
+          ))}
+
+          {error ? <Body style={{ color: color.danger }}>{error}</Body> : null}
+        </ScrollView>
+
+        <View style={styles.submitBar}>
+          <Button
+            label={`Confirm & Add ${drafts.length} task${drafts.length === 1 ? "" : "s"}`}
+            loading={submitting}
+            onPress={handleConfirm}
+          />
+        </View>
       </KeyboardAvoidingView>
 
       <GoalPickerSheet
@@ -261,7 +238,7 @@ export function ConfirmOrganizeScreen() {
       />
 
       {/* No `submitting` prop: picking a time here only writes to local draft state — the
-          reminder isn't actually created until Confirm & Add, so there's nothing to await. */}
+          reminder isn't created until Confirm & Add, so there's nothing to await. */}
       <ReminderTimeSheet
         visible={reminderSheetFor !== null}
         onClose={() => setReminderSheetFor(null)}
@@ -275,3 +252,43 @@ export function ConfirmOrganizeScreen() {
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.md,
+    paddingBottom: space.base,
+  },
+  subtitle: {
+    marginTop: 4,
+  },
+  ferne: {
+    marginTop: 14,
+  },
+  draftCard: {
+    padding: 14,
+    marginTop: 11,
+    gap: 11,
+  },
+  affordanceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: space.sm,
+  },
+  affordance: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+    minHeight: 44,
+    flex: 1,
+  },
+  submitBar: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.base,
+    paddingBottom: 18,
+  },
+});
