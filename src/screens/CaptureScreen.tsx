@@ -2,8 +2,9 @@ import React, { useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { Body, Button, Ferne, Meta, ScreenContainer, TextField } from "../components";
+import { Body, Button, Ferne, Meta, ScreenContainer, TextField, TourInlineSlot } from "../components";
 import { useCompanion } from "../state/CompanionContext";
+import { useTour } from "../state/TourContext";
 import { color, radius, space } from "../theme";
 import { listeningLine } from "../theme/companionCopy";
 import type { CapturedTaskDraft, RootStackParamList } from "../navigation/types";
@@ -18,6 +19,8 @@ let nextLocalId = 0;
  */
 export function CaptureScreen() {
   const { name } = useCompanion();
+  const { activeStep: tourStep } = useTour();
+  const tourRunning = tourStep !== null;
   const navigation = useNavigation<Nav>();
   const [text, setText] = useState("");
   const [drafts, setDrafts] = useState<CapturedTaskDraft[]>([]);
@@ -86,7 +89,15 @@ export function CaptureScreen() {
 
           <TextField value={text} onChangeText={setText} placeholder="Type a task…" multiline />
 
-          <Button label="+ Add another" variant="secondary" onPress={addDraft} disabled={!text.trim()} />
+          {/* Disabled during the walkthrough: the tour asks for one task and then moves
+              on, and stacking up several drafts here leads somewhere its next step can't
+              describe. Fully available again the moment the tour ends. */}
+          <Button
+            label="+ Add another"
+            variant="secondary"
+            onPress={addDraft}
+            disabled={!text.trim() || tourRunning}
+          />
 
           <View style={styles.actions}>
             <Button label="Cancel" variant="secondary" onPress={() => navigation.goBack()} style={styles.cancel} />
@@ -97,6 +108,10 @@ export function CaptureScreen() {
               style={styles.confirm}
             />
           </View>
+
+          {/* Directly beneath the buttons, in the page's own flow — the floating version
+              would sit at the bottom of the window with dead space above it. */}
+          <TourInlineSlot />
         </ScrollView>
       </KeyboardAvoidingView>
     </ScreenContainer>

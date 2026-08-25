@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -31,6 +31,7 @@ import {
 import { syncReminders } from "../notifications/useReminderSync";
 import { useCompanion } from "../state/CompanionContext";
 import { useSession } from "../state/SessionContext";
+import { TourTarget, useTour } from "../state/TourContext";
 import { color, radius, space, text as t, type as T } from "../theme";
 import { homeLine } from "../theme/companionCopy";
 import { formatClockTime, formatFirstName, formatGreetingDate, greetingForHour, isToday } from "../utils/format";
@@ -80,6 +81,17 @@ export function HomeScreen() {
     [remindersQuery.data]
   );
   const goalsById = useMemo(() => new Map(goals.map((g) => [g.id, g])), [goals]);
+  /**
+   * Which row the walkthrough's last step points at. A focus task by preference, and the
+   * most recent one — newly created tasks are appended to the cached list, so the task the
+   * user just made during the tour is at the end, not the start. Pointing at index 0 would
+   * spotlight the seeded reminder task, whose button reads "Done" while the tour's copy
+   * says to tap "Focus".
+   */
+  const tourRowId = useMemo(() => {
+    const focusTasks = tasks.filter((t) => t.taskType === "focus");
+    return (focusTasks.length ? focusTasks[focusTasks.length - 1] : tasks[0])?.id;
+  }, [tasks]);
   const currentStreak = streakQuery.data?.currentStreak ?? 0;
   // Scoped to today deliberately: the "completed" query returns every task ever finished,
   // which would turn the done section into an ever-growing archive. Home is a today view —
@@ -127,6 +139,14 @@ export function HomeScreen() {
 
   const hasLoaded = tasksQuery.isSuccess && goalsQuery.isSuccess && remindersQuery.isSuccess && streakQuery.isSuccess;
 
+  // Started from here rather than on sign-in: the first step points at a control on this
+  // screen, so the tour must not begin until Home is actually rendered with real data and
+  // that control can be measured.
+  const { startIfNeeded, advance: advanceTour } = useTour();
+  useEffect(() => {
+    if (hasLoaded) startIfNeeded();
+  }, [hasLoaded, startIfNeeded]);
+
   async function handleRefresh() {
     setRefreshing(true);
     await Promise.all([
@@ -149,6 +169,9 @@ export function HomeScreen() {
       await updateGoalMutation.mutateAsync({ goalId: editingGoal.id, request: fields });
     } else {
       await createGoalMutation.mutateAsync(fields);
+      // Only a genuinely new goal completes the tour's first step — editing an existing
+      // one isn't what was asked for.
+      advanceTour("goal");
     }
     setEditingGoal(null);
     setCreatingGoal(false);
@@ -221,15 +244,20 @@ export function HomeScreen() {
             ) : null}
 
             {/* capture — Ferne is the hero, tap opens capture */}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Capture tasks"
-              onPress={() => navigation.navigate("Capture")}
-              style={styles.capture}
-            >
-              <Ferne size={92} />
-              <Text style={t(T.body, { fontWeight: "700", color: color.success })}>Tap to capture tasks</Text>
-            </Pressable>
+            <TourTarget step="capture" style={styles.capture}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Capture tasks"
+                onPress={() => {
+                  advanceTour("capture");
+                  navigation.navigate("Capture");
+                }}
+                style={styles.captureInner}
+              >
+                <Ferne size={92} />
+                <Text style={t(T.body, { fontWeight: "700", color: color.success })}>Tap to capture tasks</Text>
+              </Pressable>
+            </TourTarget>
 
             <View style={styles.goalsHeader}>
               <Eyebrow>GOALS</Eyebrow>
@@ -242,7 +270,9 @@ export function HomeScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.goalsRow}
             >
-              <AddGoalCard onPress={() => setCreatingGoal(true)} />
+              <TourTarget step="goal" style={styles.goalTourTarget}>
+                <AddGoalCard onPress={() => setCreatingGoal(true)} />
+              </TourTarget>
               {goals.map((goal) => (
                 <GoalCard key={goal.id} goal={goal} width={168} onPress={() => setEditingGoal(goal)} />
               ))}
@@ -291,22 +321,26 @@ export function HomeScreen() {
           }
           const reminder = remindersByTaskId.get(item.id);
           const itemGoal = item.goalId ? goalsById.get(item.goalId) : undefined;
+          const isTourRow = item.id === tourRowId;
+          const row = (
+            <TaskRow
+              title={item.name}
+              taskType={item.taskType}
+              goalName={itemGoal?.name}
+              goalColor={itemGoal?.color ?? undefined}
+              subtitle={reminder ? `⏰ ${formatClockTime(reminder.reminderTime)}` : null}
+              actionLabel={item.taskType === "focus" ? "Focus" : "Done"}
+              onPress={() => navigation.navigate("TaskDetail", { taskId: item.id })}
+              onAction={() => {
+                advanceTour("start");
+                if (item.taskType === "focus") navigation.navigate("TaskDetail", { taskId: item.id });
+                else handleMarkReminderDone(item.id);
+              }}
+            />
+          );
           return (
             <View style={styles.rowSpacing}>
-              <TaskRow
-                title={item.name}
-                taskType={item.taskType}
-                goalName={itemGoal?.name}
-                goalColor={itemGoal?.color ?? undefined}
-                subtitle={reminder ? `⏰ ${formatClockTime(reminder.reminderTime)}` : null}
-                actionLabel={item.taskType === "focus" ? "Focus" : "Done"}
-                onPress={() => navigation.navigate("TaskDetail", { taskId: item.id })}
-                onAction={() =>
-                  item.taskType === "focus"
-                    ? navigation.navigate("TaskDetail", { taskId: item.id })
-                    : handleMarkReminderDone(item.id)
-                }
-              />
+              {isTourRow ? <TourTarget step="start">{row}</TourTarget> : row}
             </View>
           );
         }}
@@ -388,9 +422,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   capture: {
+    marginTop: 16,
+  },
+  captureInner: {
     alignItems: "center",
     gap: space.md,
-    marginTop: 16,
   },
   goalsHeader: {
     flexDirection: "row",
@@ -403,6 +439,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: space.md,
     paddingRight: space.xs,
+  },
+  /**
+   * The tour wrapper sits between the goal strip and the "+ Goal" card, which has only a
+   * minHeight and relied on being a direct child of the row to stretch to the height of
+   * the real goal cards beside it. flexDirection:row makes this wrapper's cross axis
+   * vertical, so its default alignItems:stretch passes that height back down to the card.
+   */
+  goalTourTarget: {
+    flexDirection: "row",
   },
   rowSpacing: {
     marginBottom: 9,

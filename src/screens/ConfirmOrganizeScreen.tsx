@@ -28,6 +28,7 @@ import {
 import { syncReminders } from "../notifications/useReminderSync";
 import { useCompanion } from "../state/CompanionContext";
 import { useSession } from "../state/SessionContext";
+import { TourTarget, useTour } from "../state/TourContext";
 import { color, space } from "../theme";
 import { organizeLine } from "../theme/companionCopy";
 import { formatClockTime } from "../utils/format";
@@ -61,6 +62,7 @@ export function ConfirmOrganizeScreen() {
   const goalsQuery = useGoalsQuery();
   const createTaskMutation = useCreateTaskMutation();
   const createReminderMutation = useCreateReminderMutation();
+  const { advance: advanceTour } = useTour();
 
   const [drafts, setDrafts] = useState<CapturedTaskDraft[]>(params.drafts);
   const [submitting, setSubmitting] = useState(false);
@@ -183,19 +185,21 @@ export function ConfirmOrganizeScreen() {
               {draft.taskType === "focus" ? (
                 <>
                   <View style={styles.affordanceRow}>
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => setGoalPickerFor(draft.localId)}
-                      style={styles.affordance}
-                      hitSlop={4}
-                    >
-                      <FocusIcon size={20} />
-                      <Body style={{ color: draft.goalId ? color.selectedText : color.textBody }}>
-                        {draft.goalId
-                          ? goals.find((g) => g.id === draft.goalId)?.name ?? "Goal"
-                          : "Count toward a goal"}
-                      </Body>
-                    </Pressable>
+                    <TourTarget step="attachGoal" style={styles.affordanceTarget}>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => setGoalPickerFor(draft.localId)}
+                        style={styles.affordance}
+                        hitSlop={4}
+                      >
+                        <FocusIcon size={20} />
+                        <Body style={{ color: draft.goalId ? color.selectedText : color.textBody }}>
+                          {draft.goalId
+                            ? goals.find((g) => g.id === draft.goalId)?.name ?? "Goal"
+                            : "Count toward a goal"}
+                        </Body>
+                      </Pressable>
+                    </TourTarget>
                     {draft.goalId ? (
                       <Pressable
                         accessibilityRole="button"
@@ -234,6 +238,8 @@ export function ConfirmOrganizeScreen() {
         selectedGoalId={drafts.find((d) => d.localId === goalPickerFor)?.goalId ?? null}
         onSelect={(goalId) => {
           if (goalPickerFor) updateDraft(goalPickerFor, { goalId });
+          // Only attaching one counts — picking "No goal" is the opposite of the step.
+          if (goalId) advanceTour("attachGoal");
         }}
       />
 
@@ -279,12 +285,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: space.sm,
   },
+  // flex lives on the TourTarget wrapper rather than the Pressable inside it — the wrapper
+  // is what the row now lays out, so leaving it here would collapse the label's width.
+  affordanceTarget: {
+    flex: 1,
+  },
   affordance: {
     flexDirection: "row",
     alignItems: "center",
     gap: space.sm,
     minHeight: 44,
-    flex: 1,
   },
   submitBar: {
     paddingHorizontal: space.gutter,

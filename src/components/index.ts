@@ -1,6 +1,7 @@
 // Type scale
 export * from "./Text";
 export * from "./LoadingScreen";
+export * from "./TourOverlay";
 
 // Primitives
 export * from "./Button";

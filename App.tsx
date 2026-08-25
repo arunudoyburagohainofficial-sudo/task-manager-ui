@@ -16,7 +16,10 @@ import { color } from "./src/theme";
 import { SessionProvider, useSession } from "./src/state/SessionContext";
 import { PreferencesProvider } from "./src/state/PreferencesContext";
 import { CompanionProvider } from "./src/state/CompanionContext";
+import { TourProvider } from "./src/state/TourContext";
+import { TourOverlay } from "./src/components/TourOverlay";
 import { RootNavigator } from "./src/navigation/RootNavigator";
+import { navigationRef } from "./src/navigation/navigationRef";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -42,7 +45,7 @@ function AppContent() {
   }, [navReady, isLoading, isReady]);
 
   return (
-    <NavigationContainer onReady={() => setNavReady(true)}>
+    <NavigationContainer ref={navigationRef} onReady={() => setNavReady(true)}>
       <RootNavigator />
     </NavigationContainer>
   );
@@ -67,8 +70,13 @@ export default function App() {
           <PreferencesProvider>
             <CompanionProvider>
               <SessionProvider>
-                <AppContent />
-                <StatusBar style="dark" />
+                <TourProvider>
+                  <AppContent />
+                  {/* Sibling of the navigator, not inside it: the walkthrough spotlights
+                      elements across several screens and has to sit above the tab bar too. */}
+                  <TourOverlay />
+                  <StatusBar style="dark" />
+                </TourProvider>
               </SessionProvider>
             </CompanionProvider>
           </PreferencesProvider>

@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../navigation/types";
 import { usersApi } from "../api";
 import { ApiError } from "../api/client";
 import {
@@ -23,6 +26,7 @@ import {
 } from "../components";
 import { usePreferences } from "../state/PreferencesContext";
 import { useSession } from "../state/SessionContext";
+import { useTour } from "../state/TourContext";
 import { color, radius, space } from "../theme";
 import { formatMinutes } from "../utils/format";
 
@@ -38,6 +42,8 @@ export function SettingsScreen() {
     setDndDuringFocusEnabled,
   } = usePreferences();
   const { user, updateUser, signOut } = useSession();
+  const { restart: restartTour } = useTour();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -201,6 +207,24 @@ export function SettingsScreen() {
             style={styles.savePreferences}
           />
         ) : null}
+
+        <View style={styles.sectionLabel}>
+          <Eyebrow>GETTING STARTED</Eyebrow>
+        </View>
+        <Card style={styles.group}>
+          {/* Jumps to Home as well as restarting: the walkthrough's first step points at
+              the "+ Goal" control there, and starting it from this screen would leave the
+              overlay with nothing to spotlight. */}
+          <SettingsRow
+            label="Replay walkthrough"
+            last
+            onPress={() => {
+              restartTour();
+              navigation.navigate("Main", { screen: "Home" });
+            }}
+            right={<Body style={{ color: color.text }}>Start ▸</Body>}
+          />
+        </Card>
 
         <View style={styles.sectionLabel}>
           <Eyebrow>FOCUS SESSIONS</Eyebrow>
