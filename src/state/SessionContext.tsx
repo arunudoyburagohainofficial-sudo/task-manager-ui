@@ -19,10 +19,11 @@ interface SessionContextValue {
   isLoading: boolean;
   /**
    * True once it's safe to show real UI: the persisted-session check has finished, and
-   * — if a session was found — the initial data prefetch has either settled or been
-   * given up on after a timeout. Drives the splash screen in App.tsx: staying up through
-   * this window means Home (and every other first-load screen) can render with real data
-   * already in the cache instead of its own spinner.
+   * — if a session was found — that session's data prefetch has either settled or been
+   * given up on after a timeout. False for any window where a user is signed in but
+   * their data isn't in the cache yet — both the initial cold launch (drives the native
+   * splash in App.tsx) and a fresh interactive sign-in (drives RootNavigator showing
+   * LoadingScreen instead of Home) key off this the same way.
    */
   isReady: boolean;
   signIn: (user: UserDto) => void;
@@ -61,6 +62,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setIsReady(true);
       return;
     }
+    // Reset before racing the new prefetch — without this, an interactive sign-in (the
+    // user already had isReady=true from sitting on AuthScreen) would never flip false
+    // again, so nothing downstream knows to show a loading state instead of Home
+    // rendering immediately with whatever's still empty in the cache. On the cold-launch
+    // path this is a harmless no-op: isReady already starts false.
+    setIsReady(false);
     let cancelled = false;
     Promise.race([prefetchAppData(), new Promise<void>((resolve) => setTimeout(resolve, 4000))]).then(() => {
       if (!cancelled) setIsReady(true);

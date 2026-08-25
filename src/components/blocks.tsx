@@ -118,7 +118,7 @@ export function TaskRow({
       <View style={styles.taskRowText}>
         <Text style={t(T.bodyLg, { color: color.text })}>{title}</Text>
         <TaskTypeLabel taskType={taskType} goalName={goalName} goalColor={goalColor} />
-        {subtitle ? <Text style={t(T.meta, { color: color.textFaint, marginTop: 2 })}>{subtitle}</Text> : null}
+        {subtitle ? <Text style={t(T.meta, { color: color.textFaint })}>{subtitle}</Text> : null}
       </View>
       <Pressable
         onPress={onAction}
@@ -167,7 +167,7 @@ export function GoalCard({ goal, onPress, width }: { goal: GoalDto; onPress?: ()
       <Card style={styles.goalCard}>
         <View style={styles.goalHeader}>
           <View style={[styles.goalSwatch, { backgroundColor: accent }]} />
-          <Text style={t(T.body, { fontWeight: "700", color: color.text, flex: 1 })} numberOfLines={1}>
+          <Text style={t(T.body, { fontWeight: "700", color: color.text, flex: 1 })} numberOfLines={2}>
             {goal.name}
           </Text>
         </View>
@@ -265,6 +265,7 @@ const styles = StyleSheet.create({
   },
   taskRowText: {
     flex: 1,
+    gap: 4,
   },
   taskRowAction: {
     backgroundColor: "#EBC294",

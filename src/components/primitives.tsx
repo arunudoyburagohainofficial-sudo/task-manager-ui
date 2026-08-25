@@ -108,8 +108,14 @@ export function SettingsRow({
       accessibilityRole={onPress ? "button" : undefined}
       style={[styles.settingsRow, !last && styles.settingsRowDivider]}
     >
-      <Text style={t(T.body, { color: color.textBody, flexShrink: 1 })}>{label}</Text>
-      {right}
+      {/* label is the short, fixed caption ("Email", "Name"...) — it must never be the
+          side that shrinks. Long values (a full email address) belong to `right`, wrapped
+          here so it's the one that shrinks/wraps within whatever space is left, instead
+          of overflowing at its natural width and squeezing label down to nothing (RN's
+          default flexShrink is 0, unlike web, so an unconstrained long value doesn't wrap
+          politely on its own — it just claims however much room it wants). */}
+      <Text style={t(T.body, { color: color.textBody, flexShrink: 0 })}>{label}</Text>
+      <View style={styles.settingsRowValue}>{right}</View>
     </Pressable>
   );
 }
@@ -208,6 +214,10 @@ const styles = StyleSheet.create({
   settingsRowDivider: {
     borderBottomWidth: 1,
     borderBottomColor: color.divider,
+  },
+  settingsRowValue: {
+    flexShrink: 1,
+    alignItems: "flex-end",
   },
   stepper: {
     flexDirection: "row",

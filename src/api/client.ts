@@ -74,11 +74,16 @@ function buildUrl(path: string, query?: RequestOptions["query"]): string {
 /**
  * Hard ceiling per request. React Native's fetch has NO default timeout — a connection
  * that drops mid-request otherwise hangs forever, leaving whatever spinner triggered it
- * (create task, complete, sign-in) stuck with no way out. 20s is deliberately generous:
- * it has to absorb a Cloud Run cold start plus the us-central1 ↔ ap-southeast-1 DB hop
- * on the slowest real request, while still being an answer rather than an eternity.
+ * (create task, complete, sign-in) stuck with no way out. 20s was the original guess at
+ * "generous enough to absorb a Cloud Run cold start" — measured against a real cold
+ * start (Cloud Run's min-instances: 0 means the container restarts from nothing after
+ * any idle period), Spring Boot itself took up to ~60s just to finish booting before it
+ * could even answer, nearly 3x that budget. 75s covers the worst observed boot with
+ * headroom, at the cost of a genuinely long wait on that one first request — the actual
+ * fix for the wait itself is giving task-svc a warm (min-instances: 1) instance so it
+ * never cold-starts at all; this is the client just refusing to give up too early on it.
  */
-const REQUEST_TIMEOUT_MS = 20_000;
+const REQUEST_TIMEOUT_MS = 75_000;
 
 /** Generic request helper shared by every resource module in src/api/. */
 export async function apiRequest<T>(

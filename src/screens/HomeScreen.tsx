@@ -235,7 +235,7 @@ export function HomeScreen() {
             >
               <AddGoalCard onPress={() => setCreatingGoal(true)} />
               {goals.map((goal) => (
-                <GoalCard key={goal.id} goal={goal} width={150} onPress={() => setEditingGoal(goal)} />
+                <GoalCard key={goal.id} goal={goal} width={168} onPress={() => setEditingGoal(goal)} />
               ))}
             </ScrollView>
           </View>

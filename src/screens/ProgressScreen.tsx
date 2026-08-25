@@ -77,7 +77,7 @@ export function ProgressScreen() {
         {goals.length > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.goalsRow}>
             {goals.map((goal) => (
-              <GoalCard key={goal.id} goal={goal} width={150} />
+              <GoalCard key={goal.id} goal={goal} width={168} />
             ))}
           </ScrollView>
         ) : (

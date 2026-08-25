@@ -1,5 +1,6 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { LoadingScreen } from "../components";
 import { useSession } from "../state/SessionContext";
 import { useReminderSync } from "../notifications/useReminderSync";
 import { AuthScreen } from "../screens/AuthScreen";
@@ -15,7 +16,7 @@ import type { RootStackParamList } from "./types";
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
-  const { user, isLoading } = useSession();
+  const { user, isLoading, isReady } = useSession();
 
   // Keeps the device's locally scheduled reminders in step with the server's, on sign-in
   // and on every foreground. No-ops while signed out.
@@ -24,6 +25,13 @@ export function RootNavigator() {
   // Wait for the persisted session check before deciding Auth vs Main — otherwise a
   // returning user briefly flashes the Auth screen before this resolves.
   if (isLoading) return null;
+
+  // Covers the one gap the native splash screen can't: a user who just signed in
+  // interactively (not a cold launch) has no native splash left to hide behind while
+  // their data prefetches — this stands in for it instead of letting Home mount with
+  // whatever's still empty in the cache. Cold launch never actually shows this itself,
+  // since the native splash is still covering the screen for that entire window.
+  if (user && !isReady) return <LoadingScreen />;
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>

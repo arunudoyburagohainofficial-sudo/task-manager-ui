@@ -13,10 +13,16 @@
       "autoIncrement": true,
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SHOW_TEST_LOGIN": "false"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_SHOW_TEST_LOGIN": "false"
+      }
     }
   },
   "submit": {

@@ -35,3 +35,13 @@ export const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
  * Cloud Console, registered against this app's package name and signing certificate SHA-1.
  */
 export const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? "";
+
+/**
+ * Controls whether AuthScreen's "Continue as test user" link renders at all — the code
+ * itself (signInAsTestUser, the button, its handler) stays intact either way, this only
+ * decides whether it's reachable. Defaults on so local `expo start` dev keeps working
+ * exactly as before with no setup; eas.json turns it off for the preview and production
+ * build profiles specifically, so an installed build meant for anyone but the developer
+ * doesn't offer a one-tap way to mint a real, if throwaway, account.
+ */
+export const SHOW_TEST_LOGIN = process.env.EXPO_PUBLIC_SHOW_TEST_LOGIN !== "false";

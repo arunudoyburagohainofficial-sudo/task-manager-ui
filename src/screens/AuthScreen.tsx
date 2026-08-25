@@ -5,6 +5,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as WebBrowser from "expo-web-browser";
 import { authApi } from "../api";
 import { ApiError } from "../api/client";
+import { SHOW_TEST_LOGIN } from "../api/config";
 import { isPhoneAuthAvailable } from "../api/firebaseAuth";
 import { signInAsTestUser, signInWithGoogleIdToken } from "../api/firebaseWebAuth";
 import { useGoogleSignIn } from "../auth/googleSignIn";
@@ -131,22 +132,24 @@ export function AuthScreen() {
             <Meta style={[styles.centered, { color: color.textFaint }]}>{google.unavailableReason}</Meta>
           ) : null}
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Continue as test user"
-            onPress={handleTestUserPress}
-            disabled={submitting || testUserLoading}
-            hitSlop={8}
-            style={styles.testUser}
-          >
-            {testUserLoading ? (
-              <ActivityIndicator size="small" color={color.textFaint} />
-            ) : (
-              <Meta style={[styles.centered, { color: color.textFaint, opacity: submitting ? 0.5 : 1 }]}>
-                Continue as test user
-              </Meta>
-            )}
-          </Pressable>
+          {SHOW_TEST_LOGIN ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Continue as test user"
+              onPress={handleTestUserPress}
+              disabled={submitting || testUserLoading}
+              hitSlop={8}
+              style={styles.testUser}
+            >
+              {testUserLoading ? (
+                <ActivityIndicator size="small" color={color.textFaint} />
+              ) : (
+                <Meta style={[styles.centered, { color: color.textFaint, opacity: submitting ? 0.5 : 1 }]}>
+                  Continue as test user
+                </Meta>
+              )}
+            </Pressable>
+          ) : null}
         </View>
       </ScrollView>
     </ScreenContainer>
