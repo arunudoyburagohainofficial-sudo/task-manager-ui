@@ -24,10 +24,19 @@ export function IconRow({
 }
 
 /** Small amber chip — "SOON" and similar status markers. */
-export function Badge({ label }: { label: string }) {
+/**
+ * `tone` keeps the schedule tags on Task Detail from having to be a near-copy of this.
+ * Amber is right for "SOON" and for a task waiting on a future day, but a missed one has
+ * to read as a problem rather than as a neutral status.
+ */
+export function Badge({ label, tone = "amber" }: { label: string; tone?: "amber" | "danger" }) {
+  const palette =
+    tone === "danger"
+      ? { backgroundColor: color.dangerFill, color: color.danger }
+      : { backgroundColor: color.amberFill, color: color.amberText };
   return (
-    <View style={styles.badge}>
-      <Text style={t(T.badge, { color: color.amberText })}>{label}</Text>
+    <View style={[styles.badge, { backgroundColor: palette.backgroundColor }]}>
+      <Text style={t(T.badge, { color: palette.color })}>{label}</Text>
     </View>
   );
 }

@@ -99,6 +99,16 @@ export const HomeTabIcon = ({ active }: { active: boolean }) => (
   <TabIcon active={active} d={["M3.2 10.8 12 3.6l8.8 7.2M5.6 9.6V20.4h12.8V9.6M9.6 20.4v-6.2h4.8v6.2"]} />
 );
 
+export const ScheduledTabIcon = ({ active }: { active: boolean }) => (
+  <TabIcon
+    active={active}
+    d={[
+      "M4.4 6.6h15.2v13.2H4.4zM4.4 10.6h15.2",
+      "M8.6 4.2v3.4M15.4 4.2v3.4",
+    ]}
+  />
+);
+
 export const ProgressTabIcon = ({ active }: { active: boolean }) => (
   <TabIcon active={active} d={["M4 19.4h16M7.6 19.4v-6.6M12 19.4V7.2M16.4 19.4v-9.4"]} />
 );

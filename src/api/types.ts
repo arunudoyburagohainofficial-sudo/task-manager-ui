@@ -114,6 +114,11 @@ export interface TaskDto {
   description: string | null;
   taskType: TaskType;
   status: TaskStatus;
+  /**
+   * "YYYY-MM-DD", or null for unscheduled. Never parse this with `new Date(...)` — see
+   * src/utils/schedule.ts, which owns every comparison against it.
+   */
+  scheduledFor: string | null;
   isRecurring: boolean;
   recurrenceRule: string | null;
   createdAt: string;
@@ -132,7 +137,10 @@ export interface CreateTaskRequest {
  * Partial update — only send the fields you're changing. categoryId sets a specific
  * category; pass clearCategory: true to unset it back to Uncategorized (a plain
  * categoryId of undefined is ambiguous between "don't touch this" and "clear it").
- * goalId/clearGoal follow the identical pattern.
+ * goalId/clearGoal follows the identical pattern.
+ *
+ * No scheduledFor by design: a task's scheduled day is written only by its reminder (see
+ * useReminders' patchTaskSchedule), so there's no second control able to contradict it.
  */
 export interface UpdateTaskRequest {
   name?: string;

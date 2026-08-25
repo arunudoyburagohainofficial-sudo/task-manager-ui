@@ -63,6 +63,8 @@ export const color = {
   // destructive
   danger: "#9D131B",
   dangerBorder: "#D95C5C",
+  /** Tint behind danger-coloured text (the overdue count pill) — same role fill plays for neutral. */
+  dangerFill: "#F7E4E4",
 
   // companion (character only — never a surface or button)
   ferne: "#DF6D41",

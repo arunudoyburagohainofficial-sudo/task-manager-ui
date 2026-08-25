@@ -1,17 +1,21 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { HomeTabIcon, ProgressTabIcon, SettingsTabIcon } from "../components";
+import { useTasksQuery } from "../api/queries/useTasks";
+import { HomeTabIcon, ProgressTabIcon, ScheduledTabIcon, SettingsTabIcon } from "../components";
 import { HomeScreen } from "../screens/HomeScreen";
+import { ScheduledScreen } from "../screens/ScheduledScreen";
 import { ProgressScreen } from "../screens/ProgressScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { color, font } from "../theme";
+import { isOverdue, todayKey } from "../utils/schedule";
 import type { MainTabParamList } from "./types";
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const TAB_ICONS: Record<keyof MainTabParamList, (props: { active: boolean }) => React.ReactElement> = {
   Home: HomeTabIcon,
+  Scheduled: ScheduledTabIcon,
   Progress: ProgressTabIcon,
   Settings: SettingsTabIcon,
 };
@@ -37,6 +41,22 @@ export function MainTabs() {
   // alone — the library already sets it to insets.bottom, and overriding it is what put
   // the labels under the system nav bar.
   const insets = useSafeAreaInsets();
+
+  /**
+   * "Overdue" earns a badge rather than a place in the label: measured at this tab bar's
+   * own 11px/800 style, "Upcoming/Overdue" renders 103px wide against roughly 103px of
+   * available tab width on a 412dp phone — it would clip on every device, and worse on
+   * smaller ones. A count badge says the same thing in less space, and says nothing at
+   * all on the common case where nothing is overdue.
+   *
+   * Free to read here: this is the same cached "pending" query Home and Scheduled already
+   * use, so it costs a cache read rather than a request.
+   */
+  const tasksQuery = useTasksQuery("pending");
+  const overdueCount = useMemo(() => {
+    const today = todayKey();
+    return (tasksQuery.data ?? []).filter((task) => isOverdue(task, today)).length;
+  }, [tasksQuery.data]);
 
   return (
     <Tab.Navigator
@@ -65,6 +85,16 @@ export function MainTabs() {
       }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen
+        name="Scheduled"
+        component={ScheduledScreen}
+        options={{
+          tabBarBadge: overdueCount > 0 ? overdueCount : undefined,
+          tabBarBadgeStyle: { backgroundColor: color.danger, fontFamily: font.black, fontSize: 10 },
+          tabBarAccessibilityLabel:
+            overdueCount > 0 ? `Scheduled, ${overdueCount} overdue` : "Scheduled",
+        }}
+      />
       <Tab.Screen name="Progress" component={ProgressScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>

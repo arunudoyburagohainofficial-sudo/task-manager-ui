@@ -16,6 +16,9 @@ function withTaskUpdate(task: TaskDto, request: UpdateTaskRequest): TaskDto {
     ...(request.name !== undefined ? { name: request.name } : {}),
     ...(request.taskType !== undefined ? { taskType: request.taskType } : {}),
     ...(request.clearGoal ? { goalId: null } : request.goalId !== undefined ? { goalId: request.goalId } : {}),
+    // No scheduledFor here on purpose: it isn't part of UpdateTaskRequest at all. The
+    // schedule follows the task's reminder, and useReminders re-reads the task caches
+    // whenever one is written.
   };
 }
 

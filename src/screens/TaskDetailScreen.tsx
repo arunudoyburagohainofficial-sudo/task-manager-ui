@@ -16,6 +16,7 @@ import { useDeleteTaskMutation, useTaskQuery, useUpdateTaskMutation } from "../a
 import type { CreateReminderRequest, FocusMode, TaskType } from "../api/types";
 import {
   BackLink,
+  Badge,
   Body,
   Button,
   Card,
@@ -40,6 +41,7 @@ import { usePreferences } from "../state/PreferencesContext";
 import { useSession } from "../state/SessionContext";
 import { color, radius, space, text as t, type as T } from "../theme";
 import { formatClockTime, formatMinutes } from "../utils/format";
+import { formatScheduleDate, isOverdue } from "../utils/schedule";
 import type { RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -229,7 +231,34 @@ export function TaskDetailScreen() {
           </View>
           {reminder ? (
             <>
-              <Body style={{ fontWeight: "700", color: color.text }}>⏰ {formatClockTime(reminder.reminderTime)}</Body>
+              {/* The reminder's date is also the task's schedule — there's deliberately no
+                  separate control to contradict it. The tag states which screen the task is
+                  actually sitting on, so it disappearing from Home reads as a consequence
+                  rather than as a bug. */}
+              <View style={styles.reminderHeadline}>
+                <Body style={{ fontWeight: "700", color: color.text }}>
+                  ⏰ {formatClockTime(reminder.reminderTime)}
+                  {reminder.reminderDate ? ` · ${formatScheduleDate(reminder.reminderDate)}` : " · every day"}
+                </Body>
+                {task.scheduledFor ? (
+                  isOverdue(task) ? (
+                    <Badge label="OVERDUE" tone="danger" />
+                  ) : (
+                    <Badge label="SCHEDULED" />
+                  )
+                ) : (
+                  <Badge label="ON HOME" />
+                )}
+              </View>
+              {/* Only when the task is off Home — the ON HOME tag already says everything
+                  there is to say about the unscheduled case on its own. */}
+              {task.scheduledFor ? (
+                <Meta style={{ color: color.textFaint, marginTop: 4 }}>
+                  {isOverdue(task)
+                    ? `Was due ${formatScheduleDate(task.scheduledFor)} — waiting under Overdue.`
+                    : `Waiting under ${formatScheduleDate(task.scheduledFor)} until that day.`}
+                </Meta>
+              ) : null}
               <View style={styles.reminderActions}>
                 <Pressable accessibilityRole="button" onPress={() => setReminderSheetOpen(true)} hitSlop={8}>
                   <Meta style={{ color: color.selectedText, fontWeight: "800" }}>Edit time</Meta>
@@ -417,6 +446,12 @@ const styles = StyleSheet.create({
   },
   cardHeader: {
     marginBottom: space.md,
+  },
+  reminderHeadline: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+    flexWrap: "wrap",
   },
   reminderActions: {
     flexDirection: "row",

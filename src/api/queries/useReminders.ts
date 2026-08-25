@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { remindersApi } from "..";
 import type { CreateReminderRequest, ReminderDto, TaskDto, UpdateReminderRequest } from "../types";
 import { queryKeys } from "../queryKeys";
@@ -14,6 +14,24 @@ export function useRemindersQuery() {
   });
 }
 
+/**
+ * Writing a reminder also rewrites its task's scheduled day server-side — the reminder's
+ * date IS the schedule (see ReminderService.syncTaskSchedule), which is what decides
+ * whether the task sits on Home or waits under a date in Scheduled. That change is
+ * invisible in the reminder response, so the task caches have to be re-read rather than
+ * patched: this is a genuine "we know something changed but not to what", the same
+ * exception useCompleteTaskMutation makes for streak and goals.
+ *
+ * Without this, setting "remind me Friday" would leave the task sitting on Home until the
+ * next cold launch — the exact confusion the single-writer design exists to remove.
+ */
+function patchTaskSchedule(queryClient: QueryClient, taskId: string) {
+  queryClient.invalidateQueries({ queryKey: queryKeys.task(taskId) });
+  for (const status of ALL_TASK_STATUSES) {
+    queryClient.invalidateQueries({ queryKey: queryKeys.tasks(status) });
+  }
+}
+
 /** onSuccess already has the real created reminder — append it directly instead of re-fetching the whole list to learn it. */
 export function useCreateReminderMutation() {
   const queryClient = useQueryClient();
@@ -22,6 +40,7 @@ export function useCreateReminderMutation() {
       remindersApi.createReminder(taskId, request),
     onSuccess: (newReminder) => {
       queryClient.setQueryData<ReminderDto[]>(queryKeys.reminders(), (old) => (old ? [...old, newReminder] : old));
+      patchTaskSchedule(queryClient, newReminder.taskId);
     },
   });
 }
@@ -36,6 +55,7 @@ export function useUpdateReminderMutation() {
       queryClient.setQueryData<ReminderDto[]>(queryKeys.reminders(), (old) =>
         old?.map((r) => (r.id === updatedReminder.id ? updatedReminder : r))
       );
+      patchTaskSchedule(queryClient, updatedReminder.taskId);
     },
   });
 }
@@ -46,7 +66,13 @@ export function useDeleteReminderMutation() {
   return useMutation({
     mutationFn: (reminderId: string) => remindersApi.deleteReminder(reminderId),
     onSuccess: (_data, reminderId) => {
+      // Read the taskId off the cached row before dropping it — deleting a reminder
+      // unschedules its task, and afterwards there's nothing left to say which task.
+      const taskId = queryClient
+        .getQueryData<ReminderDto[]>(queryKeys.reminders())
+        ?.find((r) => r.id === reminderId)?.taskId;
       queryClient.setQueryData<ReminderDto[]>(queryKeys.reminders(), (old) => old?.filter((r) => r.id !== reminderId));
+      if (taskId) patchTaskSchedule(queryClient, taskId);
     },
   });
 }

@@ -22,6 +22,14 @@ const MAX_PENDING = 50;
 /** How far ahead repeating interval reminders are materialised. */
 const INTERVAL_HORIZON_HOURS = 24;
 
+/**
+ * How many days of a repeating daily reminder are queued at once. Previously only the very
+ * next one was, which meant a daily reminder stopped firing entirely if the app wasn't
+ * opened between two firings — nothing re-arms it except a foreground (see useReminderSync).
+ * A week of headroom means the app has to go unopened for seven days before that happens.
+ */
+const DAILY_HORIZON_DAYS = 7;
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
@@ -55,23 +63,37 @@ export async function configureAndroidChannel(): Promise<void> {
   });
 }
 
-/** "18:00:00" + optional "2026-08-14" -> the next Date at which that should fire. */
-function nextOccurrence(time: string, date: string | null): Date | null {
+/**
+ * Every upcoming firing time for a single reminder, soonest first.
+ *
+ * A dated reminder yields at most one; a daily one (no date) yields DAILY_HORIZON_DAYS of
+ * them. Built by copying the first slot and stepping the *date* rather than adding 24h of
+ * milliseconds, so a daily 9am reminder stays 9am across a DST change instead of drifting
+ * to 8am or 10am.
+ */
+function reminderOccurrences(time: string, date: string | null): Date[] {
   const [hours, minutes] = time.split(":").map(Number);
 
   if (date) {
     const at = new Date(`${date}T${time}`);
-    return at.getTime() > Date.now() ? at : null; // a one-off in the past never fires again
+    return at.getTime() > Date.now() ? [at] : []; // a one-off in the past never fires again
   }
 
-  // No date means "every day at this time" — take today's slot, or tomorrow's if it passed.
-  const at = new Date();
-  at.setHours(hours, minutes, 0, 0);
-  if (at.getTime() <= Date.now()) at.setDate(at.getDate() + 1);
-  return at;
+  // No date means "every day at this time" — start at today's slot, or tomorrow's if it passed.
+  const first = new Date();
+  first.setHours(hours, minutes, 0, 0);
+  if (first.getTime() <= Date.now()) first.setDate(first.getDate() + 1);
+
+  const occurrences: Date[] = [];
+  for (let dayOffset = 0; dayOffset < DAILY_HORIZON_DAYS; dayOffset++) {
+    const at = new Date(first);
+    at.setDate(at.getDate() + dayOffset);
+    occurrences.push(at);
+  }
+  return occurrences;
 }
 
-/** Every firing time for an interval reminder within the horizon. */
+/** Every firing time for an interval reminder within the horizon, soonest first. */
 function intervalOccurrences(interval: IntervalReminderDto): Date[] {
   const [startHour, startMinute] = interval.startTime.split(":").map(Number);
   const [endHour, endMinute] = interval.endTime.split(":").map(Number);
@@ -88,6 +110,10 @@ function intervalOccurrences(interval: IntervalReminderDto): Date[] {
 
     const windowEnd = new Date(cursor);
     windowEnd.setHours(endHour, endMinute, 0, 0);
+    // An end time at or before the start means the window crosses midnight ("22:00 to
+    // 02:00"). Without this the loop below never runs and such a reminder silently
+    // produces nothing at all.
+    if (windowEnd <= cursor) windowEnd.setDate(windowEnd.getDate() + 1);
 
     while (cursor <= windowEnd) {
       const at = cursor.getTime();
@@ -101,6 +127,33 @@ function intervalOccurrences(interval: IntervalReminderDto): Date[] {
 type Scheduled = { at: Date; title: string; body: string; taskId: string };
 
 /**
+ * Picks which occurrences fit inside MAX_PENDING, fairly, by taking one from every source
+ * before taking a second from any of them.
+ *
+ * A plain "sort everything by time, truncate" is what a single busy source needs to starve
+ * every other one: an interval reminder nudging every 15 minutes from 9am to 9pm generates
+ * ~49 occurrences, all sooner than tomorrow morning's daily reminders, so it would consume
+ * the entire budget and silently drop every other task's reminder. Round-robin guarantees
+ * each source's *next* firing is scheduled before any source's second one — so no task
+ * ever goes completely silent because another task is noisy.
+ *
+ * `groups` must each already be sorted soonest-first.
+ */
+function allocateFairly(groups: Scheduled[][], budget: number): Scheduled[] {
+  const picked: Scheduled[] = [];
+  const deepest = groups.reduce((max, group) => Math.max(max, group.length), 0);
+
+  for (let round = 0; round < deepest && picked.length < budget; round++) {
+    for (const group of groups) {
+      if (round >= group.length) continue;
+      picked.push(group[round]);
+      if (picked.length >= budget) break;
+    }
+  }
+  return picked;
+}
+
+/**
  * Replaces every scheduled reminder with a fresh set derived from the server's data.
  *
  * Cancel-then-reschedule rather than incremental updates: the server is the source of
@@ -110,67 +163,120 @@ type Scheduled = { at: Date; title: string; body: string; taskId: string };
  * Call this after login and whenever the app returns to the foreground — the latter also
  * refreshes the rolling interval-reminder window as it advances.
  */
-export async function scheduleAll(
+export function scheduleAll(
+  reminders: ReminderDto[],
+  intervals: IntervalReminderDto[],
+  tasks: TaskDto[]
+): Promise<number> {
+  // Serialised against any run already in progress — see `pending` below.
+  const result = pending.then(
+    () => runScheduleAll(reminders, intervals, tasks),
+    () => runScheduleAll(reminders, intervals, tasks)
+  );
+  // The chain itself must never hold a rejection, or every later call inherits it and
+  // this queue jams permanently. Callers still see the real (possibly rejected) promise.
+  pending = result.then(
+    () => undefined,
+    () => undefined
+  );
+  return result;
+}
+
+/**
+ * Tail of the run queue. scheduleAll is fired from a dozen places — every reminder
+ * mutation, task completion, pull-to-refresh, sign-in, and every app foreground — and
+ * most of those call it *unawaited* (`void syncReminders()`). Two overlapping runs used to
+ * interleave destructively:
+ *
+ *   A: cancelAll -> schedules 1..10
+ *   B: cancelAll                      <- wipes the 10 A just wrote
+ *   B: schedules its own full set
+ *   A: schedules 11..20               <- lands after B's cancel, so these are duplicates
+ *
+ * Chaining rather than dropping the second call matters: the later caller usually has
+ * fresher data (it fired *because* something changed), so it must still run — just after,
+ * never during.
+ */
+let pending: Promise<void> = Promise.resolve();
+
+async function runScheduleAll(
   reminders: ReminderDto[],
   intervals: IntervalReminderDto[],
   tasks: TaskDto[]
 ): Promise<number> {
   if (!(await requestPermission())) return 0;
   await configureAndroidChannel();
-  await Notifications.cancelAllScheduledNotificationsAsync();
 
   const taskName = new Map(tasks.map((task) => [task.id, task.name]));
   const isPending = new Set(tasks.filter((t) => t.status === "pending").map((t) => t.id));
 
-  const queue: Scheduled[] = [];
+  // One group per source, each already soonest-first — allocateFairly needs that shape,
+  // and it's also what stops one noisy source from crowding out the rest.
+  const groups: Scheduled[][] = [];
 
   for (const reminder of reminders) {
     // Skip anything stopped, or whose task is done — the server keeps these rows around
     // (see the backend's Reminder.isActive), but there is nothing left to schedule.
     if (!reminder.isActive || !isPending.has(reminder.taskId)) continue;
-    const at = nextOccurrence(reminder.reminderTime, reminder.reminderDate);
-    if (!at) continue;
-    queue.push({
-      at,
-      title: "Time to focus",
-      body: `You planned to work on: ${taskName.get(reminder.taskId) ?? "your task"}`,
-      taskId: reminder.taskId,
-    });
+    const occurrences = reminderOccurrences(reminder.reminderTime, reminder.reminderDate);
+    if (!occurrences.length) continue;
+    groups.push(
+      occurrences.map((at) => ({
+        at,
+        title: "Time to focus",
+        body: `You planned to work on: ${taskName.get(reminder.taskId) ?? "your task"}`,
+        taskId: reminder.taskId,
+      }))
+    );
   }
 
   for (const interval of intervals) {
     if (!interval.isActive || !isPending.has(interval.taskId)) continue;
-    for (const at of intervalOccurrences(interval)) {
-      queue.push({
+    const occurrences = intervalOccurrences(interval);
+    if (!occurrences.length) continue;
+    groups.push(
+      occurrences.map((at) => ({
         at,
         title: "Still on it?",
         body: `Checking in on: ${taskName.get(interval.taskId) ?? "your task"}`,
         taskId: interval.taskId,
+      }))
+    );
+  }
+
+  // Everything above is pure computation, and it deliberately happens *before* the cancel
+  // below: cancelling first and then throwing while building would leave the device with
+  // no notifications at all, and syncReminders swallows the error, so that loss would be
+  // completely silent.
+  const chosen = allocateFairly(groups, MAX_PENDING);
+  chosen.sort((a, b) => a.at.getTime() - b.at.getTime());
+
+  await Notifications.cancelAllScheduledNotificationsAsync();
+
+  let scheduled = 0;
+  for (const item of chosen) {
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: item.title,
+          body: item.body,
+          data: { taskId: item.taskId },
+          ...(Platform.OS === "android" ? { channelId: "reminders" } : {}),
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: item.at,
+        },
       });
+      scheduled++;
+    } catch {
+      // One rejected notification (a bad date, a platform quota hiccup) must not abort the
+      // rest — the alternative is losing every reminder after the first failure, having
+      // already cancelled them all.
     }
   }
 
-  // Soonest first, then truncate: if the budget is exceeded it must be the far-future
-  // entries that get dropped, never the next one due. The rolling refresh picks up the
-  // remainder later.
-  queue.sort((a, b) => a.at.getTime() - b.at.getTime());
-
-  for (const item of queue.slice(0, MAX_PENDING)) {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: item.title,
-        body: item.body,
-        data: { taskId: item.taskId },
-        ...(Platform.OS === "android" ? { channelId: "reminders" } : {}),
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: item.at,
-      },
-    });
-  }
-
-  return Math.min(queue.length, MAX_PENDING);
+  return scheduled;
 }
 
 /** Clears everything — used on sign-out so the next account starts clean. */

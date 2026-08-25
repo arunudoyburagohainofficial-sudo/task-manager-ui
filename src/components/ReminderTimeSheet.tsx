@@ -260,6 +260,16 @@ export function ReminderTimeSheet({
                   onChange={(_, date) => date && setSelectedDate(date)}
                 />
               )}
+
+              {/* The date isn't only about the notification — it's what moves the task off
+                  Home (see ReminderService.syncTaskSchedule). Saying so at the moment the
+                  date is chosen is what keeps the task "vanishing" from feeling like a bug. */}
+              {!isSameDay(selectedDate, today) && (
+                <Meta style={{ color: color.textFaint }}>
+                  Moves this task to Scheduled until{" "}
+                  {selectedDate.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}.
+                </Meta>
+              )}
             </View>
           )}
         </>

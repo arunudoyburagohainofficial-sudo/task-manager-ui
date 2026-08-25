@@ -34,6 +34,7 @@ import { useSession } from "../state/SessionContext";
 import { color, radius, space, text as t, type as T } from "../theme";
 import { homeLine } from "../theme/companionCopy";
 import { formatClockTime, formatFirstName, formatGreetingDate, greetingForHour, isToday } from "../utils/format";
+import { belongsOnHome, todayKey } from "../utils/schedule";
 import type { RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -59,7 +60,15 @@ export function HomeScreen() {
   const [editingGoal, setEditingGoal] = useState<GoalDto | null>(null);
   const [creatingGoal, setCreatingGoal] = useState(false);
 
-  const tasks = tasksQuery.data ?? [];
+  // Home is strictly today: unscheduled tasks plus anything dated for today. Both future
+  // work and missed work live on the Upcoming/Overdue tab — a task scheduled ahead lands
+  // here on its own once its day arrives, and one that slips moves back off. The split is
+  // owned by utils/schedule.ts so both screens read it identically; todayKey() is
+  // evaluated once for the whole pass rather than per task.
+  const tasks = useMemo(() => {
+    const today = todayKey();
+    return (tasksQuery.data ?? []).filter((task) => belongsOnHome(task, today));
+  }, [tasksQuery.data]);
   const goals = goalsQuery.data ?? [];
   const savingGoal = createGoalMutation.isPending || updateGoalMutation.isPending;
   // Filtered to isActive for the same reason as TaskDetailScreen's lookup — the server
@@ -214,12 +223,12 @@ export function HomeScreen() {
             {/* capture — Ferne is the hero, tap opens capture */}
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Capture a task"
+              accessibilityLabel="Capture tasks"
               onPress={() => navigation.navigate("Capture")}
               style={styles.capture}
             >
               <Ferne size={92} />
-              <Text style={t(T.body, { fontWeight: "700", color: color.success })}>Tap to capture</Text>
+              <Text style={t(T.body, { fontWeight: "700", color: color.success })}>Tap to capture tasks</Text>
             </Pressable>
 
             <View style={styles.goalsHeader}>
