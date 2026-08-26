@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -53,6 +53,28 @@ function describeReminder(request: CreateReminderRequest): string {
   return `${time} · ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 
+/**
+ * Wraps children in a TourTarget only while `active`. A TourTarget that's mounted but not
+ * meant to hold the spotlight still measures and reports, so several of them for one step
+ * end up overwriting each other — this keeps exactly one live at a time.
+ */
+function MaybeTourTarget({
+  active,
+  style,
+  children,
+}: {
+  active: boolean;
+  style?: React.ComponentProps<typeof View>["style"];
+  children: React.ReactNode;
+}) {
+  if (!active) return <View style={style}>{children}</View>;
+  return (
+    <TourTarget step="attachGoal" style={style}>
+      {children}
+    </TourTarget>
+  );
+}
+
 export function ConfirmOrganizeScreen() {
   const { tone } = useCompanion();
   const { user } = useSession();
@@ -62,12 +84,31 @@ export function ConfirmOrganizeScreen() {
   const goalsQuery = useGoalsQuery();
   const createTaskMutation = useCreateTaskMutation();
   const createReminderMutation = useCreateReminderMutation();
-  const { advance: advanceTour } = useTour();
+  const { advance: advanceTour, back: tourBack, getActiveStep } = useTour();
+
+  /**
+   * Same guard as CaptureScreen: if this screen goes away while its own step is still
+   * showing (the "← Back" link, hardware back, a swipe), walk the tour back with it rather
+   * than leaving step 4 active on a screen that no longer holds its target. Read live via
+   * getActiveStep(): the card's own "← Back" already stepped the tour before popping this
+   * screen, and a stale read would step it again, skipping a step.
+   */
+  useEffect(
+    () => () => {
+      if (getActiveStep() === "attachGoal") tourBack({ navigate: false });
+    },
+    [getActiveStep, tourBack]
+  );
 
   const [drafts, setDrafts] = useState<CapturedTaskDraft[]>(params.drafts);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [goalPickerFor, setGoalPickerFor] = useState<string | null>(null);
+
+  // The walkthrough points at one goal row, then hands the spotlight to the save button
+  // once a goal is attached.
+  const tourGoalDraftId = drafts.find((d) => d.taskType === "focus")?.localId;
+  const tourGoalAttached = drafts.some((d) => d.goalId);
   const [reminderSheetFor, setReminderSheetFor] = useState<string | null>(null);
 
   const goals = goalsQuery.data ?? [];
@@ -114,6 +155,10 @@ export function ConfirmOrganizeScreen() {
           "The tasks themselves were saved — open one to set its reminder again."
         );
       }
+      // Saving is what completes step 3 — not attaching the goal. Advancing here means the
+      // tour arrives at step 4 exactly as Home does, instead of "4 of 4" showing up on
+      // this screen and again on the next one.
+      advanceTour("attachGoal");
       // Not goBack(): that would only pop back to Capture, still sitting underneath on the
       // stack. Navigating to Main/Home pops both this screen and Capture at once, AND
       // selects the list the new tasks are on.
@@ -185,7 +230,13 @@ export function ConfirmOrganizeScreen() {
               {draft.taskType === "focus" ? (
                 <>
                   <View style={styles.affordanceRow}>
-                    <TourTarget step="attachGoal" style={styles.affordanceTarget}>
+                    {/* Only the first focus draft holds the spotlight, and only until a
+                        goal is attached — after that it hands over to the save button
+                        below. Two live targets for one step would fight over it. */}
+                    <MaybeTourTarget
+                      active={draft.localId === tourGoalDraftId && !tourGoalAttached}
+                      style={styles.affordanceTarget}
+                    >
                       <Pressable
                         accessibilityRole="button"
                         onPress={() => setGoalPickerFor(draft.localId)}
@@ -199,7 +250,7 @@ export function ConfirmOrganizeScreen() {
                             : "Count toward a goal"}
                         </Body>
                       </Pressable>
-                    </TourTarget>
+                    </MaybeTourTarget>
                     {draft.goalId ? (
                       <Pressable
                         accessibilityRole="button"
@@ -223,11 +274,25 @@ export function ConfirmOrganizeScreen() {
         </ScrollView>
 
         <View style={styles.submitBar}>
-          <Button
-            label={`Confirm & Add ${drafts.length} task${drafts.length === 1 ? "" : "s"}`}
-            loading={submitting}
-            onPress={handleConfirm}
-          />
+          {/* Still step 3, not step 4: saving is the tail of "attach it to a goal", and
+              numbering it 4 made "4 of 4" appear on two screens in a row. Step 4 belongs
+              to Home alone. The spotlight moves here once a goal is attached and there's
+              nothing left to do but save. */}
+          {tourGoalAttached ? (
+            <TourTarget step="attachGoal" body="Saved — now tap “Confirm & Add” to add it to your list.">
+              <Button
+                label={`Confirm & Add ${drafts.length} task${drafts.length === 1 ? "" : "s"}`}
+                loading={submitting}
+                onPress={handleConfirm}
+              />
+            </TourTarget>
+          ) : (
+            <Button
+              label={`Confirm & Add ${drafts.length} task${drafts.length === 1 ? "" : "s"}`}
+              loading={submitting}
+              onPress={handleConfirm}
+            />
+          )}
         </View>
       </KeyboardAvoidingView>
 
@@ -238,8 +303,9 @@ export function ConfirmOrganizeScreen() {
         selectedGoalId={drafts.find((d) => d.localId === goalPickerFor)?.goalId ?? null}
         onSelect={(goalId) => {
           if (goalPickerFor) updateDraft(goalPickerFor, { goalId });
-          // Only attaching one counts — picking "No goal" is the opposite of the step.
-          if (goalId) advanceTour("attachGoal");
+          // Deliberately does not advance the tour: attaching a goal moves the spotlight
+          // to the save button, still within step 3. The step completes on save (see
+          // handleConfirm), which is also when the user lands back on Home for step 4.
         }}
       />
 

@@ -8,7 +8,8 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { View } from "react-native";
+import { Dimensions, View } from "react-native";
+import { useIsFocused } from "@react-navigation/native";
 import { goBackIfPossible } from "../navigation/navigationRef";
 
 const STORAGE_KEY = "tour-v1";
@@ -17,8 +18,12 @@ const STORAGE_KEY = "tour-v1";
  * The first-run walkthrough, in order. Each step names a real thing the user does — the
  * tour advances by watching those actions happen, never by a "Next" button, so it can't
  * get out of step with what's actually on screen.
+ *
+ * One step per screen-action, deliberately. Letting a single step span two screens meant
+ * its number showed up twice in a row with different wording each time, which reads like
+ * the tour has lost its place.
  */
-export const TOUR_STEPS = ["goal", "capture", "attachGoal", "start"] as const;
+export const TOUR_STEPS = ["goal", "capture", "describe", "attachGoal", "start"] as const;
 export type TourStep = (typeof TOUR_STEPS)[number];
 
 export interface TargetRect {
@@ -28,10 +33,33 @@ export interface TargetRect {
   height: number;
 }
 
+/**
+ * "control" is a single thing to tap, and gets a ring drawn round it. "region" is a whole
+ * interactive block to keep live — used where a step needs several controls at once (the
+ * Capture screen needs its text field *and* its buttons), where a ring around the lot
+ * would just look like a box.
+ */
+export type TargetVariant = "control" | "region";
+
 interface TourContextValue {
   activeStep: TourStep | null;
   /** Where the active step's highlighted element sits on screen; null until measured. */
   targetRect: TargetRect | null;
+  targetVariant: TargetVariant;
+  /**
+   * Copy supplied by whichever screen owns the current target, overriding the step's own.
+   * A step can be reached on more than one screen with a different thing to do on each —
+   * step 4 is "tap Confirm & Add" here and "tap Focus" on Home — and only the screen
+   * holding the target knows which.
+   */
+  targetBody: string | null;
+  /**
+   * The step as it is *right now*, not as it was when the caller last rendered. Screens
+   * check this from unmount cleanups, where a captured value (or even a ref written during
+   * render) can be one step stale — which is enough to make a screen "helpfully" step the
+   * tour back a second time after the user already did.
+   */
+  getActiveStep: () => TourStep | null;
   /** Called once Home has real data — no-op if the tour was already finished or skipped. */
   startIfNeeded: () => void;
   /**
@@ -43,8 +71,12 @@ interface TourContextValue {
   /**
    * Steps back one. Deliberately does not undo anything the user already did — a goal they
    * created stays created. This is a way to re-read a step, not an undo stack.
+   *
+   * Pops the screen too by default, since consecutive steps usually live on different
+   * ones. Pass navigate: false when the screen is already going away on its own — leaving
+   * a step stranded on a screen the user just left is what puts a stale card on Home.
    */
-  back: () => void;
+  back: (options?: { navigate?: boolean }) => void;
   skip: () => void;
   /** True while a step is active but its control isn't on screen to point at. */
   isWaiting: boolean;
@@ -55,9 +87,14 @@ interface TourContextValue {
    */
   hasInlineSlot: boolean;
   registerInlineSlot: () => () => void;
+  reportTarget: (
+    step: TourStep,
+    rect: TargetRect | null,
+    variant?: TargetVariant,
+    body?: string | null
+  ) => void;
   /** Runs the walkthrough again from step one, regardless of it having been finished before. */
   restart: () => void;
-  reportTarget: (step: TourStep, rect: TargetRect | null) => void;
 }
 
 const TourContext = createContext<TourContextValue | undefined>(undefined);
@@ -65,6 +102,8 @@ const TourContext = createContext<TourContextValue | undefined>(undefined);
 export function TourProvider({ children }: { children: React.ReactNode }) {
   const [activeStep, setActiveStep] = useState<TourStep | null>(null);
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
+  const [targetVariant, setTargetVariant] = useState<TargetVariant>("control");
+  const [targetBody, setTargetBody] = useState<string | null>(null);
   const [inlineSlots, setInlineSlots] = useState(0);
   const [loaded, setLoaded] = useState(false);
 
@@ -121,7 +160,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     [finish]
   );
 
-  const back = useCallback(() => {
+  const back = useCallback((options?: { navigate?: boolean }) => {
     const current = activeStepRef.current;
     if (!current) return;
     const previous = TOUR_STEPS[TOUR_STEPS.indexOf(current) - 1];
@@ -132,8 +171,10 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     // Steps mostly live on different screens, so going back a step usually means going
     // back a screen too (step 3 sits on Capture, step 2 on Home). A no-op when there's
     // nothing to pop, which is exactly right for two steps on the same screen.
-    goBackIfPossible();
+    if (options?.navigate !== false) goBackIfPossible();
   }, []);
+
+  const getActiveStep = useCallback(() => activeStepRef.current, []);
 
   const restart = useCallback(() => {
     // Clears the finished flag too, so quitting halfway through a replay doesn't leave the
@@ -145,12 +186,22 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ finished: false })).catch(() => {});
   }, []);
 
-  const reportTarget = useCallback((step: TourStep, rect: TargetRect | null) => {
-    // Only the active step may move the spotlight — a screen still mounted underneath
-    // (Home, while Capture sits on top of it) otherwise fights for it.
-    if (activeStepRef.current !== step) return;
-    setTargetRect(rect);
-  }, []);
+  const reportTarget = useCallback(
+    (
+      step: TourStep,
+      rect: TargetRect | null,
+      variant: TargetVariant = "control",
+      body: string | null = null
+    ) => {
+      // Only the active step may move the spotlight — a screen still mounted underneath
+      // (Home, while Capture sits on top of it) otherwise fights for it.
+      if (activeStepRef.current !== step) return;
+      setTargetRect(rect);
+      setTargetVariant(variant);
+      setTargetBody(rect ? body : null);
+    },
+    []
+  );
 
   // Counted rather than a boolean: screens mount and unmount in overlapping order during a
   // navigation transition, and a plain flag would be cleared by the outgoing screen after
@@ -164,6 +215,9 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     () => ({
       activeStep,
       targetRect,
+      targetVariant,
+      targetBody,
+      getActiveStep,
       startIfNeeded,
       advance,
       back,
@@ -177,6 +231,9 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     [
       activeStep,
       targetRect,
+      targetVariant,
+      targetBody,
+      getActiveStep,
       startIfNeeded,
       advance,
       back,
@@ -209,21 +266,43 @@ export function TourTarget({
   step,
   children,
   style,
+  variant = "control",
+  body,
 }: {
   step: TourStep;
   children: React.ReactNode;
   style?: React.ComponentProps<typeof View>["style"];
+  variant?: TargetVariant;
+  /** Overrides the step's copy — see targetBody. Needed where one step has a different action per screen. */
+  body?: string;
 }) {
   const { activeStep, reportTarget } = useTour();
   const ref = useRef<View>(null);
-  const isActive = activeStep === step;
+  /**
+   * Focus matters as much as the step does. Two screens can hold a target for the same
+   * step (Capture and Confirm & Organize both do for "attachGoal"), and the one underneath
+   * stays mounted — without this it would keep re-reporting its own rect and steal the
+   * spotlight from the screen actually in front of the user.
+   */
+  const isFocused = useIsFocused();
+  const isActive = activeStep === step && isFocused;
 
   const measure = useCallback(() => {
     if (!isActive) return;
     ref.current?.measureInWindow((x, y, width, height) => {
-      if (width > 0 && height > 0) reportTarget(step, { x, y, width, height });
+      if (width <= 0 || height <= 0) return;
+      /**
+       * Reject targets that aren't actually visible. A row scrolled below the fold still
+       * measures fine — it just reports coordinates outside the window — and the overlay
+       * used to clamp that back into view, drawing the spotlight over whatever happened to
+       * sit at the screen edge (the tab bar). Reporting null instead falls back to the
+       * hint card, which is honest about there being nothing to point at.
+       */
+      const screen = Dimensions.get("window");
+      const fullyOffScreen = y + height <= 0 || y >= screen.height || x + width <= 0 || x >= screen.width;
+      reportTarget(step, fullyOffScreen ? null : { x, y, width, height }, variant, body ?? null);
     });
-  }, [isActive, step, reportTarget]);
+  }, [isActive, step, reportTarget, variant, body]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -233,6 +312,20 @@ export function TourTarget({
     const timer = setTimeout(measure, 350);
     return () => clearTimeout(timer);
   }, [isActive, measure]);
+
+  /**
+   * Drop the rect as soon as this target stops being the live one — the screen was pushed
+   * behind another, or unmounted.
+   *
+   * Without this the last reported rect simply persists, and the overlay keeps drawing a
+   * spotlight at those coordinates over whatever screen is now in front, ringing an
+   * unrelated strip of UI. Clearing it instead puts the tour in its waiting state, which
+   * correctly says "head back to Home".
+   */
+  useEffect(() => {
+    if (isActive) return;
+    reportTarget(step, null, variant);
+  }, [isActive, step, variant, reportTarget]);
 
   return (
     <View ref={ref} collapsable={false} onLayout={measure} style={style}>

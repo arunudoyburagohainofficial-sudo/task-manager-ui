@@ -82,16 +82,20 @@ export function HomeScreen() {
   );
   const goalsById = useMemo(() => new Map(goals.map((g) => [g.id, g])), [goals]);
   /**
-   * Which row the walkthrough's last step points at. A focus task by preference, and the
-   * most recent one — newly created tasks are appended to the cached list, so the task the
-   * user just made during the tour is at the end, not the start. Pointing at index 0 would
-   * spotlight the seeded reminder task, whose button reads "Done" while the tour's copy
-   * says to tap "Focus".
+   * Which row the walkthrough's last step points at: the *first* focus task, so it's near
+   * the top of the list and actually on screen. Targeting the most recently created one
+   * (the task made during the tour, which is appended last) put the spotlight on a row
+   * below the fold, and the overlay clamped that off-screen rect back into the viewport —
+   * highlighting the tab bar instead. Any focus task demonstrates the step equally well,
+   * and a visible one is the only kind that can be tapped.
+   *
+   * Focus over reminder still matters: the step's copy says to tap "Focus", and a reminder
+   * task's button reads "Done".
    */
-  const tourRowId = useMemo(() => {
-    const focusTasks = tasks.filter((t) => t.taskType === "focus");
-    return (focusTasks.length ? focusTasks[focusTasks.length - 1] : tasks[0])?.id;
-  }, [tasks]);
+  const tourRowId = useMemo(
+    () => (tasks.find((t) => t.taskType === "focus") ?? tasks[0])?.id,
+    [tasks]
+  );
   const currentStreak = streakQuery.data?.currentStreak ?? 0;
   // Scoped to today deliberately: the "completed" query returns every task ever finished,
   // which would turn the done section into an ever-growing archive. Home is a today view —
@@ -330,7 +334,13 @@ export function HomeScreen() {
               goalColor={itemGoal?.color ?? undefined}
               subtitle={reminder ? `⏰ ${formatClockTime(reminder.reminderTime)}` : null}
               actionLabel={item.taskType === "focus" ? "Focus" : "Done"}
-              onPress={() => navigation.navigate("TaskDetail", { taskId: item.id })}
+              // The whole row is inside the walkthrough's highlight, so opening the task by
+              // tapping the row counts as completing the step just as much as the Focus
+              // button does. Without this, that tap led away with the tour still running.
+              onPress={() => {
+                advanceTour("start");
+                navigation.navigate("TaskDetail", { taskId: item.id });
+              }}
               onAction={() => {
                 advanceTour("start");
                 if (item.taskType === "focus") navigation.navigate("TaskDetail", { taskId: item.id });

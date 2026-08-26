@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Body, Button, Ferne, Meta, ScreenContainer, TextField, TourInlineSlot } from "../components";
 import { useCompanion } from "../state/CompanionContext";
-import { useTour } from "../state/TourContext";
+import { TourTarget, useTour } from "../state/TourContext";
 import { color, radius, space } from "../theme";
 import { listeningLine } from "../theme/companionCopy";
 import type { CapturedTaskDraft, RootStackParamList } from "../navigation/types";
@@ -19,9 +19,27 @@ let nextLocalId = 0;
  */
 export function CaptureScreen() {
   const { name } = useCompanion();
-  const { activeStep: tourStep } = useTour();
+  const { activeStep: tourStep, advance: advanceTour, back: tourBack, getActiveStep } = useTour();
   const tourRunning = tourStep !== null;
   const navigation = useNavigation<Nav>();
+
+  /**
+   * If this screen goes away while its own step is still showing — Android's hardware
+   * back, an iOS swipe, anything that isn't Confirm & Organize — walk the tour back with
+   * it. Otherwise step 3 stays active on Home, pointing at a control that isn't there.
+   * navigate: false because the screen is already leaving; popping again would overshoot.
+   *
+   * getActiveStep() rather than a captured value: the card's own "← Back" already steps
+   * the tour before popping this screen, and a stale read here would step it a second time
+   * — landing the user two steps back. Moving forward advances first for the same reason,
+   * so on both deliberate paths this correctly does nothing.
+   */
+  useEffect(
+    () => () => {
+      if (getActiveStep() === "describe") tourBack({ navigate: false });
+    },
+    [getActiveStep, tourBack]
+  );
   const [text, setText] = useState("");
   const [drafts, setDrafts] = useState<CapturedTaskDraft[]>([]);
 
@@ -53,6 +71,8 @@ export function CaptureScreen() {
         ]
       : drafts;
     if (finalDrafts.length === 0) return;
+    // Naming the task is what completes this step — the next one lives on Organize.
+    advanceTour("describe");
     // navigate, not replace: keeps this screen on the stack underneath so Organize's back
     // button returns here with the drafts still exactly as they were.
     navigation.navigate("ConfirmOrganize", { drafts: finalDrafts });
@@ -87,31 +107,48 @@ export function CaptureScreen() {
             </View>
           ))}
 
-          <TextField value={text} onChangeText={setText} placeholder="Type a task…" multiline />
+          {/* One region for everything the walkthrough needs live here: the field to type
+              in, the buttons to move on with, and its own guidance card. Marked "region"
+              rather than "control" so it's kept bright and tappable without a ring drawn
+              round the whole block. Dimming this screen without it would lock the user out
+              of the very actions the step is asking for. */}
+          <TourTarget step="describe" variant="region" style={styles.captureBlock}>
+            <TextField value={text} onChangeText={setText} placeholder="Type a task…" multiline />
 
-          {/* Disabled during the walkthrough: the tour asks for one task and then moves
-              on, and stacking up several drafts here leads somewhere its next step can't
-              describe. Fully available again the moment the tour ends. */}
-          <Button
-            label="+ Add another"
-            variant="secondary"
-            onPress={addDraft}
-            disabled={!text.trim() || tourRunning}
-          />
-
-          <View style={styles.actions}>
-            <Button label="Cancel" variant="secondary" onPress={() => navigation.goBack()} style={styles.cancel} />
+            {/* Disabled during the walkthrough: the tour asks for one task and then moves
+                on, and stacking up several drafts here leads somewhere its next step can't
+                describe. Fully available again the moment the tour ends. */}
             <Button
-              label={`Confirm & Organize${total > 0 ? ` (${total})` : ""}`}
-              onPress={handleContinue}
-              disabled={total === 0}
-              style={styles.confirm}
+              label="+ Add another"
+              variant="secondary"
+              onPress={addDraft}
+              disabled={!text.trim() || tourRunning}
             />
-          </View>
 
-          {/* Directly beneath the buttons, in the page's own flow — the floating version
-              would sit at the bottom of the window with dead space above it. */}
-          <TourInlineSlot />
+            <View style={styles.actions}>
+              {/* Disabled during the walkthrough for the same reason as "+ Add another":
+                  leaving here mid-step strands the tour on a screen the user is no longer
+                  on. "← Back" in the guidance card is the way out — it steps the tour and
+                  the screen together. */}
+              <Button
+                label="Cancel"
+                variant="secondary"
+                onPress={() => navigation.goBack()}
+                disabled={tourRunning}
+                style={styles.cancel}
+              />
+              <Button
+                label={`Confirm & Organize${total > 0 ? ` (${total})` : ""}`}
+                onPress={handleContinue}
+                disabled={total === 0}
+                style={styles.confirm}
+              />
+            </View>
+
+            {/* Directly beneath the buttons, in the page's own flow — the floating version
+                would sit at the bottom of the window with dead space above it. */}
+            <TourInlineSlot always />
+          </TourTarget>
         </ScrollView>
       </KeyboardAvoidingView>
     </ScreenContainer>
@@ -152,6 +189,11 @@ const styles = StyleSheet.create({
   },
   draftName: {
     flex: 1,
+  },
+  // Reproduces the gap the ScrollView's contentContainer used to provide between these
+  // children, now that they sit inside a wrapper rather than directly in it.
+  captureBlock: {
+    gap: space.md,
   },
   actions: {
     flexDirection: "row",
