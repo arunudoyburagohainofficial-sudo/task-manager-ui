@@ -76,14 +76,28 @@ export function SectionHeader({
       accessibilityLabel={onToggle ? `${label}, ${count} items, ${collapsed ? "collapsed" : "expanded"}` : undefined}
       style={styles.sectionHeader}
     >
-      <Text style={t(T.eyebrow, { fontSize: 12, letterSpacing: 1.2, color: labelColor })}>{label}</Text>
+      {/* Shrinkable and single-line: on a 320pt screen "COMPLETED TODAY" plus the
+          "Collapse all" pill is wider than the row, and without this the eyebrow wraps to
+          two lines and takes the whole header with it. Ellipsising one character there is
+          the better failure. */}
+      <Text
+        numberOfLines={1}
+        style={[t(T.eyebrow, { fontSize: 12, letterSpacing: 1.2, color: labelColor }), styles.sectionLabel]}
+      >
+        {label}
+      </Text>
       <View style={[styles.countPill, { backgroundColor: countStyle.bg }]}>
         <Text style={t(T.meta, { fontSize: 12, fontWeight: "800", color: countStyle.fg })}>{count}</Text>
       </View>
       <View style={styles.rule} />
       {onToggle ? (
-        <View style={styles.chevron}>
-          <Text style={t(T.badge, { fontSize: 10, letterSpacing: 0, color: color.textMuted })}>
+        <View style={styles.togglePill}>
+          {/* Names the action, not the state: a bare chevron left it guesswork whether
+              tapping would open the section or close it. */}
+          <Text style={t(T.meta, { fontSize: 13, fontWeight: "700", color: color.textBody })}>
+            {collapsed ? "Expand all" : "Collapse all"}
+          </Text>
+          <Text style={t(T.badge, { fontSize: 9, letterSpacing: 0, color: color.textMuted })}>
             {collapsed ? "▸" : "▾"}
           </Text>
         </View>
@@ -225,10 +239,15 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 9,
+    gap: 8,
     minHeight: 36,
     marginTop: 22,
     marginBottom: 10,
+  },
+  sectionLabel: {
+    // RN defaults flexShrink to 0, so this has to be said explicitly for the label to give
+    // ground to the toggle pill rather than wrapping.
+    flexShrink: 1,
   },
   countPill: {
     borderRadius: 7,
@@ -240,15 +259,20 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: color.border,
   },
-  chevron: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
+  togglePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    height: 32,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
     backgroundColor: color.card,
     borderWidth: 1,
     borderColor: color.border,
-    alignItems: "center",
-    justifyContent: "center",
+    // The label is two words at its longest, and the rule to its left is flex:1 — without
+    // this the rule would win the contest for space and squeeze "Collapse all" onto two
+    // lines on a narrow screen.
+    flexShrink: 0,
   },
   typeTile: {
     borderRadius: radius.control,
