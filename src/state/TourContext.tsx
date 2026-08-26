@@ -63,6 +63,21 @@ interface TourContextValue {
   /** Called once Home has real data — no-op if the tour was already finished or skipped. */
   startIfNeeded: () => void;
   /**
+   * The task the user actually created during the walkthrough, so the last step can point
+   * at *that* row rather than whichever task happens to sit at the top of the list. Set by
+   * the screen that creates it; null outside a tour.
+   */
+  tourTaskId: string | null;
+  setTourTaskId: (taskId: string | null) => void;
+  /**
+   * Re-measures every active target. Needed because a target can move without re-rendering
+   * or re-laying out — scrolling a list is the case that matters here, and neither onLayout
+   * nor a render fires for it, so the rect would otherwise stay at its pre-scroll position.
+   */
+  remeasure: () => void;
+  /** Bumped by remeasure(); TourTarget watches it. Not meant to be read by screens. */
+  measureNonce: number;
+  /**
    * Moves past `from`, but only if it's the step actually showing. Screens fire these from
    * their normal handlers, and those handlers run on later visits too — the guard is what
    * stops a user who finished the tour from silently re-advancing a tour that isn't running.
@@ -106,6 +121,8 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const [targetBody, setTargetBody] = useState<string | null>(null);
   const [inlineSlots, setInlineSlots] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  const [tourTaskId, setTourTaskId] = useState<string | null>(null);
+  const [measureNonce, setMeasureNonce] = useState(0);
 
   /**
    * The current step is mirrored into a ref so the callbacks below can read it without
@@ -129,11 +146,14 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       .finally(() => setLoaded(true));
   }, []);
 
+  const remeasure = useCallback(() => setMeasureNonce((n) => n + 1), []);
+
   const finish = useCallback(() => {
     finishedRef.current = true;
     activeStepRef.current = null;
     setActiveStep(null);
     setTargetRect(null);
+    setTourTaskId(null);
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ finished: true })).catch(() => {});
   }, []);
 
@@ -182,6 +202,8 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     finishedRef.current = false;
     activeStepRef.current = TOUR_STEPS[0];
     setTargetRect(null);
+    // A replay creates its own task; last run's would otherwise be pointed at again.
+    setTourTaskId(null);
     setActiveStep(TOUR_STEPS[0]);
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ finished: false })).catch(() => {});
   }, []);
@@ -219,6 +241,10 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       targetBody,
       getActiveStep,
       startIfNeeded,
+      tourTaskId,
+      setTourTaskId,
+      remeasure,
+      measureNonce,
       advance,
       back,
       skip: finish,
@@ -235,6 +261,9 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       targetBody,
       getActiveStep,
       startIfNeeded,
+      tourTaskId,
+      remeasure,
+      measureNonce,
       advance,
       back,
       finish,
@@ -276,7 +305,7 @@ export function TourTarget({
   /** Overrides the step's copy — see targetBody. Needed where one step has a different action per screen. */
   body?: string;
 }) {
-  const { activeStep, reportTarget } = useTour();
+  const { activeStep, reportTarget, measureNonce } = useTour();
   const ref = useRef<View>(null);
   /**
    * Focus matters as much as the step does. Two screens can hold a target for the same
@@ -311,7 +340,9 @@ export function TourTarget({
     measure();
     const timer = setTimeout(measure, 350);
     return () => clearTimeout(timer);
-  }, [isActive, measure]);
+    // measureNonce re-runs this when something moved the target without re-rendering it
+    // (a list scroll), which neither onLayout nor a re-render would catch.
+  }, [isActive, measure, measureNonce]);
 
   /**
    * Drop the rect as soon as this target stops being the live one — the screen was pushed

@@ -84,7 +84,7 @@ export function ConfirmOrganizeScreen() {
   const goalsQuery = useGoalsQuery();
   const createTaskMutation = useCreateTaskMutation();
   const createReminderMutation = useCreateReminderMutation();
-  const { advance: advanceTour, back: tourBack, getActiveStep } = useTour();
+  const { advance: advanceTour, back: tourBack, getActiveStep, setTourTaskId } = useTour();
 
   /**
    * Same guard as CaptureScreen: if this screen goes away while its own step is still
@@ -127,6 +127,15 @@ export function ConfirmOrganizeScreen() {
     setSubmitting(true);
     setError(null);
     let remindersFailed = 0;
+    /**
+     * Which of these drafts the walkthrough's last step should point at once Home reloads.
+     * The one the user attached a goal to is the task the tour actually talked them
+     * through; a focus task is the next best thing, since step 5's copy says "tap Focus"
+     * and only focus rows have that button.
+     */
+    const tourDraftId = (drafts.find((d) => d.goalId) ?? drafts.find((d) => d.taskType === "focus") ?? drafts[0])
+      ?.localId;
+    let tourCreatedId: string | null = null;
     try {
       for (const draft of drafts) {
         const created = await createTaskMutation.mutateAsync({
@@ -134,6 +143,7 @@ export function ConfirmOrganizeScreen() {
           taskType: draft.taskType,
           goalId: draft.goalId ?? undefined,
         });
+        if (draft.localId === tourDraftId) tourCreatedId = created.id;
         // Only now does a real taskId exist to hang the reminder off. Its failure is caught
         // per-draft rather than aborting: the task itself is already saved by this point,
         // and a reminder stays settable from Task Detail afterwards — throwing here would
@@ -155,6 +165,9 @@ export function ConfirmOrganizeScreen() {
           "The tasks themselves were saved — open one to set its reminder again."
         );
       }
+      // Guarded on the step being live so an ordinary (post-tour) save doesn't leave a
+      // task id behind for a walkthrough that isn't running.
+      if (tourCreatedId && getActiveStep() === "attachGoal") setTourTaskId(tourCreatedId);
       // Saving is what completes step 3 — not attaching the goal. Advancing here means the
       // tour arrives at step 4 exactly as Home does, instead of "4 of 4" showing up on
       // this screen and again on the next one.

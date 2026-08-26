@@ -40,7 +40,9 @@ const COPY: Record<TourStep, { title: string; body: string; waiting?: string }> 
   start: {
     title: "Then just start",
     body: "Tap Focus to begin a session. That’s the whole loop — capture, attach, focus.",
-    waiting: "Head back to Home to start the task you just made.",
+    // True whether the user is on another tab or simply scrolled the row out of sight —
+    // "head back to Home" read as nonsense to someone already standing on Home.
+    waiting: "Find the task you just made on your Home list and tap Focus to start it.",
   },
 };
 
@@ -51,6 +53,22 @@ const COPY: Record<TourStep, { title: string; body: string; waiting?: string }> 
  */
 function stepLabel(step: TourStep): string {
   return `${TOUR_STEPS.indexOf(step) + 1} of ${TOUR_STEPS.length}`;
+}
+
+function isLastStep(step: TourStep): boolean {
+  return TOUR_STEPS.indexOf(step) === TOUR_STEPS.length - 1;
+}
+
+/**
+ * No way back from the final step. By then the goal and the task both exist, and "← Back"
+ * only re-reads a step — it undoes nothing — so offering it there invites the user to go
+ * looking for an undo that isn't coming. Finish is the only thing left to do.
+ *
+ * Shared by all three cards rather than recomputed at each, so they can't disagree about
+ * which steps have a back link.
+ */
+function canStepBack(step: TourStep): boolean {
+  return TOUR_STEPS.indexOf(step) > 0 && !isLastStep(step);
 }
 
 /**
@@ -72,7 +90,7 @@ export function TourOverlay() {
 
   if (!activeStep) return null;
   const copy = COPY[activeStep];
-  const canGoBack = TOUR_STEPS.indexOf(activeStep) > 0;
+  const canGoBack = canStepBack(activeStep);
 
   /**
    * The step's control isn't on screen — usually because the step activated a screen or
@@ -108,7 +126,7 @@ export function TourOverlay() {
     ? { top: hole.y + hole.height + CARD_GAP }
     : { bottom: height - hole.y + CARD_GAP };
 
-  const isLastStep = TOUR_STEPS.indexOf(activeStep) === TOUR_STEPS.length - 1;
+  const onLastStep = isLastStep(activeStep);
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -155,7 +173,7 @@ export function TourOverlay() {
             copy={{ ...copy, body: targetBody ?? copy.body }}
             onSkip={skip}
             onBack={canGoBack ? back : undefined}
-            onFinish={isLastStep ? skip : undefined}
+            onFinish={onLastStep ? skip : undefined}
           />
         </View>
       )}
@@ -232,7 +250,7 @@ export function TourInlineSlot({
 
   if (!activeStep || !shows) return null;
   const copy = COPY[activeStep];
-  const canGoBack = TOUR_STEPS.indexOf(activeStep) > 0;
+  const canGoBack = canStepBack(activeStep);
   const text = body ?? (isWaiting ? copy.waiting ?? copy.body : copy.body);
 
   return (

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -11,7 +11,7 @@ import {
 import { useStreakQuery } from "../api/queries/useProgress";
 import { useMarkTaskDoneMutation, useRemindersQuery } from "../api/queries/useReminders";
 import { useTasksQuery } from "../api/queries/useTasks";
-import type { GoalDto, ReminderDto } from "../api/types";
+import type { GoalDto, ReminderDto, TaskDto } from "../api/types";
 import {
   AddGoalCard,
   Card,
@@ -37,6 +37,13 @@ import { homeLine } from "../theme/companionCopy";
 import { formatClockTime, formatFirstName, formatGreetingDate, greetingForHour, isToday } from "../utils/format";
 import { belongsOnHome, todayKey } from "../utils/schedule";
 import type { RootStackParamList } from "../navigation/types";
+
+/**
+ * Named so the list ref can be typed. Left implicit, SectionList's ref falls back to its
+ * default section shape, where `key` is optional — and every `section.key` read below then
+ * has to cope with an undefined that never actually occurs.
+ */
+type HomeSection = { key: string; title: string; count: number; data: TaskDto[] };
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -81,21 +88,21 @@ export function HomeScreen() {
     [remindersQuery.data]
   );
   const goalsById = useMemo(() => new Map(goals.map((g) => [g.id, g])), [goals]);
+
+  const { startIfNeeded, advance: advanceTour, activeStep: tourStep, tourTaskId, remeasure } = useTour();
   /**
-   * Which row the walkthrough's last step points at: the *first* focus task, so it's near
-   * the top of the list and actually on screen. Targeting the most recently created one
-   * (the task made during the tour, which is appended last) put the spotlight on a row
-   * below the fold, and the overlay clamped that off-screen rect back into the viewport —
-   * highlighting the tab bar instead. Any focus task demonstrates the step equally well,
-   * and a visible one is the only kind that can be tapped.
+   * Which row the walkthrough's last step points at: the task the user just made during the
+   * tour. It needs no scrolling to reach — the server returns pending tasks newest-first
+   * (TaskService.getTasksForUser), so a just-created task is row one.
    *
-   * Focus over reminder still matters: the step's copy says to tap "Focus", and a reminder
-   * task's button reads "Done".
+   * The fallback matters for a replayed tour, where the user may skip through without
+   * creating anything: any focus task demonstrates the step, and focus over reminder
+   * because the step's copy says to tap "Focus" while a reminder row's button reads "Done".
    */
-  const tourRowId = useMemo(
-    () => (tasks.find((t) => t.taskType === "focus") ?? tasks[0])?.id,
-    [tasks]
-  );
+  const tourRowId = useMemo(() => {
+    const created = tourTaskId ? tasks.find((t) => t.id === tourTaskId) : undefined;
+    return (created ?? tasks.find((t) => t.taskType === "focus") ?? tasks[0])?.id;
+  }, [tasks, tourTaskId]);
   const currentStreak = streakQuery.data?.currentStreak ?? 0;
   // Scoped to today deliberately: the "completed" query returns every task ever finished,
   // which would turn the done section into an ever-growing archive. Home is a today view —
@@ -146,10 +153,43 @@ export function HomeScreen() {
   // Started from here rather than on sign-in: the first step points at a control on this
   // screen, so the tour must not begin until Home is actually rendered with real data and
   // that control can be measured.
-  const { startIfNeeded, advance: advanceTour } = useTour();
   useEffect(() => {
     if (hasLoaded) startIfNeeded();
   }, [hasLoaded, startIfNeeded]);
+
+  /**
+   * Put the tour's row back on screen for the last step. Home is a tab that stays mounted,
+   * so its list keeps whatever scroll position it had — arriving at step 5 with the list
+   * halfway down leaves the target (row one, since tasks come back newest-first) off the
+   * top edge, where it reports no rect at all and the tour falls back to its hint card.
+   *
+   * Anchored to the TO DO header rather than to the row by index: index 0 of section 0 is
+   * always measured, so this can't miss the way scrollToLocation on an unmeasured row can,
+   * and it puts the row just below the top edge on any screen size.
+   */
+  const listRef = useRef<SectionList<TaskDto, HomeSection>>(null);
+  const scrolledForTour = useRef(false);
+  useEffect(() => {
+    if (tourStep !== "start") {
+      // Reset on the way out so stepping back and forward again scrolls afresh.
+      scrolledForTour.current = false;
+      return;
+    }
+    if (scrolledForTour.current) return;
+    scrolledForTour.current = true;
+    // Delayed because this fires while Home is still being navigated back to; a scroll
+    // issued during the transition is dropped.
+    const scrollTimer = setTimeout(() => {
+      listRef.current?.scrollToLocation({ sectionIndex: 0, itemIndex: 0, viewPosition: 0, animated: true });
+    }, 350);
+    // A programmatic animated scroll doesn't reliably fire onMomentumScrollEnd, so the
+    // remeasure that keeps the spotlight glued to the row has to be triggered by hand.
+    const measureTimer = setTimeout(remeasure, 900);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(measureTimer);
+    };
+  }, [tourStep, remeasure]);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -194,9 +234,14 @@ export function HomeScreen() {
   return (
     <ScreenContainer>
       <SectionList
+        ref={listRef}
         sections={sections}
         keyExtractor={(item) => String(item.id)}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+        // Scrolling moves the tour's highlighted row without re-rendering it or firing
+        // onLayout, so nothing else would tell the overlay its spotlight has gone stale.
+        onMomentumScrollEnd={remeasure}
+        onScrollEndDrag={remeasure}
         // Headers scroll away with their section — sticking them would leave a label
         // pinned over the greeting and goals while those are still on screen.
         stickySectionHeadersEnabled={false}
@@ -350,7 +395,22 @@ export function HomeScreen() {
           );
           return (
             <View style={styles.rowSpacing}>
-              {isTourRow ? <TourTarget step="start">{row}</TourTarget> : row}
+              {isTourRow ? (
+                <TourTarget
+                  step="start"
+                  // The default copy names the Focus button, which a reminder row doesn't
+                  // have — it reads "Done" instead.
+                  body={
+                    item.taskType === "focus"
+                      ? undefined
+                      : "Tap Done when you’ve finished it. That’s the whole loop — capture, attach, done."
+                  }
+                >
+                  {row}
+                </TourTarget>
+              ) : (
+                row
+              )}
             </View>
           );
         }}
