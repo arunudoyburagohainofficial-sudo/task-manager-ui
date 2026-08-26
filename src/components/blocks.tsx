@@ -151,6 +151,9 @@ export function CompletedRow({
   );
 }
 
+/** Line box for a goal name, doubled to reserve the two lines every tile is sized for. */
+const GOAL_NAME_LINE_HEIGHT = 19;
+
 /** Goal tile — name, progress bar tinted with the goal's own colour, day count. */
 export function GoalCard({ goal, onPress, width }: { goal: GoalDto; onPress?: () => void; width?: number }) {
   const accent = goal.color ?? color.goal;
@@ -167,7 +170,10 @@ export function GoalCard({ goal, onPress, width }: { goal: GoalDto; onPress?: ()
       <Card style={styles.goalCard}>
         <View style={styles.goalHeader}>
           <View style={[styles.goalSwatch, { backgroundColor: accent }]} />
-          <Text style={t(T.body, { fontWeight: "700", color: color.text, flex: 1 })} numberOfLines={2}>
+          <Text
+            style={[t(T.body, { fontWeight: "700", color: color.text, flex: 1 }), styles.goalName]}
+            numberOfLines={2}
+          >
             {goal.name}
           </Text>
         </View>
@@ -290,13 +296,29 @@ const styles = StyleSheet.create({
   },
   goalHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    // Top-aligned rather than centred: the name below occupies two lines whether or not it
+    // needs them, and centring against that block would float the swatch into the gap
+    // beside a one-line name.
+    alignItems: "flex-start",
     gap: space.sm,
   },
   goalSwatch: {
     width: 9,
     height: 9,
     borderRadius: 2,
+    // Optically centres the swatch on the name's first line ((lineHeight - size) / 2).
+    marginTop: (GOAL_NAME_LINE_HEIGHT - 9) / 2,
+  },
+  /**
+   * Always two lines tall, even for a name that fits on one. Goal tiles sit side by side in
+   * a horizontal strip, and letting each size itself to its own name gave the row cards of
+   * two different heights. lineHeight is set explicitly because RN's default varies by
+   * platform and font, which is exactly the kind of thing that makes a reserved height
+   * drift out of sync with the text it's reserving space for.
+   */
+  goalName: {
+    lineHeight: GOAL_NAME_LINE_HEIGHT,
+    height: GOAL_NAME_LINE_HEIGHT * 2,
   },
   goalTrack: {
     height: 6,

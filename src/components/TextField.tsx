@@ -14,6 +14,8 @@ interface TextFieldProps {
   keyboardType?: "default" | "email-address" | "number-pad" | "phone-pad";
   autoCapitalize?: "none" | "sentences" | "words";
   multiline?: boolean;
+  /** Caps input at the source, so a value can't be typed that the UI can only truncate. */
+  maxLength?: number;
 }
 
 export function TextField({
@@ -24,6 +26,7 @@ export function TextField({
   keyboardType = "default",
   autoCapitalize = "sentences",
   multiline = false,
+  maxLength,
 }: TextFieldProps) {
   const [focused, setFocused] = useState(false);
 
@@ -38,6 +41,7 @@ export function TextField({
         keyboardType={keyboardType}
         autoCapitalize={autoCapitalize}
         multiline={multiline}
+        maxLength={maxLength}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         textAlignVertical={multiline ? "top" : undefined}

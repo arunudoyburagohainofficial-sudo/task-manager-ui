@@ -17,6 +17,19 @@ const COLOR_PRESETS = ["#67924D", "#C86E35", "#4A8590", "#C58989", "#A68BCC", "#
  */
 const MAX_TARGET_DAYS = 100;
 
+/**
+ * What two lines of a goal tile can show at its narrowest — the 168pt cards in Home's
+ * strip, which leave 125pt for the name at 15pt bold. Measured against the real font
+ * rather than estimated: names up to this length wrap to two lines, and past it they run
+ * to three. The server accepts 200 characters, but anything longer than this can only be
+ * shown truncated, so it's better not to let it be typed.
+ *
+ * Word wrapping means this can't be an absolute guarantee — a short word followed by a
+ * very long one still overflows — which is why the tile keeps its numberOfLines={2} and
+ * its fixed height. This just makes truncation rare instead of routine.
+ */
+const MAX_NAME_LENGTH = 24;
+
 interface GoalEditSheetProps {
   visible: boolean;
   onClose: () => void;
@@ -67,7 +80,13 @@ export function GoalEditSheet({ visible, onClose, goal, onSave, onDelete, saving
     <BottomSheet visible={visible} onClose={onClose}>
       <H2>{goal ? "Edit goal" : "New goal"}</H2>
 
-      <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Interview Prep" />
+      <TextField
+        label="Name"
+        value={name}
+        onChangeText={setName}
+        placeholder="e.g. Interview Prep"
+        maxLength={MAX_NAME_LENGTH}
+      />
 
       <View style={styles.section}>
         <Meta>Target — days of focused work</Meta>
