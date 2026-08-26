@@ -65,6 +65,12 @@ interface ReminderTimeSheetProps {
   initialReminderTime?: string;
   /** Set when editing a reminder that has a specific date ("YYYY-MM-DD") — null/undefined means it currently repeats daily. */
   initialReminderDate?: string | null;
+  /**
+   * Removes the reminder entirely. Lives in here rather than beside the row on Task Detail
+   * so that row keeps a single action, matching every other row on the screen — deleting
+   * is a decision made while looking at the reminder, not a peer of "change it".
+   */
+  onDelete?: () => void;
 }
 
 /**
@@ -84,6 +90,7 @@ export function ReminderTimeSheet({
   submitting = false,
   initialReminderTime,
   initialReminderDate,
+  onDelete,
 }: ReminderTimeSheetProps) {
   const [mode, setMode] = useState<"clock" | "minutes">("clock");
   const [clockTime, setClockTime] = useState(new Date());
@@ -290,6 +297,9 @@ export function ReminderTimeSheet({
       )}
 
       <Button label="Save reminder" loading={submitting} onPress={handleSave} />
+      {isEditing && onDelete ? (
+        <Button label="Delete reminder" variant="destructiveText" onPress={onDelete} />
+      ) : null}
     </BottomSheet>
   );
 }

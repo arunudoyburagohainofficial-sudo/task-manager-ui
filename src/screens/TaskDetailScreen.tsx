@@ -25,7 +25,6 @@ import {
   Eyebrow,
   FocusIcon,
   GoalPickerSheet,
-  InfoCard,
   Label,
   Meta,
   ReminderIcon,
@@ -39,7 +38,7 @@ import {
 import { syncReminders } from "../notifications/useReminderSync";
 import { usePreferences } from "../state/PreferencesContext";
 import { useSession } from "../state/SessionContext";
-import { color, radius, space, text as t, type as T } from "../theme";
+import { color, radius, size, space, text as t, type as T } from "../theme";
 import { formatClockTime, formatMinutes } from "../utils/format";
 import { formatScheduleDate, isOverdue } from "../utils/schedule";
 import type { RootStackParamList } from "../navigation/types";
@@ -48,6 +47,55 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, "TaskDetail">;
 
 const DEFAULT_POMODORO_MINUTES = 25;
+
+/**
+ * Icon · title/subtitle · action row. Reminder and goal are the same shape of thing — an
+ * optional attachment with one way to change it — so they share one row component rather
+ * than each inventing its own layout.
+ *
+ * The whole row is the tap target, with the action word doubling as the affordance; a
+ * text-sized hit area on the right alone is too small to aim at comfortably.
+ */
+function DetailRow({
+  icon,
+  title,
+  badge,
+  subtitle,
+  subtitleColor,
+  action,
+  onPress,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  /** Status tag shown beside the title — the reminder row uses it for where the task sits. */
+  badge?: React.ReactNode;
+  subtitle: string;
+  subtitleColor?: string;
+  action: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${subtitle}. ${action}`}
+      onPress={onPress}
+      style={styles.detailRow}
+    >
+      <View style={styles.detailIcon}>{icon}</View>
+      <View style={styles.detailText}>
+        <View style={styles.detailTitleRow}>
+          <Label numberOfLines={1} style={styles.detailTitle}>
+            {title}
+          </Label>
+          {badge}
+        </View>
+        <Meta style={{ marginTop: 2, color: subtitleColor ?? color.textFaint }}>{subtitle}</Meta>
+      </View>
+      <Meta style={{ color: color.selectedText, fontWeight: "800" }}>{action}</Meta>
+      <Meta style={{ color: color.textFaint, marginLeft: 4 }}>›</Meta>
+    </Pressable>
+  );
+}
 
 export function TaskDetailScreen() {
   const { user } = useSession();
@@ -220,95 +268,85 @@ export function TaskDetailScreen() {
           value={task.taskType}
           onChange={handleTaskTypeChange}
           options={[
-            { value: "focus", label: "Focus Task", icon: <FocusIcon size={18} /> },
-            { value: "reminder", label: "Reminder Task", icon: <ReminderIcon size={18} /> },
+            { value: "focus", label: "Focus", icon: <FocusIcon size={18} /> },
+            { value: "reminder", label: "Reminder", icon: <ReminderIcon size={18} /> },
           ]}
         />
 
-        <Card>
-          <View style={styles.cardHeader}>
-            <Eyebrow>REMINDER</Eyebrow>
-          </View>
-          {reminder ? (
-            <>
-              {/* The reminder's date is also the task's schedule — there's deliberately no
-                  separate control to contradict it. The tag states which screen the task is
-                  actually sitting on, so it disappearing from Home reads as a consequence
-                  rather than as a bug. */}
-              <View style={styles.reminderHeadline}>
-                <Body style={{ fontWeight: "700", color: color.text }}>
-                  ⏰ {formatClockTime(reminder.reminderTime)}
-                  {reminder.reminderDate ? ` · ${formatScheduleDate(reminder.reminderDate)}` : " · every day"}
-                </Body>
-                {task.scheduledFor ? (
-                  isOverdue(task) ? (
-                    <Badge label="OVERDUE" tone="danger" />
-                  ) : (
-                    <Badge label="SCHEDULED" />
-                  )
+        {/* Reminder and goal are one card of rows rather than two headed cards: they're the
+            same kind of thing — an optional attachment with a single action — and heading
+            each one separately made the screen read as four sections before the actual
+            controls. */}
+        <Card style={styles.rowCard}>
+          <DetailRow
+            icon={<ReminderIcon size={20} />}
+            title={
+              reminder
+                ? `${formatClockTime(reminder.reminderTime)}${
+                    reminder.reminderDate ? ` · ${formatScheduleDate(reminder.reminderDate)}` : " · every day"
+                  }`
+                : "Reminder"
+            }
+            badge={
+              reminder ? (
+                task.scheduledFor ? (
+                  isOverdue(task) ? <Badge label="OVERDUE" tone="danger" /> : <Badge label="SCHEDULED" />
                 ) : (
                   <Badge label="ON HOME" />
-                )}
-              </View>
-              {/* Only when the task is off Home — the ON HOME tag already says everything
-                  there is to say about the unscheduled case on its own. */}
-              {task.scheduledFor ? (
-                <Meta style={{ color: color.textFaint, marginTop: 4 }}>
-                  {isOverdue(task)
-                    ? `Was due ${formatScheduleDate(task.scheduledFor)} — waiting under Overdue.`
-                    : `Waiting under ${formatScheduleDate(task.scheduledFor)} until that day.`}
-                </Meta>
-              ) : null}
-              <View style={styles.reminderActions}>
-                <Pressable accessibilityRole="button" onPress={() => setReminderSheetOpen(true)} hitSlop={8}>
-                  <Meta style={{ color: color.selectedText, fontWeight: "800" }}>Edit time</Meta>
-                </Pressable>
-                <Pressable accessibilityRole="button" onPress={handleDeleteReminder} hitSlop={8}>
-                  <Meta style={{ color: color.danger, fontWeight: "800" }}>Delete reminder</Meta>
-                </Pressable>
-              </View>
-            </>
-          ) : (
-            <Button label="Set a reminder" variant="secondary" onPress={() => setReminderSheetOpen(true)} />
-          )}
-        </Card>
+                )
+              ) : null
+            }
+            /* The reminder's date is also the task's schedule — there's deliberately no
+               separate control that could contradict it. Saying where the task is sitting
+               is what makes it vanishing from Home read as a consequence, not a bug. */
+            subtitle={
+              !reminder
+                ? "None set"
+                : task.scheduledFor
+                  ? isOverdue(task)
+                    ? `Was due ${formatScheduleDate(task.scheduledFor)} — waiting under Overdue`
+                    : `Waiting under ${formatScheduleDate(task.scheduledFor)} until that day`
+                  : "Stays on Home"
+            }
+            subtitleColor={reminder && isOverdue(task) ? color.danger : undefined}
+            action={reminder ? "Change" : "Add"}
+            onPress={() => setReminderSheetOpen(true)}
+          />
 
-        <Card>
-          <View style={styles.cardHeader}>
-            <Eyebrow>GOAL</Eyebrow>
-          </View>
-          {goal ? (
-            <View style={styles.goalRow}>
-              <View style={[styles.goalSwatch, { backgroundColor: goal.color ?? color.goal }]} />
-              <View style={styles.goalText}>
-                <Label>{goal.name}</Label>
-                <Meta style={{ marginTop: 2 }}>
-                  {goal.totalDaysActive} of {goal.targetDays} days
-                  {isFocus ? " · finishing this today adds one" : ""}
-                </Meta>
-              </View>
-              <Pressable accessibilityRole="button" onPress={() => setGoalSheetOpen(true)} hitSlop={8}>
-                <Meta style={{ color: color.selectedText, fontWeight: "800" }}>Change</Meta>
-              </Pressable>
-            </View>
-          ) : (
-            <Button label="Attach to a goal" variant="secondary" onPress={() => setGoalSheetOpen(true)} />
-          )}
+          <View style={styles.rowDivider} />
+
+          <DetailRow
+            icon={
+              goal ? (
+                <View style={[styles.goalSwatch, { backgroundColor: goal.color ?? color.goal }]} />
+              ) : (
+                <View style={styles.goalSwatchEmpty} />
+              )
+            }
+            title={goal ? goal.name : "Goal"}
+            subtitle={
+              goal
+                ? `${goal.totalDaysActive} of ${goal.targetDays} days${isFocus ? " · today adds one" : ""}`
+                : "Not attached — optional"
+            }
+            action={goal ? "Change" : "Attach"}
+            onPress={() => setGoalSheetOpen(true)}
+          />
         </Card>
 
         {isFocus ? (
           <>
-            <Card>
-              <View style={styles.cardHeader}>
-                <Eyebrow>PROGRESS TRACKING</Eyebrow>
-              </View>
-              {/* Non-interactive indicator — determined by task type, no per-task opt-out.
-                  The design is explicit that this must never render as a Switch. */}
-              <InfoCard icon={<StreakIconInline />}>
-                <Label style={{ color: color.success }}>Counts toward your streak &amp; weekly progress</Label>
-                <Meta style={{ marginTop: 2 }}>Automatic for focus tasks</Meta>
-              </InfoCard>
-            </Card>
+            {/* A plain line, not a card: this is a statement of fact about focus tasks, and
+                dressing it as a panel gave it the same weight as the controls around it.
+                "goal or not" only when unattached — it answers the question the empty goal
+                row above has just raised. */}
+            <View style={styles.trackingNote}>
+              <StreakIconInline />
+              <Meta style={styles.trackingText}>
+                Counts toward your streak and weekly progress{goal ? "" : ", goal or not"} — automatic for focus
+                tasks.
+              </Meta>
+            </View>
 
             <Card>
               <View style={styles.cardHeader}>
@@ -324,7 +362,7 @@ export function TaskDetailScreen() {
               />
 
               {focusMode === "regular" ? (
-                <View style={styles.cyclesRow}>
+                <View style={styles.settingRow}>
                   <Body style={{ fontWeight: "700" }}>Session length</Body>
                   <Stepper
                     value={regularMinutes}
@@ -341,11 +379,11 @@ export function TaskDetailScreen() {
               {/* Pomodoro-only — absent in regular mode, not disabled (design §3). */}
               {focusMode === "pomodoro" ? (
                 <>
-                  <View style={styles.cyclesRow}>
+                  <View style={styles.settingRow}>
                     <Body style={{ fontWeight: "700" }}>Cycles</Body>
                     <Stepper value={pomodoroCycles} onChange={setPomodoroCycles} min={1} max={10} label="cycles" />
                   </View>
-                  <View style={styles.cyclesRow}>
+                  <View style={styles.settingRow}>
                     <Body style={{ fontWeight: "700" }}>Session length</Body>
                     <Stepper
                       value={pomodoroMinutes}
@@ -357,16 +395,18 @@ export function TaskDetailScreen() {
                       label="pomodoro session length"
                     />
                   </View>
-                  <Meta style={{ color: color.textFaint, marginTop: 4 }}>
-                    {pomodoroCycles} cycles × {pomodoroMinutes} min = {pomodoroCycles * pomodoroMinutes} minutes total
+                  <Meta style={{ color: color.textFaint }}>
+                    {pomodoroCycles} × {pomodoroMinutes} min · {pomodoroCycles * pomodoroMinutes} minutes total
                   </Meta>
                 </>
               ) : null}
 
+              <View style={styles.rowDivider} />
+
               <View style={styles.dndRow}>
                 <DoNotDisturbIcon />
                 <View style={styles.dndText}>
-                  <Label style={{ color: color.success }}>Do Not Disturb</Label>
+                  <Label>Do Not Disturb</Label>
                   <Meta style={{ marginTop: 2 }}>Silences your phone for this session · coming soon</Meta>
                 </View>
                 <Toggle
@@ -377,7 +417,7 @@ export function TaskDetailScreen() {
               </View>
 
               <Button
-                label="Start Focus Session"
+                label="Start focus session"
                 loading={starting}
                 onPress={handleStartSession}
                 style={styles.startButton}
@@ -411,6 +451,10 @@ export function TaskDetailScreen() {
         submitting={createReminderMutation.isPending || updateReminderMutation.isPending}
         initialReminderTime={reminder?.reminderTime}
         initialReminderDate={reminder?.reminderDate}
+        onDelete={async () => {
+          setReminderSheetOpen(false);
+          await handleDeleteReminder();
+        }}
       />
       <GoalPickerSheet
         visible={goalSheetOpen}
@@ -447,35 +491,66 @@ const styles = StyleSheet.create({
   cardHeader: {
     marginBottom: space.md,
   },
-  reminderHeadline: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.sm,
-    flexWrap: "wrap",
+  // Rows carry their own padding so the divider between them can run edge to edge.
+  rowCard: {
+    paddingVertical: 0,
+    paddingHorizontal: 0,
   },
-  reminderActions: {
-    flexDirection: "row",
-    gap: space.gutter,
-    marginTop: space.md,
-  },
-  goalRow: {
+  detailRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: space.md,
-    backgroundColor: color.track,
-    borderRadius: radius.control,
-    paddingVertical: 12,
-    paddingHorizontal: 13,
+    paddingVertical: 14,
+    paddingHorizontal: space.card,
+    minHeight: size.minTouch,
+  },
+  detailIcon: {
+    width: 22,
+    alignItems: "center",
+  },
+  detailText: {
+    flex: 1,
+  },
+  detailTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+  },
+  // Shrinks so a long goal name yields to the tag beside it rather than pushing it away.
+  detailTitle: {
+    flexShrink: 1,
+  },
+  rowDivider: {
+    height: 1,
+    backgroundColor: color.divider,
+  },
+  trackingNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+    paddingHorizontal: 2,
+  },
+  trackingText: {
+    flex: 1,
+    lineHeight: 20,
+  },
+  goalSwatchEmpty: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderColor: color.textFaint,
   },
   goalSwatch: {
-    width: 10,
-    height: 10,
+    width: 12,
+    height: 12,
     borderRadius: 3,
   },
   goalText: {
     flex: 1,
   },
-  cyclesRow: {
+  settingRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
