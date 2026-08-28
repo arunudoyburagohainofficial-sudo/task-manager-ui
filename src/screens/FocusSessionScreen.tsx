@@ -19,7 +19,7 @@ import {
   Timer,
 } from "../components";
 import { useCompanion } from "../state/CompanionContext";
-import { color, radius, space, text as t, type as T } from "../theme";
+import { color, FONT_SCALE_CORRECTION, radius, space, text as t, type as T } from "../theme";
 import { restingLine } from "../theme/companionCopy";
 import { formatMMSS, formatMinutes } from "../utils/format";
 import type { RootStackParamList } from "../navigation/types";
@@ -261,7 +261,7 @@ export function FocusSessionScreen() {
           </View>
 
           <View style={styles.restingSection}>
-            <Ferne size={54} asleep />
+            <Ferne size={54} state="asleep" />
             <Meta>{restingLine(name)}</Meta>
           </View>
 
@@ -327,7 +327,11 @@ const styles = StyleSheet.create({
   },
   timerText: {
     textAlign: "center",
-    lineHeight: 76,
+    // Set on this style prop rather than merged into Timer's own t(T.timer, ...) call —
+    // the Timer component only accepts a style override, not an `extra` to merge into the
+    // token — so it never saw TYPE_SCALE's correction on its own. Multiplying by the same
+    // factor t() applies internally keeps it in sync with the digits beside it.
+    lineHeight: 76 * FONT_SCALE_CORRECTION,
     fontVariant: ["tabular-nums"],
   },
   progressSection: {

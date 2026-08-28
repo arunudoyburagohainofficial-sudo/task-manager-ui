@@ -1,3 +1,9 @@
+// The companion
+export * from "./Ferne";
+
+// Background wash, shared by every screen
+export * from "./ScreenWash";
+
 // Type scale
 export * from "./Text";
 export * from "./LoadingScreen";

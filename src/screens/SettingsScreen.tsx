@@ -231,7 +231,9 @@ export function SettingsScreen() {
         </View>
         <Card style={styles.dndCard}>
           <View style={styles.dndLabel}>
-            <IconRow icon={<DoNotDisturbIcon />} gap={9}>
+            {/* 18, matching FocusSessionScreen's and TaskDetailScreen's DND icon — same
+                concept, same size everywhere it appears. */}
+            <IconRow icon={<DoNotDisturbIcon size={18} />} gap={9}>
               <Body>Do Not Disturb during focus</Body>
             </IconRow>
             <Badge label="SOON" />

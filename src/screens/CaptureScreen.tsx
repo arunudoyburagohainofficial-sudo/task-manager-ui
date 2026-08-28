@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Body, Button, Ferne, Meta, ScreenContainer, TextField, TourInlineSlot } from "../components";
 import { useCompanion } from "../state/CompanionContext";
 import { TourTarget, useTour } from "../state/TourContext";
-import { color, radius, space } from "../theme";
+import { color, radius, space, text as t, type as T } from "../theme";
 import { listeningLine } from "../theme/companionCopy";
 import type { CapturedTaskDraft, RootStackParamList } from "../navigation/types";
 
@@ -88,9 +88,12 @@ export function CaptureScreen() {
       >
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.hero}>
-            <Ferne size={72} />
+            <Ferne size={72} state="listening" />
             <Meta>{listeningLine(name)}</Meta>
-            <Body style={styles.title}>What&rsquo;s on your mind?</Body>
+            {/* Routed through t() rather than the Body wrapper + a raw style override —
+                the previous version set fontSize directly on `style`, which wins over
+                Body's own t()-derived size and so never shrank with TYPE_SCALE. */}
+            <Text style={t(T.h2, { letterSpacing: -0.4, color: color.text })}>What&rsquo;s on your mind?</Text>
           </View>
 
           {drafts.map((draft) => (
@@ -170,12 +173,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: space.sm,
     marginBottom: space.xs,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "800",
-    letterSpacing: -0.4,
-    color: color.text,
   },
   draftRow: {
     backgroundColor: color.fill,

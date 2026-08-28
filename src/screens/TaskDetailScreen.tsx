@@ -341,7 +341,7 @@ export function TaskDetailScreen() {
                 "goal or not" only when unattached — it answers the question the empty goal
                 row above has just raised. */}
             <View style={styles.trackingNote}>
-              <StreakIconInline />
+              <StreakIconInline size={14} />
               <Meta style={styles.trackingText}>
                 Counts toward your streak and weekly progress{goal ? "" : ", goal or not"} — automatic for focus
                 tasks.
@@ -404,7 +404,9 @@ export function TaskDetailScreen() {
               <View style={styles.rowDivider} />
 
               <View style={styles.dndRow}>
-                <DoNotDisturbIcon />
+                {/* 18, matching FocusSessionScreen's DND pill — the two screens show the
+                    same "Do Not Disturb" concept and should read at the same size. */}
+                <DoNotDisturbIcon size={18} />
                 <View style={styles.dndText}>
                   <Label>Do Not Disturb</Label>
                   <Meta style={{ marginTop: 2 }}>Silences your phone for this session · coming soon</Meta>

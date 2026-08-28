@@ -16,6 +16,7 @@ import {
   ProgressBar,
   ScreenContainer,
   StreakIconInline,
+  XpIcon,
 } from "../components";
 import { useCompanion } from "../state/CompanionContext";
 import { color, space, text as t, type as T } from "../theme";
@@ -57,10 +58,14 @@ export function CompletionScreen() {
     <ScreenContainer>
       <Pressable style={styles.flex} onPress={handleNext} accessibilityRole="button" accessibilityLabel="Continue">
         <ScrollView contentContainerStyle={styles.content}>
-          <Ferne size={88} />
+          <Ferne size={88} state="celebrate" />
           <H1 style={styles.centered}>Task complete</H1>
 
           <View style={styles.pointsRow}>
+            {/* The handoff's XP mark. This is the one screen with a real points figure to
+                put it against — points are computed server-side per focus session, so
+                nothing else in the app knows a number to show. */}
+            <XpIcon size={26} />
             <Text style={t(T.timer, { fontSize: 40, letterSpacing: -1, color: color.success })}>
               +{params.pointsEarned} XP
             </Text>
@@ -77,7 +82,7 @@ export function CompletionScreen() {
 
           {streak && streak.currentStreak > 0 ? (
             <View style={styles.streakRow}>
-              <StreakIconInline />
+              <StreakIconInline size={14} />
               <Body style={{ fontWeight: "700", color: color.text }}>{streak.currentStreak}-day streak</Body>
               <InfoTooltip topic="streak" />
             </View>

@@ -50,54 +50,6 @@ export function InfoCard({ icon, children }: { icon?: React.ReactNode; children:
   );
 }
 
-/**
- * Ferne, the companion. The circle is pinned with flexGrow/flexShrink/flexBasis so a flex
- * row can never stretch it into an oval — the handoff calls this out as a real bug from
- * the web build.
- */
-export function Ferne({
-  size: diameter = size.ferne,
-  message,
-  /** Closed eyes — used while a focus session runs. */
-  asleep = false,
-}: {
-  size?: number;
-  message?: string;
-  asleep?: boolean;
-}) {
-  const eye = asleep
-    ? { width: diameter * 0.17, height: 2, backgroundColor: "#fff" }
-    : { width: diameter * 0.17, height: diameter * 0.17, borderRadius: diameter, backgroundColor: "#fff" };
-
-  return (
-    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: space.md }}>
-      <View
-        style={{
-          width: diameter,
-          height: diameter,
-          flexGrow: 0,
-          flexShrink: 0,
-          flexBasis: diameter,
-          borderRadius: diameter / 2,
-          backgroundColor: color.ferne,
-          alignItems: "center",
-          justifyContent: "center",
-          flexDirection: "row",
-          gap: diameter * 0.26,
-        }}
-      >
-        <View style={eye} />
-        <View style={eye} />
-      </View>
-      {message ? (
-        <View style={styles.bubble}>
-          <Text style={t(T.meta, { color: color.textBody, lineHeight: 19 })}>{message}</Text>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
 /** One row inside a settings card. Non-pressable when no handler is given. */
 export function SettingsRow({
   label,
@@ -200,15 +152,6 @@ const styles = StyleSheet.create({
     borderColor: color.successBorder,
     borderRadius: radius.control,
     paddingVertical: 12,
-    paddingHorizontal: 13,
-  },
-  bubble: {
-    flex: 1,
-    backgroundColor: color.card,
-    borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: radius.card,
-    paddingVertical: 11,
     paddingHorizontal: 13,
   },
   settingsRow: {

@@ -21,15 +21,20 @@ import {
   GoalCard,
   GoalEditSheet,
   H1,
+  CaptureRing,
+  DoneCheckIcon,
+  FocusIcon,
   InfoTooltip,
   Meta,
   ScreenContainer,
   SectionHeader,
+  StatChip,
   StreakIconInline,
   TaskRow,
 } from "../components";
 import { syncReminders } from "../notifications/useReminderSync";
 import { useCompanion } from "../state/CompanionContext";
+import { usePreferences } from "../state/PreferencesContext";
 import { useSession } from "../state/SessionContext";
 import { TourTarget, useTour } from "../state/TourContext";
 import { color, radius, space, text as t, type as T } from "../theme";
@@ -44,6 +49,13 @@ import type { RootStackParamList } from "../navigation/types";
  * has to cope with an undefined that never actually occurs.
  */
 type HomeSection = { key: string; title: string; count: number; data: TaskDto[] };
+
+/**
+ * Mirrors FocusSessionService.POINTS_PER_MINUTE. Duplicated rather than fetched because
+ * the server exposes no rate endpoint — if that constant ever changes, this is the one
+ * place the client has to follow it.
+ */
+const POINTS_PER_MINUTE = 1;
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -112,6 +124,18 @@ export function HomeScreen() {
     [completedTasksQuery.data]
   );
   const doneTodayCount = completedToday.length;
+  const activeGoalCount = useMemo(() => goals.filter((g) => g.status === "active").length, [goals]);
+  /** Drives the DONE TODAY chip's "N/M" fraction. */
+  const todayTotal = tasks.length + doneTodayCount;
+
+  /**
+   * What a focus task is worth if its session runs the planned length. Not a stored value
+   * — the server awards POINTS_PER_MINUTE (1) per full minute actually focused, so this is
+   * that same rate applied to the length the session will start at. Reminder tasks earn no
+   * points at all and get no tag rather than a made-up one.
+   */
+  const { defaultFocusDurationMinutes } = usePreferences();
+  const projectedXp = defaultFocusDurationMinutes * POINTS_PER_MINUTE;
 
   // Keyed rather than a boolean per section, so adding a third section later needs no new
   // state. Intentionally not persisted: collapsing is a "get this out of my way right now"
@@ -250,7 +274,12 @@ export function HomeScreen() {
           <View>
             <View style={styles.greetingRow}>
               <View style={styles.greetingText}>
-                <H1 numberOfLines={2}>
+                {/* H1 is sized for a single-word screen title ("Progress", "Settings") —
+                    this is a full sentence, and a long name still wraps it to two lines at
+                    that size, costing ~60pt right above a body that's now much denser. An
+                    override here, not a change to H1 itself, since the single-word titles
+                    elsewhere don't have this problem. */}
+                <H1 numberOfLines={2} style={styles.greetingTitle}>
                   {greetingForHour()}, {formatFirstName(displayName)}
                 </H1>
                 <Meta style={styles.date} numberOfLines={1}>
@@ -269,19 +298,34 @@ export function HomeScreen() {
               </Pressable>
             </View>
 
-            {/* today strip */}
-            <View style={styles.todayStrip}>
-              <Text style={t(T.label, { fontWeight: "600", color: color.textBody, flex: 1 })}>
-                <Text style={t(T.label, { color: color.success })}>{doneTodayCount}</Text> done today
-              </Text>
-              <View style={styles.stripDivider} />
-              <View style={styles.stripRight}>
-                <Text style={t(T.label, { fontWeight: "600", color: color.textBody })}>
-                  <Text style={t(T.label, { color: color.success })}>{currentStreak}-day</Text> streak
-                </Text>
-                <StreakIconInline />
-                <InfoTooltip topic="streak" />
-              </View>
+            {/* One-word labels, measured rather than guessed: "DAY STREAK" and friends need
+                108–116pt of the ~92pt a third of this row actually has, so they truncated on
+                every screen size. The icon and number already say which stat this is, so the
+                second word was the redundant part to drop. The streak keeps its tooltip —
+                the explanation of the grace-day rule shouldn't vanish in a restyle. */}
+            <View style={styles.statRow}>
+              <StatChip
+                tint="streak"
+                icon={<StreakIconInline size={14} />}
+                value={String(currentStreak)}
+                label="STREAK"
+                trailing={<InfoTooltip topic="streak" />}
+              />
+              <StatChip
+                tint="done"
+                icon={<DoneCheckIcon size={14} />}
+                value={String(doneTodayCount)}
+                // "2/4" rather than "2": the count alone can't tell you whether the day is
+                // nearly finished or barely started.
+                outOf={todayTotal > 0 ? String(todayTotal) : undefined}
+                label="DONE"
+              />
+              <StatChip
+                tint="goals"
+                icon={<FocusIcon size={14} />}
+                value={String(activeGoalCount)}
+                label="GOALS"
+              />
             </View>
 
             {hasLoaded ? (
@@ -303,14 +347,25 @@ export function HomeScreen() {
                 }}
                 style={styles.captureInner}
               >
-                <Ferne size={92} />
-                <Text style={t(T.body, { fontWeight: "700", color: color.success })}>Tap to capture tasks</Text>
+                {/* The ring is a frame around Ferne, not a second control: it renders with
+                    pointerEvents none inside the same Pressable, so the capture button is
+                    still one tappable region and the walkthrough still measures one target. */}
+                <CaptureRing size={104}>
+                  {/* Ferne's face carries the same message the line below her does: a
+                      broken streak gets the warm "come back" look rather than the neutral
+                      resting one. */}
+                  <Ferne size={84} state={currentStreak === 0 ? "nudge" : "idle"} />
+                </CaptureRing>
+                <Text style={t(T.body, { fontSize: 14, fontWeight: "800", color: color.success })}>Tap to capture tasks</Text>
               </Pressable>
             </TourTarget>
 
             <View style={styles.goalsHeader}>
               <Eyebrow>GOALS</Eyebrow>
               <InfoTooltip topic="goals" />
+              {/* Trailing rule, matching the TO DO / COMPLETED headers below — without it
+                  GOALS was the only section label on the screen left hanging. */}
+              <View style={styles.goalsRule} />
             </View>
             {/* "+ Goal" leads rather than trails: it stays reachable without scrolling
                 past every existing goal once the list grows. */}
@@ -323,7 +378,7 @@ export function HomeScreen() {
                 <AddGoalCard onPress={() => setCreatingGoal(true)} />
               </TourTarget>
               {goals.map((goal) => (
-                <GoalCard key={goal.id} goal={goal} width={168} onPress={() => setEditingGoal(goal)} />
+                <GoalCard key={goal.id} goal={goal} width={150} onPress={() => setEditingGoal(goal)} />
               ))}
             </ScrollView>
           </View>
@@ -334,10 +389,10 @@ export function HomeScreen() {
             count={section.count}
             collapsed={!!collapsedSections[section.key]}
             onToggle={() => toggleSection(section.key)}
-            labelColor={section.key === "done" ? color.doneCheck : color.amberLabel}
+            labelColor={section.key === "done" ? "#5F7226" : color.amberLabel}
             countStyle={
               section.key === "done"
-                ? { bg: color.fill, fg: color.textMuted }
+                ? { bg: "#EAF0D8", fg: "#5F7226" }
                 : { bg: color.amberFill, fg: "#8A6112" }
             }
           />
@@ -377,7 +432,14 @@ export function HomeScreen() {
               taskType={item.taskType}
               goalName={itemGoal?.name}
               goalColor={itemGoal?.color ?? undefined}
-              subtitle={reminder ? `⏰ ${formatClockTime(reminder.reminderTime)}` : null}
+              subtitle={
+                reminder
+                  ? formatClockTime(reminder.reminderTime)
+                  : item.taskType === "focus"
+                    ? `${defaultFocusDurationMinutes} min`
+                    : null
+              }
+              xp={item.taskType === "focus" ? projectedXp : undefined}
               actionLabel={item.taskType === "focus" ? "Focus" : "Done"}
               // The whole row is inside the walkthrough's highlight, so opening the task by
               // tapping the row counts as completing the step just as much as the Focus
@@ -449,8 +511,12 @@ const styles = StyleSheet.create({
   greetingText: {
     flex: 1,
   },
+  greetingTitle: {
+    fontSize: 20,
+    lineHeight: 24,
+  },
   date: {
-    marginTop: 4,
+    marginTop: 2,
   },
   avatar: {
     width: 40,
@@ -461,49 +527,38 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     flexShrink: 0,
   },
-  todayStrip: {
-    marginTop: 16,
-    backgroundColor: "#F7F1E6",
-    borderRadius: radius.card,
-    paddingVertical: 13,
-    paddingHorizontal: 16,
+  statRow: {
+    marginTop: 12,
     flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-  },
-  stripDivider: {
-    width: 1,
-    height: 16,
-    backgroundColor: "#DED4C2",
-  },
-  stripRight: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 4,
+    gap: space.sm,
   },
   bubbleWrap: {
     alignItems: "center",
-    marginTop: space.base,
+    marginTop: space.sm,
   },
   bubbleCard: {
     paddingVertical: 10,
     paddingHorizontal: 16,
   },
   capture: {
-    marginTop: 16,
+    marginTop: space.sm,
   },
   captureInner: {
     alignItems: "center",
-    gap: space.md,
+    gap: space.sm,
+  },
+  goalsRule: {
+    flex: 1,
+    height: 1,
+    backgroundColor: color.border,
+    marginLeft: 2,
   },
   goalsHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginTop: space.gutter,
-    marginBottom: space.sm,
+    marginTop: space.md,
+    marginBottom: space.xs,
   },
   goalsRow: {
     flexDirection: "row",

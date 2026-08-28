@@ -1,9 +1,53 @@
-import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useRef } from "react";
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
+import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Path, RadialGradient, Stop } from "react-native-svg";
 import type { GoalDto, TaskType } from "../api/types";
-import { color, radius, space, text as t, type as T } from "../theme";
+import { color, radius, shadow, space, text as t, type as T } from "../theme";
 import { Card } from "./Card";
-import { BellGlyph, TargetGlyph } from "./icons";
+import { BellGlyph, TargetGlyph, XpIcon } from "./icons";
+import { useReduceMotion } from "./Ferne";
+import { GradientFill } from "./ScreenWash";
+
+/**
+ * Continuous rotation, native driver. Duration is a full turn; `reverse` runs it backwards
+ * so two rings can counter-rotate the way the design has them.
+ */
+function useSpin(durationMs: number, enabled: boolean, reverse = false) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!enabled) {
+      v.setValue(0);
+      return;
+    }
+    const anim = Animated.loop(
+      Animated.timing(v, { toValue: 1, duration: durationMs, easing: Easing.linear, useNativeDriver: true })
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [durationMs, enabled, v]);
+  return v.interpolate({ inputRange: [0, 1], outputRange: reverse ? ["360deg", "0deg"] : ["0deg", "360deg"] });
+}
+
+/** Ease-in-out 0 → 1 → 0 loop, for the rim's breathing. */
+function useLoop(durationMs: number, enabled: boolean) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!enabled) {
+      v.setValue(0);
+      return;
+    }
+    const half = { duration: durationMs / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true };
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(v, { toValue: 1, ...half }),
+        Animated.timing(v, { toValue: 0, ...half }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [durationMs, enabled, v]);
+  return v;
+}
 
 /**
  * Rounded icon tile for Home's To do / Completed rows — bell for reminder tasks, target
@@ -11,7 +55,7 @@ import { BellGlyph, TargetGlyph } from "./icons";
  * types to the same muted olive tone, since a finished task no longer needs its type to
  * stand out the way an actionable one does.
  */
-function TaskTypeTile({ taskType, completed = false, size: d = 36 }: { taskType: TaskType; completed?: boolean; size?: number }) {
+function TaskTypeTile({ taskType, completed = false, size: d = 32 }: { taskType: TaskType; completed?: boolean; size?: number }) {
   const isFocus = taskType === "focus";
   const bg = completed ? color.taskTypeCompletedBg : isFocus ? color.taskTypeFocusBg : color.taskTypeReminderBg;
   const fg = completed ? color.doneCheck : isFocus ? color.taskTypeFocusFg : color.taskTypeReminderFg;
@@ -30,7 +74,18 @@ function TaskTypeTile({ taskType, completed = false, size: d = 36 }: { taskType:
  * colour, " · "-separated — the same "coloured tag under the title" treatment the type
  * itself gets, so which goal a task counts toward is visible without opening it.
  */
-function TaskTypeLabel({ taskType, goalName, goalColor }: { taskType: TaskType; goalName?: string; goalColor?: string }) {
+function TaskTypeLabel({
+  taskType,
+  goalName,
+  goalColor,
+  detail,
+}: {
+  taskType: TaskType;
+  goalName?: string;
+  goalColor?: string;
+  /** Reminder time or planned session length — folded into this line rather than given its own. */
+  detail?: string | null;
+}) {
   const isFocus = taskType === "focus";
   return (
     <Text style={t(T.meta, { fontWeight: "700" })}>
@@ -43,7 +98,26 @@ function TaskTypeLabel({ taskType, goalName, goalColor }: { taskType: TaskType; 
           <Text style={{ color: goalColor ?? color.goal }}>{goalName}</Text>
         </>
       ) : null}
+      {detail ? (
+        <>
+          <Text style={{ color: color.textFaint }}> · </Text>
+          <Text style={{ color: color.textMuted }}>{detail}</Text>
+        </>
+      ) : null}
     </Text>
+  );
+}
+
+/** Bolt + points, the app's one XP marker. Rendered wherever a points figure appears. */
+function XpTag({ points, suffix, tone = "pending" }: { points: number; suffix?: string; tone?: "pending" | "earned" }) {
+  return (
+    <View style={styles.xpTag}>
+      <XpIcon />
+      <Text style={t(T.badge, { fontSize: 11, letterSpacing: 0, color: tone === "earned" ? "#7C9436" : "#A9760B" })}>
+        +{points}
+        {suffix ? ` ${suffix}` : ""}
+      </Text>
+    </View>
   );
 }
 
@@ -82,27 +156,251 @@ export function SectionHeader({
           the better failure. */}
       <Text
         numberOfLines={1}
-        style={[t(T.eyebrow, { fontSize: 12, letterSpacing: 1.2, color: labelColor }), styles.sectionLabel]}
+        style={[t(T.eyebrow, { fontSize: 11, letterSpacing: 1.32, color: labelColor }), styles.sectionLabel]}
       >
         {label}
       </Text>
       <View style={[styles.countPill, { backgroundColor: countStyle.bg }]}>
-        <Text style={t(T.meta, { fontSize: 12, fontWeight: "800", color: countStyle.fg })}>{count}</Text>
+        <Text style={t(T.badge, { fontSize: 11, letterSpacing: 0, color: countStyle.fg })}>{count}</Text>
       </View>
       <View style={styles.rule} />
       {onToggle ? (
         <View style={styles.togglePill}>
           {/* Names the action, not the state: a bare chevron left it guesswork whether
               tapping would open the section or close it. */}
-          <Text style={t(T.meta, { fontSize: 13, fontWeight: "700", color: color.textBody })}>
+          <Text style={t(T.meta, { fontSize: 11, fontWeight: "700", letterSpacing: 0.66, color: color.textMuted })}>
             {collapsed ? "Expand all" : "Collapse all"}
           </Text>
-          <Text style={t(T.badge, { fontSize: 9, letterSpacing: 0, color: color.textMuted })}>
+          <Text style={t(T.badge, { fontSize: 9, letterSpacing: 0, color: "#A0A79F" })}>
             {collapsed ? "▸" : "▾"}
           </Text>
         </View>
       ) : null}
     </Pressable>
+  );
+}
+
+/**
+ * One of the three stat chips along the top of Home.
+ *
+ * Deliberately a compact strip rather than the tall stacked cards this replaces: those ran
+ * ~68px each and pushed the To do list — the part of the screen people actually act on —
+ * most of a screen height down. Everything sits on one line here, which costs about half
+ * the vertical space and reads just as clearly at a glance.
+ *
+ * `trailing` exists so the streak chip can keep its info tooltip — the original strip had
+ * one, and a redesign shouldn't quietly cost the user an explanation.
+ */
+export function StatChip({
+  icon,
+  value,
+  outOf,
+  label,
+  tint,
+  trailing,
+}: {
+  icon: React.ReactNode;
+  value: string;
+  /** Renders as a smaller "/N" after the value — "2/4 done" says more than a bare "2". */
+  outOf?: string;
+  label: string;
+  tint: "streak" | "done" | "goals";
+  trailing?: React.ReactNode;
+}) {
+  const palette = {
+    streak: {
+      grad: [
+        { offset: 0, color: "#FFF9F4" },
+        { offset: 1, color: "#FCE3D4" },
+      ],
+      border: "rgba(246,213,194,.9)",
+      fg: color.taskTypeFocusFg,
+    },
+    done: {
+      grad: [
+        { offset: 0, color: "#F9FCF1" },
+        { offset: 1, color: "#E4EDD2" },
+      ],
+      border: "rgba(220,230,196,.9)",
+      fg: "#5F7226",
+    },
+    goals: {
+      grad: [
+        { offset: 0, color: "#FFFFFF" },
+        { offset: 1, color: "#F7EEE1" },
+      ],
+      border: "rgba(237,224,198,.9)",
+      fg: color.text,
+    },
+  }[tint];
+
+  return (
+    <View style={[styles.statChip, { borderColor: palette.border }]}>
+      <GradientFill colors={palette.grad} />
+      {/* Stands in for the design's `inset 0 1px 0 rgba(255,255,255,.95)`, which RN has no
+          equivalent for. This hairline is what keeps the chip reading as lightly domed
+          rather than flat. */}
+      <View style={styles.chipHighlight} pointerEvents="none" />
+      {icon}
+      <Text style={t(T.body, { fontSize: 15, fontWeight: "800", color: palette.fg })}>{value}</Text>
+      {outOf ? (
+        <Text style={t(T.badge, { fontSize: 10, fontWeight: "700", letterSpacing: 0, color: palette.fg, opacity: 0.6 })}>
+          /{outOf}
+        </Text>
+      ) : null}
+      {/* Kept to one line, and the labels are short enough to fit it whole — measured
+          against the real font at the narrowest screen this app targets. Deliberately not
+          flexShrink'd: if a longer label is ever passed it should visibly overflow here
+          rather than quietly ellipsise and hide that it no longer fits. */}
+      <Text numberOfLines={1} style={t(T.badge, { fontSize: 9, color: color.textFaint })}>
+        {label}
+      </Text>
+      {trailing}
+    </View>
+  );
+}
+
+/**
+ * The halo behind Ferne on Home: a glow, two slowly counter-rotating arcs, a dashed orbit,
+ * a breathing rim and three drifting specks — transcribed from the design's layered CSS.
+ *
+ * The arcs are decorative, not a gauge. The design draws them as fixed ~82% and ~79% arcs
+ * that simply turn; binding one to real progress would empty the ring on a fresh day and
+ * lose the look entirely.
+ *
+ * Every layer is pointerEvents none inside the caller's own Pressable, so the capture
+ * button stays one tappable region and the walkthrough measures it as a single control.
+ */
+export function CaptureRing({ size: d = 176, animate = true, children }: { size?: number; animate?: boolean; children: React.ReactNode }) {
+  const reduceMotion = useReduceMotion();
+  const moving = animate && !reduceMotion;
+
+  const spinA = useSpin(74000, moving);
+  const spinB = useSpin(96000, moving, true);
+  const spinDash = useSpin(26000, moving);
+  const spinSpecks = useSpin(40000, moving);
+  const pulse = useLoop(4600, moving);
+
+  const c = d / 2;
+  // The two arcs are drawn in the design's own 176 viewBox and scale with `size`.
+  const orbit = d * 1.205; // the 212 dashed ring, drawn oversized around the box
+  const rim = d * 1.227; // the 216 pulsing rim
+  const speckField = d * 1.477; // the 260 speck orbit
+
+  const layer = { position: "absolute" as const, width: d, height: d, left: 0, top: 0 };
+  const centred = (box: number) => ({
+    position: "absolute" as const,
+    width: box,
+    height: box,
+    left: c - box / 2,
+    top: c - box / 2,
+  });
+
+  const pulseScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.35] });
+  const pulseOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0.12] });
+
+  return (
+    <View style={{ width: d, height: d, alignItems: "center", justifyContent: "center" }}>
+      {/* soft bloom Ferne sits inside */}
+      <View style={centred(d * 1.182)} pointerEvents="none">
+        <Svg width="100%" height="100%" viewBox="0 0 100 100">
+          <Defs>
+            <RadialGradient id="capGlow" cx="46%" cy="38%" r="50%">
+              <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.7} />
+              <Stop offset="0.4" stopColor="#FFF0E5" stopOpacity={0.34} />
+              <Stop offset="0.66" stopColor="#F0A382" stopOpacity={0.07} />
+              <Stop offset="0.8" stopColor="#F0A382" stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Circle cx={50} cy={50} r={50} fill="url(#capGlow)" />
+        </Svg>
+      </View>
+
+      {/* breathing rim */}
+      <Animated.View
+        style={[centred(rim), { transform: [{ scale: pulseScale }], opacity: pulseOpacity }]}
+        pointerEvents="none"
+      >
+        <View style={styles.captureRim} />
+      </Animated.View>
+
+      {/* three specks on a slow carousel */}
+      <Animated.View style={[centred(speckField), { transform: [{ rotate: spinSpecks }] }]} pointerEvents="none">
+        <View style={[styles.speck, { width: 6, height: 6, backgroundColor: "rgba(240,180,41,.55)", top: 0, left: speckField / 2 - 3 }]} />
+        <View style={[styles.speck, { width: 4, height: 4, backgroundColor: "rgba(164,191,67,.55)", bottom: 14, left: 22 }]} />
+        <View style={[styles.speck, { width: 5, height: 5, backgroundColor: "rgba(223,109,65,.45)", top: 52, right: 6 }]} />
+      </Animated.View>
+
+      {/* outer arc */}
+      <Animated.View style={[layer, { transform: [{ rotate: spinA }] }]} pointerEvents="none">
+        <Svg width={d} height={d} viewBox="0 0 176 176">
+          <Defs>
+            <SvgLinearGradient id="ringA" x1="0.18" y1="0" x2="0.82" y2="1">
+              <Stop offset="0" stopColor="#FDF2E9" />
+              <Stop offset="0.45" stopColor="#F3D3BC" />
+              <Stop offset="1" stopColor="#E1A582" />
+            </SvgLinearGradient>
+          </Defs>
+          <Circle
+            cx={88}
+            cy={88}
+            r={76}
+            fill="none"
+            stroke="url(#ringA)"
+            strokeWidth={8}
+            strokeLinecap="round"
+            strokeDasharray="390 87.6"
+            rotation={78}
+            originX={88}
+            originY={88}
+          />
+        </Svg>
+      </Animated.View>
+
+      {/* inner arc, turning the other way */}
+      <Animated.View style={[layer, { transform: [{ rotate: spinB }] }]} pointerEvents="none">
+        <Svg width={d} height={d} viewBox="0 0 176 176">
+          <Defs>
+            <SvgLinearGradient id="ringB" x1="0.8" y1="0.05" x2="0.2" y2="0.95">
+              <Stop offset="0" stopColor="#FFFAF4" />
+              <Stop offset="0.5" stopColor="#F8E4D5" />
+              <Stop offset="1" stopColor="#EDC3A6" />
+            </SvgLinearGradient>
+          </Defs>
+          <Circle
+            cx={88}
+            cy={88}
+            r={62}
+            fill="none"
+            stroke="url(#ringB)"
+            strokeWidth={5.5}
+            strokeLinecap="round"
+            strokeDasharray="309 80.6"
+            rotation={82.5}
+            originX={88}
+            originY={88}
+          />
+        </Svg>
+      </Animated.View>
+
+      {/* dashed orbit */}
+      <Animated.View style={[centred(orbit), { transform: [{ rotate: spinDash }] }]} pointerEvents="none">
+        <Svg width="100%" height="100%" viewBox="0 0 212 212">
+          <Circle
+            cx={106}
+            cy={106}
+            r={100}
+            fill="none"
+            stroke="rgba(240,180,41,.55)"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeDasharray="3 13"
+          />
+        </Svg>
+      </Animated.View>
+
+      {children}
+    </View>
   );
 }
 
@@ -113,6 +411,7 @@ export function TaskRow({
   goalName,
   goalColor,
   subtitle,
+  xp,
   actionLabel,
   onPress,
   onAction,
@@ -122,6 +421,8 @@ export function TaskRow({
   goalName?: string;
   goalColor?: string;
   subtitle?: string | null;
+  /** Points this task is worth if focused for its planned length. Omitted when unknown. */
+  xp?: number;
   actionLabel: string;
   onPress: () => void;
   onAction: () => void;
@@ -131,8 +432,12 @@ export function TaskRow({
       <TaskTypeTile taskType={taskType} />
       <View style={styles.taskRowText}>
         <Text style={t(T.bodyLg, { color: color.text })}>{title}</Text>
-        <TaskTypeLabel taskType={taskType} goalName={goalName} goalColor={goalColor} />
-        {subtitle ? <Text style={t(T.meta, { color: color.textFaint })}>{subtitle}</Text> : null}
+        {/* Type, goal, time and points share one wrapping line — as separate rows they
+            pushed the row tall enough that only two fit on screen at a time. */}
+        <View style={styles.taskRowMeta}>
+          <TaskTypeLabel taskType={taskType} goalName={goalName} goalColor={goalColor} detail={subtitle} />
+          {xp != null ? <XpTag points={xp} /> : null}
+        </View>
       </View>
       <Pressable
         onPress={onAction}
@@ -150,23 +455,61 @@ export function TaskRow({
 export function CompletedRow({
   title,
   taskType,
+  xp,
   onPress,
 }: {
   title: string;
   taskType: TaskType;
+  /** Points actually earned. Omitted when unknown — never guessed. */
+  xp?: number;
   onPress?: () => void;
 }) {
   return (
-    <Pressable onPress={onPress} disabled={!onPress} accessibilityRole={onPress ? "button" : undefined} style={styles.completedRow}>
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? "button" : undefined}
+      style={styles.completedRow}
+    >
+      <GradientFill
+        colors={[
+          { offset: 0, color: "#F8FBEF" },
+          { offset: 1, color: "#EEF3E1" },
+        ]}
+      />
       <TaskTypeTile taskType={taskType} completed size={32} />
-      <Text style={t(T.body, { color: color.doneText, textDecorationLine: "line-through", flex: 1 })}>{title}</Text>
-      <Text style={t(T.bodyLg, { color: color.doneCheck })}>✓</Text>
+      <View style={styles.taskRowText}>
+        <Text
+          style={t(T.bodyLg, {
+            color: "#5F7226",
+            textDecorationLine: "line-through",
+            textDecorationColor: "rgba(95,114,38,.45)",
+          })}
+        >
+          {title}
+        </Text>
+        {xp != null ? <XpTag points={xp} suffix="earned" tone="earned" /> : null}
+      </View>
+      {/* Filled disc rather than a bare glyph: at the end of a row of tinted tiles a loose
+          ✓ read as leftover text rather than as the row's completed state. */}
+      <View style={styles.completedBadge}>
+        <Svg width={15} height={15} viewBox="0 0 24 24">
+          <Path
+            d="M5 12.5l4.5 4.5L19 7"
+            stroke={color.screen}
+            strokeWidth={2.6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        </Svg>
+      </View>
     </Pressable>
   );
 }
 
 /** Line box for a goal name, doubled to reserve the two lines every tile is sized for. */
-const GOAL_NAME_LINE_HEIGHT = 19;
+const GOAL_NAME_LINE_HEIGHT = 15;
 
 /** Goal tile — name, progress bar tinted with the goal's own colour, day count. */
 export function GoalCard({ goal, onPress, width }: { goal: GoalDto; onPress?: () => void; width?: number }) {
@@ -181,24 +524,41 @@ export function GoalCard({ goal, onPress, width }: { goal: GoalDto; onPress?: ()
       accessibilityLabel={`${goal.name}, ${goal.totalDaysActive} of ${goal.targetDays} days`}
       style={width ? { width } : { flex: 1 }}
     >
-      <Card style={styles.goalCard}>
-        <View style={styles.goalHeader}>
-          <View style={[styles.goalSwatch, { backgroundColor: accent }]} />
-          <Text
-            style={[t(T.body, { fontWeight: "700", color: color.text, flex: 1 }), styles.goalName]}
-            numberOfLines={2}
-          >
-            {goal.name}
-          </Text>
+      {/* Two layers, not one — see the same comment on StatChip: elevation and
+          overflow:hidden on a single Android View produces a smeared shadow instead of a
+          soft one, so the shadow lives on this outer View and the clip on the inner one. */}
+      <View style={[styles.goalCardShadowWrap, shadow.card]}>
+        <View style={styles.goalCard}>
+          <GradientFill
+            colors={[
+              { offset: 0, color: "#FFFFFF" },
+              { offset: 0.56, color: "#FFFDF8" },
+              { offset: 1, color: "#F9F2E6" },
+            ]}
+          />
+          <View style={styles.goalHeader}>
+            <View style={[styles.goalSwatch, { backgroundColor: accent }]} />
+            <Text
+              style={[t(T.label, { fontSize: 13, fontWeight: "800", color: color.text, flex: 1 }), styles.goalName]}
+              numberOfLines={2}
+            >
+              {goal.name}
+            </Text>
+          </View>
+          {/* Track and count share a row. As stacked lines they cost a third of the tile's
+              height to say one thing, which is what made the goals strip the most
+              space-hungry block on Home for the least information. */}
+          <View style={styles.goalFooter}>
+            <View style={styles.goalTrack}>
+              <View style={{ width: `${pct}%`, height: 5, backgroundColor: accent, borderRadius: 99 }} />
+            </View>
+            <Text style={t(T.badge, { fontSize: 10, letterSpacing: 0, color: color.textFaint })} numberOfLines={1}>
+              {goal.totalDaysActive}/{goal.targetDays}
+              {goal.status === "completed" ? " ✓" : ""}
+            </Text>
+          </View>
         </View>
-        <View style={styles.goalTrack}>
-          <View style={{ width: `${pct}%`, height: 6, backgroundColor: accent, borderRadius: 3 }} />
-        </View>
-        <Text style={t(T.meta, { color: color.textMuted })}>
-          {goal.totalDaysActive}/{goal.targetDays} days
-          {goal.status === "completed" ? " · reached" : ""}
-        </Text>
-      </Card>
+      </View>
     </Pressable>
   );
 }
@@ -230,7 +590,7 @@ export function StatCard({
         <Text style={t(T.h2, { color: accent ? color.success : color.text })}>{value}</Text>
         {trailing}
       </View>
-      <Text style={t(T.meta, { color: color.textMuted, marginTop: 3 })}>{label}</Text>
+      <Text style={t(T.meta, { color: color.textMuted, marginTop: 2 })}>{label}</Text>
     </Card>
   );
 }
@@ -239,10 +599,10 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    minHeight: 36,
-    marginTop: 22,
-    marginBottom: 10,
+    gap: 9,
+    minHeight: 28,
+    marginTop: 14,
+    marginBottom: 8,
   },
   sectionLabel: {
     // RN defaults flexShrink to 0, so this has to be said explicitly for the label to give
@@ -263,9 +623,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    height: 32,
-    paddingHorizontal: 12,
-    borderRadius: radius.pill,
+    paddingTop: 5,
+    paddingBottom: 5,
+    paddingLeft: 10,
+    paddingRight: 6,
+    borderRadius: 9,
     backgroundColor: color.card,
     borderWidth: 1,
     borderColor: color.border,
@@ -281,14 +643,46 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexShrink: 0,
   },
+  /** The shadow-only outer layer — see the comment in StatChip for why it's separate. */
+  statChip: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: 11,
+    paddingVertical: 7,
+    paddingHorizontal: 7,
+    // Required: GradientFill paints the full box and relies on the parent to clip it.
+    overflow: "hidden",
+  },
+  chipHighlight: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: "rgba(255,255,255,.95)",
+  },
+  captureRim: {
+    flex: 1,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: "rgba(223,109,65,.30)",
+  },
+  speck: {
+    position: "absolute",
+    borderRadius: 999,
+  },
   taskRow: {
     backgroundColor: color.card,
     borderWidth: 1,
     borderColor: color.border,
     borderRadius: radius.card,
-    paddingVertical: 11,
-    paddingLeft: 11,
-    paddingRight: 11,
+    paddingVertical: 9,
+    paddingLeft: 10,
+    paddingRight: 10,
     flexDirection: "row",
     alignItems: "center",
     gap: 11,
@@ -297,26 +691,58 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 4,
   },
+  taskRowMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 7,
+  },
+  xpTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
   taskRowAction: {
     backgroundColor: "#EBC294",
     borderRadius: radius.control,
-    paddingVertical: 11,
-    paddingHorizontal: 18,
+    paddingVertical: 9,
+    paddingHorizontal: 15,
   },
   completedRow: {
-    backgroundColor: color.doneFill,
     borderWidth: 1,
-    borderColor: color.doneBorder,
+    borderColor: "#DEE8C7",
+    overflow: "hidden",
+    opacity: 0.82,
     borderRadius: radius.card,
-    paddingVertical: 14,
-    paddingHorizontal: space.card,
+    // Left padding matches TaskRow's 11 so the tile columns of the two sections line up;
+    // the right side keeps the wider gutter the badge needs.
+    paddingVertical: 9,
+    paddingLeft: 10,
+    paddingRight: space.card,
     flexDirection: "row",
     alignItems: "center",
     gap: 11,
   },
+  completedBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: color.doneCheck,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // Matches goalCard's radius so the shadow follows the card's real silhouette.
+  goalCardShadowWrap: {
+    borderRadius: 14,
+  },
   goalCard: {
-    paddingVertical: 12,
-    paddingHorizontal: 13,
+    backgroundColor: color.card,
+    borderWidth: 1,
+    borderColor: "rgba(237,224,198,.9)",
+    borderRadius: 14,
+    overflow: "hidden",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
   },
   goalHeader: {
     flexDirection: "row",
@@ -344,25 +770,34 @@ const styles = StyleSheet.create({
     lineHeight: GOAL_NAME_LINE_HEIGHT,
     height: GOAL_NAME_LINE_HEIGHT * 2,
   },
+  goalFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 6,
+  },
   goalTrack: {
-    height: 6,
-    backgroundColor: color.fill,
-    borderRadius: 3,
-    marginVertical: 10,
+    flex: 1,
+    height: 5,
+    backgroundColor: "#EADFCB",
+    borderRadius: 99,
     overflow: "hidden",
   },
   addGoal: {
     borderWidth: 1,
     borderStyle: "dashed",
     borderColor: "#C8D2CE",
-    borderRadius: radius.card,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     minHeight: 44,
   },
   statCard: {
     flex: 1,
-    padding: 14,
+    // Deliberately tighter than Card's own default (space.card=13), rather than that
+    // literal 14 it used to override to — this sits in a dense 2×2 grid of its own, unlike
+    // Card's general-purpose use elsewhere.
+    padding: 11,
   },
   statValueRow: {
     flexDirection: "row",

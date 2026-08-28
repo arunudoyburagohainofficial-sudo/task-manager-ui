@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { StyleSheet, TextInput, View } from "react-native";
-import { color, radius, space, text as t, type as T } from "../theme";
+import { color, radius, size, text as t, type as T } from "../theme";
 import { Meta } from "./Text";
 
 /** Web-only style, cast past RN's TextStyle typing — see usage below for why. */
@@ -70,12 +70,14 @@ const styles = StyleSheet.create({
   },
   input: {
     borderRadius: radius.control,
-    paddingVertical: 13,
+    paddingVertical: 11,
     paddingHorizontal: 14,
-    minHeight: 50,
+    // Matches size.button — a single-line field and a button are the same kind of control
+    // and read oddly at different heights sitting in the same form.
+    minHeight: size.button,
   },
   inputMultiline: {
-    minHeight: 66,
-    paddingTop: 14,
+    minHeight: 60,
+    paddingTop: 12,
   },
 });

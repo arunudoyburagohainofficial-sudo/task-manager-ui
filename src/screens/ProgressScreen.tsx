@@ -132,7 +132,7 @@ export function ProgressScreen() {
                     value={`${data!.streak.currentStreak} days`}
                     label="current streak"
                     accent
-                    trailing={<StreakIconInline />}
+                    trailing={<StreakIconInline size={14} />}
                   />
                   <StatCard value={formatMinutes(data!.weekly.totalFocusTimeMinutes)} label="focus time" />
                 </View>
@@ -272,7 +272,9 @@ const styles = StyleSheet.create({
   emptyCard: {
     marginTop: 18,
     alignItems: "center",
-    paddingVertical: 28,
+    // Matches the same empty-state card on Home and Scheduled — it was 28 here, the only
+    // one of the three off from the other two.
+    paddingVertical: 24,
   },
   emptyText: {
     textAlign: "center",

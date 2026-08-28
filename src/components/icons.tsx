@@ -52,6 +52,34 @@ export const StreakIcon = ({ size: s = size.iconLg }: IconProps) => (
 /** Inline variant — inside a text run, keeps the line box at text height. */
 export const StreakIconInline = ({ size: s = size.iconInline }: IconProps) => <StreakIcon size={s} />;
 
+/** Green check circle — the "done today" stat chip. */
+export const DoneCheckIcon = ({ size: s = size.iconLg }: IconProps) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24">
+    <Circle cx={12} cy={12} r={9} fill="#A4BF43" />
+    <Path
+      d="M8 12.3l2.7 2.7L16 9.6"
+      stroke="#FDF8EA"
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  </Svg>
+);
+
+/** Lightning bolt — marks a points/XP figure. */
+export const XpIcon = ({ size: s = 11 }: IconProps) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24">
+    <Path
+      d="M13.6 2.4 5.2 13.4h5.1l-1.3 8.2 8.6-11.2h-5.2z"
+      fill="#F0B429"
+      stroke="#A9760B"
+      strokeWidth={1.5}
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
 /**
  * Single-colour glyphs for the task-type tile on Home's To do / Completed rows — distinct
  * from ReminderIcon/FocusIcon above, which are fixed-palette "stickers" and can't be
@@ -78,10 +106,15 @@ export const TargetGlyph = ({ size: s = 18, color: c }: GlyphProps) => (
   </Svg>
 );
 
-/* ---- bottom tab icons (line style, 22px) ---- */
+/**
+ * Bottom tab icons (line style). One constant rather than four hardcoded literals, so the
+ * tab bar's icon size and MainTabs' own height math (which has to match it) stay in sync
+ * from a single number.
+ */
+export const TAB_ICON_SIZE = 20;
 
 const TabIcon = ({ d, active }: { d: string[]; active: boolean }) => (
-  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+  <Svg width={TAB_ICON_SIZE} height={TAB_ICON_SIZE} viewBox="0 0 24 24" fill="none">
     {d.map((p, i) => (
       <Path
         key={i}
@@ -114,7 +147,7 @@ export const ProgressTabIcon = ({ active }: { active: boolean }) => (
 );
 
 export const SettingsTabIcon = ({ active }: { active: boolean }) => (
-  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+  <Svg width={TAB_ICON_SIZE} height={TAB_ICON_SIZE} viewBox="0 0 24 24" fill="none">
     <Circle cx={12} cy={12} r={2.9} stroke={active ? color.interactive : color.textFaint} strokeWidth={1.6} />
     <Path
       d="M12 4.6 13.4 6.6h2.3l.6 2.3 2 1.3-.9 2.1.9 2.1-2 1.3-.6 2.3h-2.3L12 19.4l-1.4-2H8.3l-.6-2.3-2-1.3.9-2.1-.9-2.1 2-1.3.6-2.3h2.3z"

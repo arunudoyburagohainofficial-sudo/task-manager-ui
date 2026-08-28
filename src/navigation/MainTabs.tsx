@@ -20,20 +20,26 @@ const TAB_ICONS: Record<keyof MainTabParamList, (props: { active: boolean }) => 
   Settings: SettingsTabIcon,
 };
 
-const LABEL_LINE_HEIGHT = 15;
+const LABEL_FONT_SIZE = 10;
+const LABEL_LINE_HEIGHT = 14;
 
 /**
  * Content height a tab item actually occupies, from @react-navigation/bottom-tabs:
  *   5  tabVerticalUiKit paddingTop
- *  28  icon wrapper (ICON_SIZE_TALL — the wrapper, not our 22px glyph)
- *  15  label line box
+ *  25  icon wrapper (icons.tsx's TAB_ICON_SIZE, 20px, plus the library's own ~5px wrapper)
+ *  14  label line box
  *   5  tabVerticalUiKit paddingBottom
- *  = 53
+ *  = 49
  *
- * The library's own default is 49, which overflows and clips the label's descenders.
- * 58 leaves headroom without drifting far from the platform norm.
+ * The library's own default is 49, which overflows and clips the label's descenders at
+ * this size too — 52 leaves the same headroom the previous, larger version had.
+ *
+ * Every text style on Home shrank by the theme's TYPE_SCALE, but this bar's label style
+ * is a raw object passed straight to the navigator rather than going through theme's
+ * text(), so it never got smaller with everything else — it was the one region still at
+ * its original size. This brings it down by roughly the same ~10% by hand.
  */
-const TAB_CONTENT_HEIGHT = 58;
+const TAB_CONTENT_HEIGHT = 52;
 
 export function MainTabs() {
   // getTabBarHeight returns a numeric tabBarStyle.height verbatim and skips its own inset
@@ -76,10 +82,14 @@ export function MainTabs() {
           // Plus Jakarta Sans ExtraBold.
           tabBarLabelStyle: {
             fontFamily: font.black,
-            fontSize: 11,
+            fontSize: LABEL_FONT_SIZE,
             lineHeight: LABEL_LINE_HEIGHT,
             letterSpacing: 0.2,
           },
+          // The tab bar is a fixed-height strip, so a large OS font setting pushes these
+          // labels into the icons rather than making the bar taller. Everything routed
+          // through theme's text() is capped the same way.
+          tabBarAllowFontScaling: false,
           tabBarIcon: ({ focused }) => <Icon active={focused} />,
         };
       }}

@@ -195,6 +195,8 @@ export function ConfirmOrganizeScreen() {
 
           <View style={styles.ferne}>
             <Ferne
+              size={64}
+              state="sorting"
               message={organizeLine(
                 tone,
                 drafts.filter((d) => d.taskType === "focus").length,
@@ -275,7 +277,7 @@ export function ConfirmOrganizeScreen() {
                     ) : null}
                   </View>
 
-                  <InfoCard icon={<StreakIconInline />}>
+                  <InfoCard icon={<StreakIconInline size={14} />}>
                     <Label style={{ color: color.success }}>Counts toward your streak &amp; weekly progress</Label>
                   </InfoCard>
                 </>

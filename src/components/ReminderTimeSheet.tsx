@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import type { CreateReminderRequest } from "../api/types";
-import { color, radius, space, text as t, type as T } from "../theme";
+import { color, radius, size, space, text as t, type as T } from "../theme";
 import { BottomSheet } from "./BottomSheet";
 import { Button } from "./Button";
 import { Segmented } from "./Segmented";
@@ -309,7 +309,9 @@ const styles = StyleSheet.create({
     gap: space.sm,
   },
   androidTimeButton: {
-    minHeight: 52,
+    // Was a literal 52, 2 above the old size.button — now set relative to it instead, so
+    // it keeps that same small margin rather than staying frozen at the pre-retune value.
+    minHeight: size.button + 2,
     paddingHorizontal: 14,
     alignItems: "center",
     justifyContent: "center",
@@ -324,7 +326,9 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   chip: {
-    minHeight: 44,
+    // A real tap target, not a general-purpose card — held at the accessibility floor
+    // rather than trimmed with the rest, same reasoning as size.minTouch itself.
+    minHeight: size.minTouch,
     paddingHorizontal: 16,
     alignItems: "center",
     justifyContent: "center",
