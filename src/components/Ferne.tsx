@@ -14,7 +14,17 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Easing, StyleSheet, Text, View } from "react-native";
-import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Rect, Stop } from "react-native-svg";
+import Svg, {
+  Circle,
+  Defs,
+  Ellipse,
+  G,
+  LinearGradient as SvgLinearGradient,
+  Path,
+  RadialGradient,
+  Rect,
+  Stop,
+} from "react-native-svg";
 import { color, radius, size as sizeToken, space, text as t, type as T } from "../theme";
 
 /**
@@ -187,8 +197,16 @@ export function Ferne({ size = sizeToken.ferne, state = "idle", animate = true, 
         {/* ears, behind the head */}
         <Animated.View style={[layer, { transform: [{ rotate: asleep ? "0deg" : earLrot }] }]}>
           <Svg width={size} height={size} viewBox="0 0 200 200">
+            <Defs>
+              {/* The design lights each ear from the top rather than filling it flat — the
+                  only thing giving a 17-wide rounded bar any roundness at all. */}
+              <SvgLinearGradient id="fEarL" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0" stopColor="#EB8A5F" />
+                <Stop offset="1" stopColor={P.terracotta} />
+              </SvgLinearGradient>
+            </Defs>
             <G opacity={pose.dim}>
-              <Rect x="70" y={pose.earTop} width="17" height={pose.earLen} rx="8.5" fill={P.terracotta} />
+              <Rect x="70" y={pose.earTop} width="17" height={pose.earLen} rx="8.5" fill="url(#fEarL)" />
               <Rect
                 x="74.5"
                 y={pose.earTop + 8}
@@ -196,15 +214,21 @@ export function Ferne({ size = sizeToken.ferne, state = "idle", animate = true, 
                 height={pose.earLen - 18}
                 rx="4"
                 fill={P.terracottaPale}
-                opacity={0.62}
+                opacity={0.6}
               />
             </G>
           </Svg>
         </Animated.View>
         <Animated.View style={[layer, { transform: [{ rotate: asleep ? "0deg" : earRrot }] }]}>
           <Svg width={size} height={size} viewBox="0 0 200 200">
+            <Defs>
+              <SvgLinearGradient id="fEarR" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0" stopColor="#EB8A5F" />
+                <Stop offset="1" stopColor={P.terracotta} />
+              </SvgLinearGradient>
+            </Defs>
             <G opacity={pose.dim}>
-              <Rect x="113" y={pose.earTop} width="17" height={pose.earLen} rx="8.5" fill={P.terracotta} />
+              <Rect x="113" y={pose.earTop} width="17" height={pose.earLen} rx="8.5" fill="url(#fEarR)" />
               <Rect
                 x="117.5"
                 y={pose.earTop + 8}
@@ -212,7 +236,7 @@ export function Ferne({ size = sizeToken.ferne, state = "idle", animate = true, 
                 height={pose.earLen - 18}
                 rx="4"
                 fill={P.terracottaPale}
-                opacity={0.62}
+                opacity={0.6}
               />
             </G>
           </Svg>
@@ -252,8 +276,8 @@ export function Ferne({ size = sizeToken.ferne, state = "idle", animate = true, 
 
               {/* spectacles — the brand mark's linework, carried on the face */}
               <G stroke={P.terracottaDeep} strokeWidth={3.4} fill="none" strokeLinecap="round">
-                <Circle cx="82" cy="99" r="15" fill={P.buttercream} fillOpacity={0.9} />
-                <Circle cx="118" cy="99" r="15" fill={P.buttercream} fillOpacity={0.9} />
+                <Circle cx="82" cy="99" r="15" fill={P.buttercream} fillOpacity={0.92} />
+                <Circle cx="118" cy="99" r="15" fill={P.buttercream} fillOpacity={0.92} />
                 <Path d="M97 99 L 103 99" />
                 <Path d="M67 96 L 56 92" />
                 <Path d="M133 96 L 144 92" />
@@ -302,6 +326,19 @@ export function Ferne({ size = sizeToken.ferne, state = "idle", animate = true, 
             )}
           </Svg>
         </Animated.View>
+
+        {/* Glass, last of all — the design draws these two arcs over the eyes, not under
+            them, which is what makes the lenses read as something the pupils sit behind.
+            Outside the blink wrapper on purpose: a highlight on the glass shouldn't squash
+            when the eye behind it closes. */}
+        <View style={layer} pointerEvents="none">
+          <Svg width={size} height={size} viewBox="0 0 200 200">
+            <G stroke="#FFFFFF" strokeWidth={2.6} strokeLinecap="round" fill="none" opacity={0.5 * pose.dim}>
+              <Path d="M76 88 A 15 15 0 0 1 88 84" />
+              <Path d="M112 88 A 15 15 0 0 1 124 84" />
+            </G>
+          </Svg>
+        </View>
       </Animated.View>
     </View>
   );

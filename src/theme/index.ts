@@ -6,7 +6,7 @@
  * introduce colours, sizes or radii that are not in this file — if a value isn't here, it
  * isn't in the design.
  */
-import { PixelRatio, type TextStyle } from "react-native";
+import { PixelRatio, type BoxShadowValue, type TextStyle } from "react-native";
 
 export const color = {
   // surfaces
@@ -242,33 +242,18 @@ export const size = {
 } as const;
 
 export const shadow = {
-  // the only elevation in the system: the segmented control thumb
+  /**
+   * The segmented control thumb, and the last remaining user of the legacy shadow props.
+   * A small neutral lift with no spread, which is all these props can express — every
+   * lifted *surface* in the design (stat chips, goal tiles) needs a tinted colour and a
+   * negative spread instead, and goes through `lift()` below.
+   */
   thumb: {
     shadowColor: "#1A1A1A",
     shadowOpacity: 0.1,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
     elevation: 2,
-  },
-  /**
-   * Home's lifted surfaces — stat chips, task rows, goal tiles. Warm-tinted rather than
-   * neutral grey: on a cream/gradient field a grey shadow reads as dirt under the card.
-   * Deliberately soft and low-contrast; this is depth, not a drop shadow.
-   */
-  card: {
-    shadowColor: "#8E5A3D",
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
-  },
-  /** Slightly stronger, for the one element meant to sit above the rest. */
-  raised: {
-    shadowColor: "#8E5A3D",
-    shadowOpacity: 0.14,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 5,
   },
 } as const;
 
@@ -285,3 +270,110 @@ export const homeWash = {
   mint: "#E4F0E2",
   sand: "#FBF1DE",
 } as const;
+
+/* ------------------------------------------------------------------- depth */
+
+/**
+ * The design's lifted-surface recipe, as a box-shadow stack. Three layers, and all three
+ * are load-bearing:
+ *
+ *  - a 1px near-white rim inset along the top edge — the lit side of the dome;
+ *  - a soft inset floor along the bottom, tinted to the surface's own gradient — the
+ *    shaded side;
+ *  - a drop with *negative spread*, which pulls the shadow in tighter than the card so it
+ *    reads as tucked underneath rather than as a halo bleeding out around it.
+ *
+ * Written as `boxShadow` rather than `shadow*`/`elevation`: those have no spread at all,
+ * and Android's elevation draws a neutral system shadow that ignores the tint entirely.
+ * Neither can express this, which is why these surfaces have been reading flat next to the
+ * design. `boxShadow` is CSS semantics on all three platforms — RN parses it natively and
+ * react-native-web hands it straight to the browser, so one array matches the design's own
+ * declaration on each.
+ *
+ * `drop` and `floor` are arguments rather than constants because the design tints each
+ * shadow to the gradient sitting above it — terracotta under the streak chip, olive under
+ * the done chip, oak under the neutral ones. One grey under all of them is exactly what
+ * flattens the set.
+ *
+ * Returned split across the two Views a clipped gradient surface needs: `outer` belongs on
+ * an unclipped wrapper, `inner` on the box carrying `overflow: "hidden"`. They can't share
+ * one View — the clip that keeps a gradient inside the rounded corners also clips an outset
+ * shadow drawn on that same layer, so the drop would simply vanish.
+ */
+export function lift(
+  drop: string,
+  floor: string,
+  { variant = "chip", rim = "rgba(255,255,255,.95)" }: { variant?: "chip" | "card"; rim?: string } = {}
+): { outer: BoxShadowValue[]; inner: BoxShadowValue[] } {
+  const g =
+    variant === "card"
+      ? { floorY: -4, floorBlur: 8, dropY: 5, dropBlur: 13, dropSpread: -4 }
+      : { floorY: -3, floorBlur: 6, dropY: 4, dropBlur: 10, dropSpread: -3 };
+
+  return {
+    outer: [{ offsetX: 0, offsetY: g.dropY, blurRadius: g.dropBlur, spreadDistance: g.dropSpread, color: drop }],
+    // Design order, kept verbatim: CSS paints the first-listed shadow on top, so the rim
+    // has to precede the floor or the floor's blur washes over it.
+    inner: [
+      { offsetX: 0, offsetY: 1, blurRadius: 0, color: rim, inset: true },
+      { offsetX: 0, offsetY: g.floorY, blurRadius: g.floorBlur, color: floor, inset: true },
+    ],
+  };
+}
+
+/* ------------------------------------------------------------------ shading */
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  return [parseInt(full.slice(0, 2), 16), parseInt(full.slice(2, 4), 16), parseInt(full.slice(4, 6), 16)];
+}
+
+/**
+ * Shifts a colour's HSL lightness by `delta` (in points, so 8 means +8%), leaving hue and
+ * saturation alone. A straight blend toward white/black desaturates as it goes and turns
+ * the goal accents chalky; moving lightness keeps them the same colour, only lit
+ * differently.
+ */
+export function shade(hex: string, delta: number): string {
+  const [r, g, b] = hexToRgb(hex).map((v) => v / 255) as [number, number, number];
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+
+  const l2 = Math.min(1, Math.max(0, l + delta / 100));
+  const c = (1 - Math.abs(2 * l2 - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l2 - c / 2;
+  const [r2, g2, b2] =
+    h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+
+  return (
+    "#" +
+    [r2, g2, b2]
+      .map((v) => Math.round((v + m) * 255).toString(16).padStart(2, "0"))
+      .join("")
+  );
+}
+
+/**
+ * The two-stop ramp the design draws every goal accent as — a lit top and a shaded bottom
+ * of the goal's own colour. Measured off the handoff's two example goals: the blue pair
+ * (#A6BEDC → #7B96C0 around #8DA6CC) and the green (#BCD160 → #93AE33 around #A4BF43) both
+ * sit at roughly +8 and −6 points of lightness either side of the base, so the ramp is
+ * derived rather than hardcoded and any colour the user picks gets the same treatment.
+ */
+export function accentRamp(hex: string): [string, string] {
+  return [shade(hex, 8), shade(hex, -6)];
+}

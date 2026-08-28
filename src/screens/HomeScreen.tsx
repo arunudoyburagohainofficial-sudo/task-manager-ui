@@ -23,7 +23,7 @@ import {
   H1,
   CaptureRing,
   DoneCheckIcon,
-  FocusIcon,
+  GoalTargetIcon,
   InfoTooltip,
   Meta,
   ScreenContainer,
@@ -33,12 +33,10 @@ import {
   TaskRow,
 } from "../components";
 import { syncReminders } from "../notifications/useReminderSync";
-import { useCompanion } from "../state/CompanionContext";
 import { usePreferences } from "../state/PreferencesContext";
 import { useSession } from "../state/SessionContext";
 import { TourTarget, useTour } from "../state/TourContext";
 import { color, radius, space, text as t, type as T } from "../theme";
-import { homeLine } from "../theme/companionCopy";
 import { formatClockTime, formatFirstName, formatGreetingDate, greetingForHour, isToday } from "../utils/format";
 import { belongsOnHome, todayKey } from "../utils/schedule";
 import type { RootStackParamList } from "../navigation/types";
@@ -60,7 +58,6 @@ const POINTS_PER_MINUTE = 1;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export function HomeScreen() {
-  const { tone } = useCompanion();
   const { user } = useSession();
   const navigation = useNavigation<Nav>();
   const [refreshing, setRefreshing] = useState(false);
@@ -322,19 +319,11 @@ export function HomeScreen() {
               />
               <StatChip
                 tint="goals"
-                icon={<FocusIcon size={14} />}
+                icon={<GoalTargetIcon size={14} />}
                 value={String(activeGoalCount)}
                 label="GOALS"
               />
             </View>
-
-            {hasLoaded ? (
-              <View style={styles.bubbleWrap}>
-                <Card style={styles.bubbleCard}>
-                  <Meta style={{ color: color.textBody }}>{homeLine(tone, currentStreak, doneTodayCount)}</Meta>
-                </Card>
-              </View>
-            ) : null}
 
             {/* capture — Ferne is the hero, tap opens capture */}
             <TourTarget step="capture" style={styles.capture}>
@@ -531,14 +520,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     flexDirection: "row",
     gap: space.sm,
-  },
-  bubbleWrap: {
-    alignItems: "center",
-    marginTop: space.sm,
-  },
-  bubbleCard: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
   },
   capture: {
     marginTop: space.sm,

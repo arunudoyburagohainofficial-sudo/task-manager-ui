@@ -52,6 +52,21 @@ export const StreakIcon = ({ size: s = size.iconLg }: IconProps) => (
 /** Inline variant — inside a text run, keeps the line box at text height. */
 export const StreakIconInline = ({ size: s = size.iconInline }: IconProps) => <StreakIcon size={s} />;
 
+/**
+ * Terracotta bullseye — the "active goals" stat chip.
+ *
+ * Not FocusIcon, which this slot used to borrow: that one is a fixed green-and-teal sticker
+ * for focus *tasks*, and green on the goals chip's cream-and-oak ramp was the one icon in
+ * the row not sharing its chip's colour family. Ferne's own three tones instead.
+ */
+export const GoalTargetIcon = ({ size: s = size.iconLg }: IconProps) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24">
+    <Circle cx={12} cy={12} r={9} fill={color.fernePale} />
+    <Circle cx={12} cy={12} r={5.6} fill={color.ferne} />
+    <Circle cx={12} cy={12} r={2} fill={color.ferneDeep} />
+  </Svg>
+);
+
 /** Green check circle — the "done today" stat chip. */
 export const DoneCheckIcon = ({ size: s = size.iconLg }: IconProps) => (
   <Svg width={s} height={s} viewBox="0 0 24 24">
