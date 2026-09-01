@@ -1,5 +1,13 @@
 /** Formats a LocalTime string ("18:00:00") as "6 PM" / "6:30 PM", matching the mockups' clock-time style. */
-export function formatClockTime(time: string): string {
+/**
+ * "6 PM" / "6:30 PM", or null when there's no time to show.
+ *
+ * Accepts null because a reminder may be silent — carrying a date with no notification time
+ * (see ReminderDto.reminderTime). Handling that here keeps every caller from repeating the
+ * same guard, and makes "no time" render as nothing rather than as "NaN PM".
+ */
+export function formatClockTime(time: string | null | undefined): string | null {
+  if (!time) return null;
   const [hourStr, minuteStr] = time.split(":");
   const hour = parseInt(hourStr, 10);
   const minute = parseInt(minuteStr, 10);

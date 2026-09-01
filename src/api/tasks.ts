@@ -26,6 +26,11 @@ export function updateTask(taskId: string, request: UpdateTaskRequest): Promise<
   return apiRequest<TaskDto>(`/tasks/${taskId}`, { method: "PATCH", body: request });
 }
 
+/** Undo a completion — see task-svc's TaskService.reopenTask for what is and isn't reversed. */
+export function reopenTask(taskId: string): Promise<TaskDto> {
+  return apiRequest<TaskDto>(`/tasks/${taskId}/reopen`, { method: "POST" });
+}
+
 export function deleteTask(taskId: string): Promise<void> {
   return apiRequest<void>(`/tasks/${taskId}`, { method: "DELETE" });
 }

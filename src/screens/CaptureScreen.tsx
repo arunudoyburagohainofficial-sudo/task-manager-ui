@@ -48,7 +48,7 @@ export function CaptureScreen() {
     if (!trimmed) return;
     setDrafts((prev) => [
       ...prev,
-      { localId: String(nextLocalId++), name: trimmed, taskType: "focus", goalId: null, reminder: null },
+      { localId: String(nextLocalId++), name: trimmed, taskType: "focus", goalId: null, scheduledFor: null, notifyTime: null, recurrenceRule: null },
     ]);
     setText("");
   }
@@ -66,7 +66,9 @@ export function CaptureScreen() {
             name: text.trim(),
             taskType: "focus" as const,
             goalId: null,
-            reminder: null,
+            recurrenceRule: null,
+            scheduledFor: null,
+            notifyTime: null,
           },
         ]
       : drafts;

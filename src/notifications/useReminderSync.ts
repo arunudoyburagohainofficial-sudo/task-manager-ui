@@ -1,6 +1,8 @@
 import { useCallback, useEffect } from "react";
 import { AppState, type AppStateStatus } from "react-native";
+import * as Notifications from "expo-notifications";
 import { remindersApi, tasksApi } from "../api";
+import { handleNotificationResponse } from "./notificationActions";
 import { queryClient } from "../api/queryClient";
 import { queryKeys } from "../api/queryKeys";
 import { useSession } from "../state/SessionContext";
@@ -23,12 +25,28 @@ export async function syncReminders(): Promise<void> {
       remindersApi.getIntervalReminders(),
       tasksApi.getTasks("pending"),
     ]);
-    // Feeds the same fetch into the shared query cache (see src/api/queryClient.ts) so a
-    // background sync — e.g. the app returning to the foreground — keeps every screen's
-    // already-rendered data in step too, not just the device's scheduled notifications.
-    queryClient.setQueryData(queryKeys.reminders(), reminders);
-    queryClient.setQueryData(queryKeys.intervalReminders(), intervals);
-    queryClient.setQueryData(queryKeys.tasks("pending"), tasks);
+
+    /**
+     * Feeds the same fetch into the shared query cache (see src/api/queryClient.ts) so a
+     * background sync keeps every screen's already-rendered data in step too, not just the
+     * device's scheduled notifications.
+     *
+     * Skipped while any mutation is in flight. These writes replace whole lists, and this
+     * function is fired unawaited from every completion — so completing two tasks in quick
+     * succession could have the first one's sync land after the second's optimistic update
+     * and put the second task back into the pending list, where it would sit until something
+     * else refetched. A response that was already in flight before that mutation started is
+     * stale by definition; dropping it costs nothing, because whatever ran the mutation
+     * refreshes the cache itself.
+     */
+    if (queryClient.isMutating() === 0) {
+      queryClient.setQueryData(queryKeys.reminders(), reminders);
+      queryClient.setQueryData(queryKeys.intervalReminders(), intervals);
+      queryClient.setQueryData(queryKeys.tasks("pending"), tasks);
+    }
+
+    // Scheduling still runs on the fetched data either way: a slightly stale notification
+    // set self-corrects on the next sync, and skipping it entirely would be worse.
     await scheduleAll(reminders, intervals, tasks);
   } catch {
     // Offline, permission denied, or a transient API error — retried on next foreground.
@@ -70,4 +88,33 @@ export function useReminderSync(): void {
     });
     return () => subscription.remove();
   }, [sync]);
+
+  /**
+   * Makes a fired reminder actionable — tapping it opens the task, and its Done / Snooze
+   * buttons do what they say.
+   *
+   * Without this listener a reminder was a dead end: the notification appeared, and tapping
+   * it dropped you wherever the app happened to be, with the task it was about nowhere in
+   * sight.
+   *
+   * getLastNotificationResponseAsync covers the cold-start case, where the tap that launched
+   * the app happened before this listener could exist. `handled` guards the overlap, since a
+   * warm tap can arrive through both paths.
+   */
+  useEffect(() => {
+    if (!user) return;
+    let handled: string | null = null;
+
+    const act = (response: Notifications.NotificationResponse | null) => {
+      if (!response) return;
+      const id = response.notification.request.identifier + response.actionIdentifier;
+      if (handled === id) return;
+      handled = id;
+      void handleNotificationResponse(response);
+    };
+
+    Notifications.getLastNotificationResponseAsync().then(act).catch(() => {});
+    const subscription = Notifications.addNotificationResponseReceivedListener(act);
+    return () => subscription.remove();
+  }, [user]);
 }

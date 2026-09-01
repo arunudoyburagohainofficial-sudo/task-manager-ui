@@ -51,9 +51,25 @@ export function bucketFor(task: Pick<TaskDto, "scheduledFor">, today: string = t
   return "today";
 }
 
-/** Home shows exactly one bucket: unscheduled work plus whatever is dated for today. */
-export function belongsOnHome(task: Pick<TaskDto, "scheduledFor">, today: string = todayKey()): boolean {
-  return bucketFor(task, today) === "today";
+/**
+ * Home shows unscheduled work, whatever is dated for today, and anything overdue — one-off
+ * or repeating alike.
+ *
+ * Missed work used to be split: a repeating task that slipped stayed on Home (kept out of the
+ * Overdue panel, deliberately, so a routine isn't listed twice — see RecurringRow), but a
+ * one-off that slipped moved to the Overdue panel and off Home entirely. That meant a missed
+ * dated reminder went both silent (a past notification never re-fires — see
+ * localNotifications.ts) and out of sight, on the one screen most people actually look at
+ * every day. A one-off task also stays listed in the Overdue panel — that's still the right
+ * destination for acting on a backlog of missed items — this only stops it from disappearing
+ * from Home in the meantime.
+ */
+export function belongsOnHome(
+  task: Pick<TaskDto, "scheduledFor" | "recurrenceRule">,
+  today: string = todayKey()
+): boolean {
+  const bucket = bucketFor(task, today);
+  return bucket === "today" || bucket === "overdue";
 }
 
 /** True for a scheduled day already past — sectioned first on the Upcoming/Overdue tab. */

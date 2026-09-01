@@ -10,7 +10,7 @@ import {
 } from "../api/queries/useGoals";
 import { useStreakQuery } from "../api/queries/useProgress";
 import { useMarkTaskDoneMutation, useRemindersQuery } from "../api/queries/useReminders";
-import { useTasksQuery } from "../api/queries/useTasks";
+import { useReopenTaskMutation, useTasksQuery } from "../api/queries/useTasks";
 import type { GoalDto, ReminderDto, TaskDto } from "../api/types";
 import {
   AddGoalCard,
@@ -34,11 +34,13 @@ import {
 } from "../components";
 import { syncReminders } from "../notifications/useReminderSync";
 import { usePreferences } from "../state/PreferencesContext";
+import { useToast } from "../state/ToastContext";
 import { useSession } from "../state/SessionContext";
 import { TourTarget, useTour } from "../state/TourContext";
 import { color, radius, space, text as t, type as T } from "../theme";
 import { formatClockTime, formatFirstName, formatGreetingDate, greetingForHour, isToday } from "../utils/format";
-import { belongsOnHome, todayKey } from "../utils/schedule";
+import { belongsOnHome } from "../utils/schedule";
+import { useTodayKey } from "../utils/useTodayKey";
 import type { RootStackParamList } from "../navigation/types";
 
 /**
@@ -69,6 +71,8 @@ export function HomeScreen() {
   const remindersQuery = useRemindersQuery();
   const streakQuery = useStreakQuery();
   const markDoneMutation = useMarkTaskDoneMutation();
+  const reopenTaskMutation = useReopenTaskMutation();
+  const { showToast } = useToast();
   const goalsQuery = useGoalsQuery();
   const createGoalMutation = useCreateGoalMutation();
   const updateGoalMutation = useUpdateGoalMutation();
@@ -82,10 +86,13 @@ export function HomeScreen() {
   // here on its own once its day arrives, and one that slips moves back off. The split is
   // owned by utils/schedule.ts so both screens read it identically; todayKey() is
   // evaluated once for the whole pass rather than per task.
-  const tasks = useMemo(() => {
-    const today = todayKey();
-    return (tasksQuery.data ?? []).filter((task) => belongsOnHome(task, today));
-  }, [tasksQuery.data]);
+  // Re-derived when the calendar day rolls over, not just when the data changes — an app left
+  // open across midnight otherwise kept showing yesterday's Home.
+  const today = useTodayKey();
+  const tasks = useMemo(
+    () => (tasksQuery.data ?? []).filter((task) => belongsOnHome(task, today)),
+    [tasksQuery.data, today]
+  );
   const goals = goalsQuery.data ?? [];
   const savingGoal = createGoalMutation.isPending || updateGoalMutation.isPending;
   // Filtered to isActive for the same reason as TaskDetailScreen's lookup — the server
@@ -224,9 +231,34 @@ export function HomeScreen() {
     setRefreshing(false);
   }
 
-  async function handleMarkReminderDone(taskId: string) {
-    await markDoneMutation.mutateAsync(taskId);
-    await syncReminders();
+  /**
+   * Completing from Home, with a way back and a way to know when it didn't work.
+   *
+   * Both halves were missing. A failure here rolled the optimistic update back and the task
+   * silently reappeared, with nothing on this screen able to say why — Home had no error
+   * surface at all. And completing was irreversible, so a mis-tap on a one-tap button
+   * destroyed the task outright.
+   */
+  async function handleMarkReminderDone(taskId: string, taskName: string) {
+    try {
+      await markDoneMutation.mutateAsync(taskId);
+      await syncReminders();
+      showToast({
+        message: `“${taskName}” done`,
+        action: { label: "Undo", onPress: () => handleUndo(taskId, taskName) },
+      });
+    } catch {
+      showToast({ tone: "error", message: `Couldn't complete “${taskName}” — check your connection.` });
+    }
+  }
+
+  async function handleUndo(taskId: string, taskName: string) {
+    try {
+      await reopenTaskMutation.mutateAsync(taskId);
+      showToast({ message: `“${taskName}” put back` });
+    } catch {
+      showToast({ tone: "error", message: "Couldn't undo — check your connection." });
+    }
   }
 
   async function handleSaveGoal(fields: { name: string; color: string; targetDays: number }) {
@@ -440,7 +472,7 @@ export function HomeScreen() {
               onAction={() => {
                 advanceTour("start");
                 if (item.taskType === "focus") navigation.navigate("TaskDetail", { taskId: item.id });
-                else handleMarkReminderDone(item.id);
+                else handleMarkReminderDone(item.id, item.name);
               }}
             />
           );

@@ -271,6 +271,51 @@ export const homeWash = {
   sand: "#FBF1DE",
 } as const;
 
+/**
+ * The Scheduled screen's three panels.
+ *
+ * Overdue is the only one that carries a tint of its own — a warm blush field that makes
+ * "you're behind on these" visible before a single word is read, without resorting to the
+ * alarm-red `danger` tokens, which in this app mean destructive actions rather than
+ * lateness. Recurring and Upcoming are deliberately calm by comparison: routines and
+ * future plans are not problems to be solved.
+ *
+ * Grouped here rather than inlined on the screen because these are surface tokens like any
+ * other — a second screen showing an overdue panel should reach for the same field, not
+ * re-pick a similar one by eye.
+ */
+export const schedulePanel = {
+  overdue: {
+    bg: "#FCF0EA",
+    border: "#F0D5C8",
+    label: "#8A4E39",
+    rule: "#EEC9B8",
+    rowBorder: "#EFDCCE",
+    /** The count badge inverts here — solid terracotta with cream text, unlike the neutral panels. */
+    badgeBg: color.interactive,
+    badgeFg: color.screen,
+    moreBorder: "#E7C6B6",
+    moreText: "#A66B58",
+  },
+  neutral: {
+    /** Translucent, so the screen's gradient wash still reads through the panel. */
+    bg: "rgba(255,255,255,.5)",
+    border: color.border,
+    label: color.textMuted,
+    rule: color.border,
+    badgeBg: "#EFE6D4",
+    badgeFg: "#4A5551",
+  },
+  /** Neutral tile behind the repeat mark on a recurring row. */
+  repeatTileBg: "#F4EEE1",
+  repeatTileFg: "#7E8A85",
+  /** Per-date rules inside Upcoming — lighter than a panel rule so days read as sub-groups. */
+  dateRule: "rgba(237,224,198,.75)",
+  /** Task-type dots on a schedule row: terracotta for focus, blue for reminder. */
+  focusDot: color.ferne,
+  reminderDot: "#7B96C0",
+} as const;
+
 /* ------------------------------------------------------------------- depth */
 
 /**

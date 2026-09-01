@@ -1,39 +1,18 @@
 import { apiRequest } from "./client";
 import type {
   CreateIntervalReminderRequest,
-  CreateReminderRequest,
   IntervalReminderDto,
   NotificationResponse,
   ReminderDto,
   UpdateIntervalReminderRequest,
-  UpdateReminderRequest,
 } from "./types";
 
-/** One reminder per task max — server returns 409 if the task already has one. */
-export function createReminder(
-  taskId: string,
-  request: CreateReminderRequest
-): Promise<ReminderDto> {
-  return apiRequest<ReminderDto>(`/tasks/${taskId}/reminder`, {
-    method: "POST",
-    body: request,
-  });
-}
-
-/**
- * Reschedules an existing reminder — createReminder 409s on any existing row for the
- * task (even a stopped one, since stopReminders only sets isActive false), so this is the
- * only way to change a reminder's time once set.
+/*
+ * Creating, changing and removing a notification all happen through the task endpoints now
+ * (tasksApi.updateTask with notifyTime / clearNotify) — a notification is a field on the
+ * task, not a resource of its own. What's left here is reading them and acting on one that
+ * has already fired.
  */
-export function updateReminder(
-  reminderId: string,
-  request: UpdateReminderRequest
-): Promise<ReminderDto> {
-  return apiRequest<ReminderDto>(`/reminders/${reminderId}`, {
-    method: "PATCH",
-    body: request,
-  });
-}
 
 /**
  * Server ignores the created interval reminder's id in its response (fixed
@@ -73,11 +52,12 @@ export function getReminders(): Promise<ReminderDto[]> {
   return apiRequest<ReminderDto[]>("/reminders");
 }
 
-export function snoozeReminder(
-  reminderId: string,
+/** Keyed on the task — a notification isn't separately addressable any more. */
+export function snoozeTaskReminder(
+  taskId: string,
   minutes?: number
 ): Promise<NotificationResponse> {
-  return apiRequest<NotificationResponse>(`/reminders/${reminderId}/snooze`, {
+  return apiRequest<NotificationResponse>(`/tasks/${taskId}/snooze`, {
     method: "POST",
     query: { minutes },
   });
@@ -95,13 +75,4 @@ export function markTaskDone(taskId: string): Promise<NotificationResponse> {
 /** Stops nagging without completing the task. Silently no-ops if there were no reminders. */
 export function stopReminders(taskId: string): Promise<NotificationResponse> {
   return apiRequest<NotificationResponse>(`/tasks/${taskId}/reminders`, { method: "DELETE" });
-}
-
-/**
- * Hard-deletes a single reminder — unlike stopReminders (soft, leaves the row so
- * createReminder keeps 409ing), this actually removes it and frees the task up for a
- * brand new reminder.
- */
-export function deleteReminder(reminderId: string): Promise<void> {
-  return apiRequest<void>(`/reminders/${reminderId}`, { method: "DELETE" });
 }

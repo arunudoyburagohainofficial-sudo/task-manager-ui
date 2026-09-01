@@ -3,9 +3,8 @@ import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleShee
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useGoalsQuery } from "../api/queries/useGoals";
-import { useCreateReminderMutation } from "../api/queries/useReminders";
 import { useCreateTaskMutation } from "../api/queries/useTasks";
-import type { CreateReminderRequest, TaskType } from "../api/types";
+import type { TaskType } from "../api/types";
 import {
   BackLink,
   Body,
@@ -19,7 +18,8 @@ import {
   Label,
   Meta,
   ReminderIcon,
-  ReminderTimeSheet,
+  ScheduleSheet,
+  type ScheduleSelection,
   ScreenContainer,
   Segmented,
   StreakIconInline,
@@ -32,25 +32,36 @@ import { TourTarget, useTour } from "../state/TourContext";
 import { color, space } from "../theme";
 import { organizeLine } from "../theme/companionCopy";
 import { formatClockTime } from "../utils/format";
+import { recurrenceShortLabel } from "../utils/recurrence";
 import type { CapturedTaskDraft, RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+/** The draft a sheet is open for, or null when none is. */
+function draftFor(drafts: CapturedTaskDraft[], localId: string | null): CapturedTaskDraft | null {
+  if (!localId) return null;
+  return drafts.find((d) => d.localId === localId) ?? null;
+}
 type Route = RouteProp<RootStackParamList, "ConfirmOrganize">;
 
 /**
- * One-line summary of a not-yet-created reminder, so the choice stays visible on the card
- * without reopening the sheet. Deliberately spells out the repeat/date part too — a bare
- * time would leave "every day" (the server's default when no date is sent) indistinguishable
- * from a one-off.
+ * One-line summary of a draft's schedule, so the choice stays visible on the card without
+ * reopening the sheet. Reads as one sentence because it now describes one setting rather
+ * than two that could disagree.
  */
-function describeReminder(request: CreateReminderRequest): string {
-  if (request.remindInMinutes !== undefined) return `in ${request.remindInMinutes} min`;
-  const time = formatClockTime(request.reminderTime);
-  if (!request.reminderDate) return `${time} · every day`;
-  // "T00:00:00" for the same reason ReminderTimeSheet uses it — a bare "YYYY-MM-DD" parses
-  // as UTC midnight and can display as the previous day once converted back to local time.
-  const date = new Date(`${request.reminderDate}T00:00:00`);
-  return `${time} · ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+function describeSchedule(draft: CapturedTaskDraft): string | null {
+  const parts: (string | null)[] = [];
+  if (draft.scheduledFor) {
+    // "T00:00:00" so a bare "YYYY-MM-DD" isn't parsed as UTC midnight, which displays as the
+    // previous day in any negative-offset timezone.
+    const date = new Date(`${draft.scheduledFor}T00:00:00`);
+    parts.push(date.toLocaleDateString(undefined, { month: "short", day: "numeric" }));
+  }
+  parts.push(recurrenceShortLabel(draft.recurrenceRule));
+  parts.push(formatClockTime(draft.notifyTime));
+  const summary = parts.filter(Boolean).join(" · ");
+  if (summary) return summary;
+  return draft.notifyTime ? `${formatClockTime(draft.notifyTime)} · every day` : null;
 }
 
 /**
@@ -83,7 +94,6 @@ export function ConfirmOrganizeScreen() {
 
   const goalsQuery = useGoalsQuery();
   const createTaskMutation = useCreateTaskMutation();
-  const createReminderMutation = useCreateReminderMutation();
   const { advance: advanceTour, back: tourBack, getActiveStep, setTourTaskId } = useTour();
 
   /**
@@ -109,14 +119,11 @@ export function ConfirmOrganizeScreen() {
   // once a goal is attached.
   const tourGoalDraftId = drafts.find((d) => d.taskType === "focus")?.localId;
   const tourGoalAttached = drafts.some((d) => d.goalId);
-  const [reminderSheetFor, setReminderSheetFor] = useState<string | null>(null);
+  const [scheduleSheetFor, setScheduleSheetFor] = useState<string | null>(null);
 
   const goals = goalsQuery.data ?? [];
 
-  // Only a clock-time reminder can be re-opened pre-filled — "in N minutes" is relative to
-  // the moment it was picked, so there's no fixed time for the sheet to seed itself from.
-  const editingReminder = drafts.find((d) => d.localId === reminderSheetFor)?.reminder ?? null;
-  const editingClockReminder = editingReminder?.remindInMinutes === undefined ? editingReminder : null;
+  const editingDraft = draftFor(drafts, scheduleSheetFor);
 
   function updateDraft(localId: string, patch: Partial<CapturedTaskDraft>) {
     setDrafts((prev) => prev.map((d) => (d.localId === localId ? { ...d, ...patch } : d)));
@@ -126,7 +133,6 @@ export function ConfirmOrganizeScreen() {
     if (!user) return;
     setSubmitting(true);
     setError(null);
-    let remindersFailed = 0;
     /**
      * Which of these drafts the walkthrough's last step should point at once Home reloads.
      * The one the user attached a goal to is the task the tour actually talked them
@@ -138,33 +144,23 @@ export function ConfirmOrganizeScreen() {
     let tourCreatedId: string | null = null;
     try {
       for (const draft of drafts) {
+        // The whole task — including its day, its repeat and its notification — in one
+        // request. This used to be two calls, and the second failing left a saved task whose
+        // schedule silently hadn't applied, reported as "couldn't schedule 1 task" with no
+        // way to tell which half had gone wrong.
         const created = await createTaskMutation.mutateAsync({
           name: draft.name,
           taskType: draft.taskType,
           goalId: draft.goalId ?? undefined,
+          scheduledFor: draft.scheduledFor ?? undefined,
+          recurrenceRule: draft.recurrenceRule ?? undefined,
+          notifyTime: draft.notifyTime ?? undefined,
         });
         if (draft.localId === tourDraftId) tourCreatedId = created.id;
-        // Only now does a real taskId exist to hang the reminder off. Its failure is caught
-        // per-draft rather than aborting: the task itself is already saved by this point,
-        // and a reminder stays settable from Task Detail afterwards — throwing here would
-        // strand a created task behind a "couldn't save" message that isn't true.
-        if (draft.reminder) {
-          try {
-            await createReminderMutation.mutateAsync({ taskId: created.id, request: draft.reminder });
-          } catch {
-            remindersFailed += 1;
-          }
-        }
       }
-      // Deliberately not awaited: rescheduling the device's notifications is three more API
-      // calls plus a possible permission prompt, and syncReminders never throws.
-      if (drafts.some((d) => d.reminder)) void syncReminders();
-      if (remindersFailed > 0) {
-        Alert.alert(
-          remindersFailed === 1 ? "Couldn't set 1 reminder" : `Couldn't set ${remindersFailed} reminders`,
-          "The tasks themselves were saved — open one to set its reminder again."
-        );
-      }
+      // Deliberately not awaited: rescheduling the device's notifications is more API calls
+      // plus a possible permission prompt, and syncReminders never throws.
+      if (drafts.some((d) => d.notifyTime)) void syncReminders();
       // Guarded on the step being live so an ordinary (post-tour) save doesn't leave a
       // task id behind for a walkthrough that isn't running.
       if (tourCreatedId && getActiveStep() === "attachGoal") setTourTaskId(tourCreatedId);
@@ -190,7 +186,7 @@ export function ConfirmOrganizeScreen() {
           <BackLink onPress={() => navigation.goBack()} />
           <H1>Organize your tasks</H1>
           <Meta style={styles.subtitle}>
-            {drafts.length} task{drafts.length === 1 ? "" : "s"} captured — set a type &amp; reminder for each
+            {drafts.length} task{drafts.length === 1 ? "" : "s"} captured — set a type &amp; schedule for each
           </Meta>
 
           <View style={styles.ferne}>
@@ -221,19 +217,21 @@ export function ConfirmOrganizeScreen() {
               <View style={styles.affordanceRow}>
                 <Pressable
                   accessibilityRole="button"
-                  onPress={() => setReminderSheetFor(draft.localId)}
+                  onPress={() => setScheduleSheetFor(draft.localId)}
                   style={styles.affordance}
                   hitSlop={4}
                 >
                   <ReminderIcon size={20} />
-                  <Body style={{ color: draft.reminder ? color.selectedText : color.textBody }}>
-                    {draft.reminder ? describeReminder(draft.reminder) : "Set a reminder"}
+                  <Body style={{ color: describeSchedule(draft) ? color.selectedText : color.textBody }}>
+                    {describeSchedule(draft) ?? "Set a schedule"}
                   </Body>
                 </Pressable>
-                {draft.reminder ? (
+                {describeSchedule(draft) ? (
                   <Pressable
                     accessibilityRole="button"
-                    onPress={() => updateDraft(draft.localId, { reminder: null })}
+                    onPress={() =>
+                      updateDraft(draft.localId, { scheduledFor: null, recurrenceRule: null, notifyTime: null })
+                    }
                     hitSlop={8}
                   >
                     <Meta style={{ color: color.danger, fontWeight: "800" }}>Remove</Meta>
@@ -324,18 +322,32 @@ export function ConfirmOrganizeScreen() {
         }}
       />
 
-      {/* No `submitting` prop: picking a time here only writes to local draft state — the
-          reminder isn't created until Confirm & Add, so there's nothing to await. */}
-      <ReminderTimeSheet
-        visible={reminderSheetFor !== null}
-        onClose={() => setReminderSheetFor(null)}
-        onSubmit={(request) => {
-          if (reminderSheetFor) updateDraft(reminderSheetFor, { reminder: request });
-          setReminderSheetFor(null);
+      {/* No `submitting` prop: choosing here only writes to local draft state — nothing is
+          created until Confirm & Add, so there's nothing to await. */}
+      <ScheduleSheet
+        visible={scheduleSheetFor !== null}
+        onClose={() => setScheduleSheetFor(null)}
+        onSubmit={(selection: ScheduleSelection) => {
+          if (scheduleSheetFor) {
+            updateDraft(scheduleSheetFor, {
+              scheduledFor: selection.scheduledFor,
+              recurrenceRule: selection.recurrenceRule,
+              // Only one notification is offered at capture time — lead-time warnings are a
+              // refinement you make on a task that already exists, not while triaging a list.
+              notifyTime: selection.notifications[0]?.time ?? null,
+            });
+          }
+          setScheduleSheetFor(null);
         }}
-        initialReminderTime={editingClockReminder?.reminderTime}
-        initialReminderDate={editingClockReminder?.reminderDate ?? null}
+        initial={{
+          scheduledFor: editingDraft?.scheduledFor ?? null,
+          recurrenceRule: editingDraft?.recurrenceRule ?? null,
+          notifications: editingDraft?.notifyTime
+            ? [{ time: editingDraft.notifyTime, daysBefore: 0 }]
+            : [],
+        }}
       />
+
     </ScreenContainer>
   );
 }

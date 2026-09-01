@@ -5,7 +5,13 @@ import { queryKeys } from "../queryKeys";
 import { useSession } from "../../state/SessionContext";
 import { syncReminders } from "../../notifications/useReminderSync";
 
-export const ALL_TASK_STATUSES = [undefined, "pending", "completed", "archived"] as const;
+/**
+ * Every cache a task can be listed in: its own status list, plus the unfiltered "all" list
+ * (queryKeys.tasks(undefined)) — real and correctly served by the backend, but not currently
+ * fetched by any screen. Kept patched anyway so it's not silently stale for whatever reads it
+ * next, the same reasoning useTaskQuery's own initialData lookup already relies on.
+ */
+export const ALL_TASK_STATUSES = [undefined, "pending", "completed"] as const;
 /** The two list caches every task belongs to, regardless of status: its status-specific list, and the unfiltered "all" list. */
 export const LIST_KEYS_FOR = (status: TaskStatus) => [queryKeys.tasks(status), queryKeys.tasks()];
 
@@ -16,9 +22,22 @@ function withTaskUpdate(task: TaskDto, request: UpdateTaskRequest): TaskDto {
     ...(request.name !== undefined ? { name: request.name } : {}),
     ...(request.taskType !== undefined ? { taskType: request.taskType } : {}),
     ...(request.clearGoal ? { goalId: null } : request.goalId !== undefined ? { goalId: request.goalId } : {}),
-    // No scheduledFor here on purpose: it isn't part of UpdateTaskRequest at all. The
-    // schedule follows the task's reminder, and useReminders re-reads the task caches
-    // whenever one is written.
+    // isRecurring is derived from the rule on the server too, so both move together here
+    // rather than leaving the flag showing a stale value until the next fetch.
+    ...(request.clearRecurrence
+      ? { recurrenceRule: null, isRecurring: false }
+      : request.recurrenceRule !== undefined
+        ? { recurrenceRule: request.recurrenceRule, isRecurring: true }
+        : {}),
+    // The schedule is a plain field on the task now, so it patches like any other rather
+    // than needing the task caches re-read after a separate reminder write.
+    ...(request.clearScheduledFor
+      ? { scheduledFor: null }
+      : request.scheduledFor !== undefined
+        ? { scheduledFor: request.scheduledFor }
+        : {}),
+    // notifyTime deliberately isn't here — it lives on the reminder, not the task, and is
+    // patched into the reminders cache separately (see useUpdateTaskMutation below).
   };
 }
 
@@ -88,11 +107,17 @@ export function useCreateTaskMutation() {
     // directly into the cached lists shows it immediately, without waiting on a second
     // round trip (a refetch) just to re-learn something the response already told us.
     // New tasks are always created "pending" server-side, so only those two lists need it.
-    onSuccess: (newTask) => {
+    onSuccess: (newTask, request) => {
       for (const key of LIST_KEYS_FOR("pending")) {
         queryClient.setQueryData<TaskDto[]>(key, (old) => (old ? [...old, newTask] : old));
       }
       queryClient.setQueryData(queryKeys.task(newTask.id), newTask);
+      // A task created with a notification also created a reminder row, which this response
+      // doesn't carry — same reasoning as useUpdateTaskMutation's own onSuccess.
+      if (request.notifyTime !== undefined) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.reminders() });
+        void syncReminders();
+      }
     },
   });
 }
@@ -125,6 +150,52 @@ export function useUpdateTaskMutation() {
         queryClient.setQueryData(queryKeys.tasks(status), data);
       }
     },
+    /**
+     * The notification lives on a different cache than the task, so a request that touched
+     * notifyTime has to be reflected there too — and the reminders list is the one thing this
+     * response genuinely can't describe (the server creates, updates or deletes that row as a
+     * side effect). Re-read rather than guessed, and only when the request actually asked for
+     * a notification change; an ordinary rename doesn't pay for a refetch.
+     */
+    onSuccess: (_updated, { request }) => {
+      if (request.notifyTime !== undefined || request.clearNotify) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.reminders() });
+        void syncReminders();
+      }
+    },
+  });
+}
+
+/**
+ * Undo a completion.
+ *
+ * Moves the task back out of the completed list and invalidates the same things completing
+ * did — plus the pending lists unconditionally, because reopening a repeating task also
+ * retracts the occurrence its completion spawned, and that deletion isn't visible from this
+ * response alone.
+ */
+export function useReopenTaskMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => tasksApi.reopenTask(taskId),
+    onSuccess: (reopened) => {
+      queryClient.setQueryData(queryKeys.task(reopened.id), reopened);
+      for (const status of ALL_TASK_STATUSES) {
+        queryClient.setQueryData<TaskDto[]>(queryKeys.tasks(status), (old) =>
+          old?.filter((t) => t.id !== reopened.id)
+        );
+      }
+      for (const key of LIST_KEYS_FOR("pending")) {
+        queryClient.setQueryData<TaskDto[]>(key, (old) => (old ? [...old, reopened] : old));
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks("pending") });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks() });
+      queryClient.invalidateQueries({ queryKey: ["weeklyProgress"] });
+      queryClient.setQueryData<ReminderDto[]>(queryKeys.reminders(), (old) =>
+        old?.map((r) => (r.taskId === reopened.id ? { ...r, isActive: true } : r))
+      );
+      void syncReminders();
+    },
   });
 }
 
@@ -135,6 +206,14 @@ export function useDeleteTaskMutation() {
     onSuccess: (_data, taskId) => {
       queryClient.removeQueries({ queryKey: queryKeys.task(taskId) });
       removeTaskFromLists(queryClient, taskId);
+      // Deleting the task cascades its reminder rows away server-side, but the device's
+      // already-scheduled local notifications know nothing about that — without this, a
+      // deleted task kept buzzing until the next app foreground, and tapping that
+      // notification opened a task that no longer exists.
+      queryClient.setQueryData<ReminderDto[]>(queryKeys.reminders(), (old) =>
+        old?.filter((r) => r.taskId !== taskId)
+      );
+      void syncReminders();
     },
   });
 }
@@ -171,6 +250,16 @@ export function useCompleteTaskMutation() {
       queryClient.invalidateQueries({ queryKey: ["weeklyProgress"] });
       if (completedTask.goalId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.goals() });
+      }
+      // Completing a repeating task mints its replacement server-side (see
+      // RecurrenceService.spawnNextOccurrence), and that new row is the one thing this
+      // response can't describe — it only carries the task that was just finished. Without
+      // this the next occurrence stays invisible until the app is next reloaded, which
+      // reads as the routine having silently ended.
+      if (completedTask.recurrenceRule) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.tasks("pending") });
+        queryClient.invalidateQueries({ queryKey: queryKeys.tasks() });
+        queryClient.invalidateQueries({ queryKey: queryKeys.reminders() });
       }
 
       queryClient.setQueryData<ReminderDto[]>(queryKeys.reminders(), (old) =>

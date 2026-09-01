@@ -1,6 +1,7 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import type { IntervalReminderDto, ReminderDto, TaskDto } from "../api/types";
+import { REMINDER_CATEGORY, registerNotificationCategory } from "./notificationActions";
 
 /**
  * Reminder delivery lives here, on the device — the backend stores reminders so they sync
@@ -71,12 +72,40 @@ export async function configureAndroidChannel(): Promise<void> {
  * milliseconds, so a daily 9am reminder stays 9am across a DST change instead of drifting
  * to 8am or 10am.
  */
-function reminderOccurrences(time: string, date: string | null): Date[] {
+function reminderOccurrences(
+  time: string | null,
+  date: string | null,
+  snoozedUntil?: string | null,
+  daysBefore: number = 0
+): Date[] {
+  // A reminder with a date but no time is deliberately silent: it exists to carry the task's
+  // day, not to interrupt anyone. Nothing to schedule, so it produces no firing times at all.
+  if (!time) return [];
+
   const [hours, minutes] = time.split(":").map(Number);
+
+  /**
+   * A live snooze replaces the reminder's own schedule until it expires.
+   *
+   * Previously this function never saw `snoozedUntil` at all, so snoozing wrote a value the
+   * server stored and the device then completely ignored — the notification came back at
+   * its original time regardless, which is the one thing a snooze must not do.
+   */
+  if (snoozedUntil) {
+    const until = new Date(snoozedUntil);
+    if (until.getTime() > Date.now()) return [until];
+  }
 
   if (date) {
     const at = new Date(`${date}T${time}`);
-    return at.getTime() > Date.now() ? [at] : []; // a one-off in the past never fires again
+    // Offsets are subtracted here rather than stored as dates, so "a week before" follows the
+    // task automatically when its day moves — see V018. setDate handles month and year
+    // boundaries, and DST is unaffected because the clock time is re-applied by the string.
+    if (daysBefore > 0) at.setDate(at.getDate() - daysBefore);
+    // A one-off in the past never fires again. That covers a lead-time notification whose
+    // offset lands before today — a task created two days out with a week-before warning
+    // simply doesn't get that one, rather than firing it late.
+    return at.getTime() > Date.now() ? [at] : [];
   }
 
   // No date means "every day at this time" — start at today's slot, or tomorrow's if it passed.
@@ -124,7 +153,23 @@ function intervalOccurrences(interval: IntervalReminderDto): Date[] {
   return occurrences;
 }
 
-type Scheduled = { at: Date; title: string; body: string; taskId: string };
+type Scheduled = { at: Date; title: string; body: string; taskId: string; reminderId?: string };
+
+/**
+ * The notification body, which has to say *when* the task is actually due when the
+ * notification is firing ahead of time.
+ *
+ * Without this a week-before warning and the day-of nudge are word-for-word identical, so the
+ * early one reads as "this is due now" and the user either acts a week early or learns to
+ * ignore both.
+ */
+function leadIn(daysBefore: number, name: string | undefined, focus: boolean): string {
+  const task = name ?? (focus ? "your task" : "Your task");
+  if (daysBefore <= 0) return focus ? `You planned to work on: ${task}` : task;
+  if (daysBefore === 1) return `${task} — due tomorrow`;
+  if (daysBefore === 7) return `${task} — due in a week`;
+  return `${task} — due in ${daysBefore} days`;
+}
 
 /**
  * Picks which occurrences fit inside MAX_PENDING, fairly, by taking one from every source
@@ -206,9 +251,15 @@ async function runScheduleAll(
 ): Promise<number> {
   if (!(await requestPermission())) return 0;
   await configureAndroidChannel();
+  await registerNotificationCategory();
 
   const taskName = new Map(tasks.map((task) => [task.id, task.name]));
   const isPending = new Set(tasks.filter((t) => t.status === "pending").map((t) => t.id));
+  // Every reminder used to announce itself as "Time to focus", including on reminder-type
+  // tasks — "Time to focus / You planned to work on: Call the dentist" is the wrong sentence
+  // for a task that has nothing to do with a focus session.
+  const isFocusTask = new Set(tasks.filter((t) => t.taskType === "focus").map((t) => t.id));
+  const scheduledFor = new Map(tasks.map((task) => [task.id, task.scheduledFor]));
 
   // One group per source, each already soonest-first — allocateFairly needs that shape,
   // and it's also what stops one noisy source from crowding out the rest.
@@ -218,14 +269,27 @@ async function runScheduleAll(
     // Skip anything stopped, or whose task is done — the server keeps these rows around
     // (see the backend's Reminder.isActive), but there is nothing left to schedule.
     if (!reminder.isActive || !isPending.has(reminder.taskId)) continue;
-    const occurrences = reminderOccurrences(reminder.reminderTime, reminder.reminderDate);
+    const occurrences = reminderOccurrences(
+      reminder.reminderTime,
+      // The day is the task's, not the reminder's — since V017 there is only one date, so
+      // these two can't drift apart the way two separate fields could.
+      scheduledFor.get(reminder.taskId) ?? null,
+      reminder.snoozedUntil,
+      reminder.daysBefore ?? 0
+    );
     if (!occurrences.length) continue;
+    const focus = isFocusTask.has(reminder.taskId);
     groups.push(
       occurrences.map((at) => ({
         at,
-        title: "Time to focus",
-        body: `You planned to work on: ${taskName.get(reminder.taskId) ?? "your task"}`,
+        title: focus ? "Time to focus" : "Reminder",
+        // A lead-time notification says so, otherwise "Buy Mum a gift" a week early reads as
+        // if it's due now and there's nothing to distinguish it from the day-of nudge.
+        body: leadIn(reminder.daysBefore ?? 0, taskName.get(reminder.taskId), focus),
         taskId: reminder.taskId,
+        // Carried so the notification's Snooze button has something to address — the snooze
+        // endpoint is keyed on the reminder, not the task.
+        reminderId: reminder.id,
       }))
     );
   }
@@ -260,7 +324,10 @@ async function runScheduleAll(
         content: {
           title: item.title,
           body: item.body,
-          data: { taskId: item.taskId },
+          data: { taskId: item.taskId, reminderId: item.reminderId },
+          // Attaches the Done / Snooze buttons and, on a tap, gives the response handler
+          // the task to open — see notificationActions.ts.
+          categoryIdentifier: REMINDER_CATEGORY,
           ...(Platform.OS === "android" ? { channelId: "reminders" } : {}),
         },
         trigger: {

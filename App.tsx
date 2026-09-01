@@ -16,6 +16,7 @@ import { color } from "./src/theme";
 import { SessionProvider, useSession } from "./src/state/SessionContext";
 import { PreferencesProvider } from "./src/state/PreferencesContext";
 import { CompanionProvider } from "./src/state/CompanionContext";
+import { ToastProvider } from "./src/state/ToastContext";
 import { TourProvider } from "./src/state/TourContext";
 import { TourOverlay } from "./src/components/TourOverlay";
 import { RootNavigator } from "./src/navigation/RootNavigator";
@@ -71,11 +72,15 @@ export default function App() {
             <CompanionProvider>
               <SessionProvider>
                 <TourProvider>
+                  {/* Inside SafeAreaProvider (it reads the bottom inset) and wrapping the
+                      navigator, so any screen can raise a toast and it renders above them. */}
+                  <ToastProvider>
                   <AppContent />
                   {/* Sibling of the navigator, not inside it: the walkthrough spotlights
                       elements across several screens and has to sit above the tab bar too. */}
                   <TourOverlay />
                   <StatusBar style="dark" />
+                  </ToastProvider>
                 </TourProvider>
               </SessionProvider>
             </CompanionProvider>

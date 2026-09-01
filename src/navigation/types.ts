@@ -1,5 +1,4 @@
 import type { NavigatorScreenParams } from "@react-navigation/native";
-import type { CreateReminderRequest } from "../api/types";
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -33,17 +32,28 @@ export interface CapturedTaskDraft {
   name: string;
   taskType: "focus" | "reminder";
   /**
+   * Set here so a routine can be created in one pass. Recurrence used to be reachable only
+   * from Task Detail, which meant "add a daily habit" — the most common reason to repeat
+   * anything — cost a save, a hunt for the task, and a second screen.
+   */
+  recurrenceRule: import("../api/types").RecurrenceRule | null;
+  /**
    * Which longer-term goal this task counts toward, chosen at capture time. Only focus
    * tasks actually move a goal forward server-side, but the association is allowed on
    * either type — changing the type later shouldn't silently discard the choice.
    */
   goalId: string | null;
   /**
-   * Chosen while organizing, but not sent anywhere until the task itself exists — reminders
-   * are created against a real taskId, which a draft doesn't have yet. Held here so the
-   * whole decision can be made in one pass at capture time rather than forcing a second
-   * trip into Task Detail afterwards. Applies to focus tasks too, not just reminder-type
-   * ones: Task Detail has always offered reminders for both.
+   * The day this task is planned for, chosen while organizing. "YYYY-MM-DD", or null for
+   * no date — an ordinary choice, not a failure to decide.
    */
-  reminder: CreateReminderRequest | null;
+  scheduledFor: string | null;
+  /**
+   * Time of day to be notified, or null for silent. "HH:mm:ss".
+   *
+   * Held on the draft rather than sent separately: all three settings go out with the task
+   * itself in one request now, so there's no longer a second call that can fail on its own
+   * and leave a saved task whose schedule silently didn't apply.
+   */
+  notifyTime: string | null;
 }

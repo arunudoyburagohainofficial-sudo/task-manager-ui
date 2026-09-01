@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -6,14 +6,14 @@ import { focusSessionsApi } from "../api";
 import { ApiError } from "../api/client";
 import { useGoalsQuery } from "../api/queries/useGoals";
 import {
-  useCreateReminderMutation,
-  useDeleteReminderMutation,
+  useDeleteIntervalReminderMutation,
+  useIntervalRemindersQuery,
   useMarkTaskDoneMutation,
   useRemindersQuery,
-  useUpdateReminderMutation,
+  useSetIntervalReminderMutation,
 } from "../api/queries/useReminders";
 import { useDeleteTaskMutation, useTaskQuery, useUpdateTaskMutation } from "../api/queries/useTasks";
-import type { CreateReminderRequest, FocusMode, TaskType } from "../api/types";
+import type { FocusMode, TaskType } from "../api/types";
 import {
   BackLink,
   Badge,
@@ -28,7 +28,12 @@ import {
   Label,
   Meta,
   ReminderIcon,
-  ReminderTimeSheet,
+  NudgeSheet,
+  type NudgeSelection,
+  QuickReminderSheet,
+  type QuickReminderChoice,
+  ScheduleSheet,
+  type ScheduleSelection,
   ScreenContainer,
   Segmented,
   Stepper,
@@ -40,6 +45,7 @@ import { usePreferences } from "../state/PreferencesContext";
 import { useSession } from "../state/SessionContext";
 import { color, radius, size, space, text as t, type as T } from "../theme";
 import { formatClockTime, formatMinutes } from "../utils/format";
+import { recurrenceShortLabel } from "../utils/recurrence";
 import { formatScheduleDate, isOverdue } from "../utils/schedule";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -67,7 +73,7 @@ function DetailRow({
 }: {
   icon: React.ReactNode;
   title: string;
-  /** Status tag shown beside the title — the reminder row uses it for where the task sits. */
+  /** Status tag shown beside the title — the schedule row uses it for where the task sits. */
   badge?: React.ReactNode;
   subtitle: string;
   subtitleColor?: string;
@@ -108,10 +114,10 @@ export function TaskDetailScreen() {
   const goalsQuery = useGoalsQuery();
   const updateTaskMutation = useUpdateTaskMutation();
   const deleteTaskMutation = useDeleteTaskMutation();
-  const createReminderMutation = useCreateReminderMutation();
-  const updateReminderMutation = useUpdateReminderMutation();
-  const deleteReminderMutation = useDeleteReminderMutation();
   const markDoneMutation = useMarkTaskDoneMutation();
+  const intervalRemindersQuery = useIntervalRemindersQuery();
+  const setNudgeMutation = useSetIntervalReminderMutation();
+  const deleteNudgeMutation = useDeleteIntervalReminderMutation();
 
   const task = taskQuery.data ?? null;
   const goals = goalsQuery.data ?? [];
@@ -120,6 +126,20 @@ export function TaskDetailScreen() {
   // row (see ReminderService.stopReminders), so a completed task's now-inactive reminder
   // would otherwise still match and render as a live, editable card.
   const reminder = remindersQuery.data?.find((r) => r.taskId === params.taskId && r.isActive) ?? null;
+  /**
+   * Every live notification on this task, earliest warning first.
+   *
+   * isActive matters as much as taskId: the server keeps a stopped reminder's row rather than
+   * deleting it, so an unfiltered list would show a completed task's notifications as live.
+   */
+  const taskNotifications = useMemo(
+    () =>
+      (remindersQuery.data ?? [])
+        .filter((r) => r.taskId === params.taskId && r.isActive && r.reminderTime)
+        .map((r) => ({ time: r.reminderTime as string, daysBefore: r.daysBefore ?? 0 }))
+        .sort((a, b) => b.daysBefore - a.daysBefore),
+    [remindersQuery.data, params.taskId]
+  );
 
   const [focusMode, setFocusMode] = useState<FocusMode>("regular");
   const [pomodoroCycles, setPomodoroCycles] = useState(3);
@@ -129,7 +149,9 @@ export function TaskDetailScreen() {
   const [regularMinutes, setRegularMinutes] = useState(defaultFocusDurationMinutes);
   // Seeds from the global Settings preference but is overridable per session.
   const [sessionDndEnabled, setSessionDndEnabled] = useState(dndDuringFocusEnabled);
-  const [reminderSheetOpen, setReminderSheetOpen] = useState(false);
+  const [scheduleSheetOpen, setScheduleSheetOpen] = useState(false);
+  const [nudgeSheetOpen, setNudgeSheetOpen] = useState(false);
+  const [quickSheetOpen, setQuickSheetOpen] = useState(false);
   const [goalSheetOpen, setGoalSheetOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -142,30 +164,98 @@ export function TaskDetailScreen() {
     setRegularMinutes(defaultFocusDurationMinutes);
   }, [defaultFocusDurationMinutes]);
 
-  async function handleSaveReminder(request: CreateReminderRequest) {
+  /**
+   * Schedule, repeat and notify in one write.
+   *
+   * Replaces three separate handlers (save reminder, delete reminder, set recurrence), each
+   * of which was its own request with its own way of failing — and two of which had no error
+   * path at all. One call means one outcome to report, and no way to end up half-applied.
+   */
+  async function handleSaveSchedule(selection: ScheduleSelection) {
     try {
-      // createReminder 409s on any existing row for the task (even a stopped one), so an
-      // existing reminder means we're editing — reschedule it in place instead.
-      if (reminder) {
-        await updateReminderMutation.mutateAsync({ reminderId: reminder.id, request });
-      } else {
-        await createReminderMutation.mutateAsync({ taskId: params.taskId, request });
-      }
-      // syncReminders is deliberately not awaited: it's three API calls plus scheduleAll,
-      // which can sit on a notification permission prompt indefinitely.
-      setReminderSheetOpen(false);
-      void syncReminders();
+      await updateTaskMutation.mutateAsync({
+        taskId: params.taskId,
+        request: {
+          ...(selection.scheduledFor
+            ? { scheduledFor: selection.scheduledFor }
+            : { clearScheduledFor: true }),
+          ...(selection.recurrenceRule
+            ? { recurrenceRule: selection.recurrenceRule }
+            : { clearRecurrence: true }),
+          // The whole set every time — an empty list is as complete a statement as a full one,
+          // so there's no separate "clear" case to get wrong.
+          ...(selection.notifications.length > 0
+            ? { notifications: selection.notifications }
+            : { clearNotify: true }),
+        },
+      });
+      setScheduleSheetOpen(false);
     } catch (e) {
-      Alert.alert("Couldn't save reminder", e instanceof ApiError ? e.message : "Try again.");
+      Alert.alert("Couldn't save schedule", e instanceof ApiError ? e.message : "Try again.");
     }
   }
 
-  async function handleDeleteReminder() {
-    if (!reminder) return;
-    // Hard delete (not stopReminders) — that only sets isActive false, leaving the row in
-    // place so createReminder keeps 409ing.
-    await deleteReminderMutation.mutateAsync(reminder.id);
-    void syncReminders();
+  /** Back to an undated, non-repeating, silent task — all three cleared together, which is
+   *  also the only way the server accepts losing the date while a repeat is set. */
+  async function handleClearSchedule() {
+    try {
+      await updateTaskMutation.mutateAsync({
+        taskId: params.taskId,
+        request: { clearScheduledFor: true, clearRecurrence: true, clearNotify: true },
+      });
+      setScheduleSheetOpen(false);
+    } catch (e) {
+      Alert.alert("Couldn't clear schedule", e instanceof ApiError ? e.message : "Try again.");
+    }
+  }
+
+  /**
+   * "Nudge me in 45 minutes" — one write that sets the day and the notification together.
+   *
+   * The time arrives already resolved by the device, in the device's own timezone. That's the
+   * whole point: resolving it server-side is what previously made this fire at the wrong
+   * moment (a UTC server storing a bare wall-clock time the phone then read as local), and it
+   * is why the feature is expressed as an ordinary schedule rather than a special mode.
+   */
+  async function handleQuickReminder(choice: QuickReminderChoice) {
+    try {
+      await updateTaskMutation.mutateAsync({
+        taskId: params.taskId,
+        request: {
+          scheduledFor: choice.scheduledFor,
+          notifications: [{ time: choice.time, daysBefore: 0 }],
+        },
+      });
+      setQuickSheetOpen(false);
+    } catch (e) {
+      Alert.alert("Couldn't set that nudge", e instanceof ApiError ? e.message : "Try again.");
+    }
+  }
+
+  /** The task's repeated-nudge window, if it has one. */
+  const nudge = intervalRemindersQuery.data?.find((r) => r.taskId === params.taskId && r.isActive) ?? null;
+
+  async function handleSaveNudge(selection: NudgeSelection) {
+    try {
+      await setNudgeMutation.mutateAsync({
+        taskId: params.taskId,
+        existingId: nudge?.id,
+        request: selection,
+      });
+      setNudgeSheetOpen(false);
+    } catch (e) {
+      Alert.alert("Couldn't save nudges", e instanceof ApiError ? e.message : "Try again.");
+    }
+  }
+
+  async function handleRemoveNudge() {
+    if (!nudge) return;
+    try {
+      await deleteNudgeMutation.mutateAsync(nudge.id);
+      setNudgeSheetOpen(false);
+    } catch (e) {
+      Alert.alert("Couldn't stop nudges", e instanceof ApiError ? e.message : "Try again.");
+    }
   }
 
   async function handleSelectGoal(goalId: string | null) {
@@ -203,8 +293,15 @@ export function TaskDetailScreen() {
 
   async function handleStartSession() {
     setStarting(true);
+    // The whole sitting, not one cycle: a Pomodoro session runs `pomodoroCycles` work
+    // blocks, and capping at a single block's length would clip a legitimate full session.
+    const plannedMinutes =
+      focusMode === "pomodoro" ? pomodoroMinutes * pomodoroCycles : regularMinutes;
     try {
-      const session = await focusSessionsApi.startFocusSession(params.taskId, { focusMode });
+      const session = await focusSessionsApi.startFocusSession(params.taskId, {
+        focusMode,
+        plannedMinutes,
+      });
       navigation.navigate("FocusSession", {
         sessionId: session.id,
         taskId: params.taskId,
@@ -231,9 +328,30 @@ export function TaskDetailScreen() {
             dndEnabled: sessionDndEnabled,
           });
         } else {
+          /*
+           * A session is open but we can't reach it to resume — so the user is blocked with
+           * nowhere to go. Discarding is offered here rather than only "try again", because
+           * the alternative used to be completing a session they never ran, which credited
+           * focus time for work that didn't happen just to unblock themselves.
+           */
           Alert.alert(
             "A session is already running",
-            "Finish or end your other session before starting a new one — one focus at a time."
+            "One focus at a time. If you've lost track of it, you can discard it — nothing will be credited.",
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Discard it",
+                style: "destructive",
+                onPress: async () => {
+                  try {
+                    const stuck = await focusSessionsApi.getCurrentSession();
+                    if (stuck) await focusSessionsApi.abandonFocusSession(stuck.id);
+                  } catch {
+                    Alert.alert("Couldn't discard it", "Check your connection and try again.");
+                  }
+                },
+              },
+            ]
           );
         }
       } else {
@@ -242,6 +360,31 @@ export function TaskDetailScreen() {
     } finally {
       setStarting(false);
     }
+  }
+
+  /**
+   * A task that can't be loaded at all — deleted here, on another device, or reached from a
+   * notification for something that no longer exists.
+   *
+   * Distinguished from "still loading" deliberately: this screen used to render a spinner
+   * for any falsy task, so a 404 spun forever with no way forward but the OS back gesture.
+   * That became easy to hit once notifications could deep-link into a task.
+   */
+  if (!task && taskQuery.isError) {
+    return (
+      <ScreenContainer>
+        <ScrollView contentContainerStyle={styles.content}>
+          <BackLink onPress={() => navigation.goBack()} />
+          <Card style={styles.missingCard}>
+            <Text style={t(T.bodyLg, { color: color.text })}>This task is gone</Text>
+            <Meta style={styles.missingText}>
+              It was deleted, here or on another device. Nothing further to do with it.
+            </Meta>
+            <Button label="Back" onPress={() => navigation.goBack()} style={styles.missingButton} />
+          </Card>
+        </ScrollView>
+      </ScreenContainer>
+    );
   }
 
   // Mounting the real container immediately, with a spinner in place of content, means the
@@ -280,37 +423,52 @@ export function TaskDetailScreen() {
         <Card style={styles.rowCard}>
           <DetailRow
             icon={<ReminderIcon size={20} />}
+            /*
+               One row for the whole schedule: the day, whether it repeats, and whether it
+               notifies. These used to be two rows that could contradict each other; the
+               summary reads as one sentence because it now describes one setting.
+             */
             title={
-              reminder
-                ? `${formatClockTime(reminder.reminderTime)}${
-                    reminder.reminderDate ? ` · ${formatScheduleDate(reminder.reminderDate)}` : " · every day"
-                  }`
-                : "Reminder"
+              task.scheduledFor
+                ? [
+                    formatScheduleDate(task.scheduledFor),
+                    recurrenceShortLabel(task.recurrenceRule),
+                    formatClockTime(reminder?.reminderTime ?? null),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : reminder
+                  ? `${formatClockTime(reminder.reminderTime) ?? ""} · every day until done`.trim()
+                  : "Schedule"
             }
             badge={
-              reminder ? (
-                task.scheduledFor ? (
-                  isOverdue(task) ? <Badge label="OVERDUE" tone="danger" /> : <Badge label="SCHEDULED" />
-                ) : (
-                  <Badge label="ON HOME" />
-                )
+              // Only a dated task gets a tag — OVERDUE/SCHEDULED add a short-form status the
+              // sentence below doesn't. An undated task's badge would just repeat "Stays on
+              // Home" in fewer words.
+              task.scheduledFor ? (
+                isOverdue(task) ? <Badge label="OVERDUE" tone="danger" /> : <Badge label="SCHEDULED" />
               ) : null
             }
-            /* The reminder's date is also the task's schedule — there's deliberately no
-               separate control that could contradict it. Saying where the task is sitting
-               is what makes it vanishing from Home read as a consequence, not a bug. */
+            /* Saying where the task is sitting is what makes it vanishing from Home read as
+               a consequence of the date, not a bug. */
             subtitle={
-              !reminder
-                ? "None set"
-                : task.scheduledFor
-                  ? isOverdue(task)
+              !task.scheduledFor && !reminder
+                ? "No date — stays on Home"
+                : !task.scheduledFor
+                  ? "Stays on Home until it's done"
+                  : isOverdue(task)
                     ? `Was due ${formatScheduleDate(task.scheduledFor)} — waiting under Overdue`
                     : `Waiting under ${formatScheduleDate(task.scheduledFor)} until that day`
-                  : "Stays on Home"
             }
-            subtitleColor={reminder && isOverdue(task) ? color.danger : undefined}
-            action={reminder ? "Change" : "Add"}
-            onPress={() => setReminderSheetOpen(true)}
+            subtitleColor={task.scheduledFor && isOverdue(task) ? color.danger : undefined}
+            /* Read-only once the task is finished. Rescheduling something already done can't
+               change anything — a repeat set here could never fire (the server refuses it),
+               and a notification would be stopped on arrival. Showing the row keeps the
+               history readable; offering to edit it would promise something that isn't true. */
+            action={task.status === "completed" ? "" : task.scheduledFor || reminder ? "Change" : "Add"}
+            onPress={() => {
+              if (task.status !== "completed") setScheduleSheetOpen(true);
+            }}
           />
 
           <View style={styles.rowDivider} />
@@ -332,6 +490,40 @@ export function TaskDetailScreen() {
             action={goal ? "Change" : "Attach"}
             onPress={() => setGoalSheetOpen(true)}
           />
+
+          {/* Only for outstanding work: nudges are about chasing something today, which a
+              finished task doesn't need. */}
+          {task.status === "completed" ? null : (
+            <>
+              <View style={styles.rowDivider} />
+              <DetailRow
+                icon={<ReminderIcon size={20} />}
+                title="Nudge me in…"
+                subtitle="A one-off, counted from right now"
+                action="Pick"
+                onPress={() => setQuickSheetOpen(true)}
+              />
+
+              <View style={styles.rowDivider} />
+
+              <DetailRow
+                icon={<ReminderIcon size={20} />}
+                title={
+                  nudge
+                    ? `Every ${nudge.intervalMinutes} min · ${formatClockTime(nudge.startTime)}–${formatClockTime(nudge.endTime)}`
+                    : "Repeated nudges"
+                }
+                subtitle={
+                  nudge
+                    ? "Buzzes on a loop inside that window"
+                    : "Optional — for something that needs chasing today"
+                }
+                action={nudge ? "Change" : "Add"}
+                onPress={() => setNudgeSheetOpen(true)}
+              />
+            </>
+          )}
+
         </Card>
 
         {isFocus ? (
@@ -446,17 +638,35 @@ export function TaskDetailScreen() {
         />
       </ScrollView>
 
-      <ReminderTimeSheet
-        visible={reminderSheetOpen}
-        onClose={() => setReminderSheetOpen(false)}
-        onSubmit={handleSaveReminder}
-        submitting={createReminderMutation.isPending || updateReminderMutation.isPending}
-        initialReminderTime={reminder?.reminderTime}
-        initialReminderDate={reminder?.reminderDate}
-        onDelete={async () => {
-          setReminderSheetOpen(false);
-          await handleDeleteReminder();
+      <ScheduleSheet
+        visible={scheduleSheetOpen}
+        onClose={() => setScheduleSheetOpen(false)}
+        onSubmit={handleSaveSchedule}
+        submitting={updateTaskMutation.isPending}
+        initial={{
+          scheduledFor: task.scheduledFor,
+          // The stored rule, not just its frequency — the sheet reads intervals, weekday sets
+          // and end conditions out of it.
+          recurrenceRule: task.recurrenceRule,
+          notifications: taskNotifications,
         }}
+        // Offered only when there's something to clear. No blockedReason equivalent is
+        // needed any more: the sheet can't express a combination the server would refuse.
+        onClear={task.scheduledFor || reminder ? handleClearSchedule : undefined}
+      />
+      <QuickReminderSheet
+        visible={quickSheetOpen}
+        onClose={() => setQuickSheetOpen(false)}
+        onPick={handleQuickReminder}
+        submitting={updateTaskMutation.isPending}
+      />
+      <NudgeSheet
+        visible={nudgeSheetOpen}
+        onClose={() => setNudgeSheetOpen(false)}
+        onSubmit={handleSaveNudge}
+        onRemove={nudge ? handleRemoveNudge : undefined}
+        submitting={setNudgeMutation.isPending || deleteNudgeMutation.isPending}
+        existing={nudge}
       />
       <GoalPickerSheet
         visible={goalSheetOpen}
@@ -467,8 +677,15 @@ export function TaskDetailScreen() {
       />
       <ConfirmModal
         visible={deleteConfirmOpen}
-        title="Delete this task?"
-        message={`"${task.name}" will be removed. This can't be undone.`}
+        title={task.recurrenceRule ? "Delete this repeating task?" : "Delete this task?"}
+        /* A repeating task's delete ends the whole routine, not just today's copy — nothing
+           will regenerate it, because regeneration only happens on completion. Saying only
+           "will be removed" read as removing one occurrence. */
+        message={
+          task.recurrenceRule
+            ? `"${task.name}" will stop repeating and be removed. No future ones will be created. This can't be undone.`
+            : `"${task.name}" will be removed. This can't be undone.`
+        }
         confirmLabel="Delete"
         cancelLabel="Cancel"
         onConfirm={handleDelete}
@@ -479,6 +696,19 @@ export function TaskDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  missingCard: {
+    alignItems: "center",
+    paddingVertical: 24,
+    marginTop: 20,
+  },
+  missingText: {
+    marginTop: 4,
+    textAlign: "center",
+  },
+  missingButton: {
+    marginTop: 16,
+    alignSelf: "stretch",
+  },
   loading: {
     flex: 1,
     alignItems: "center",

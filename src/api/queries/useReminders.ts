@@ -1,9 +1,64 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { remindersApi } from "..";
-import type { CreateReminderRequest, ReminderDto, TaskDto, UpdateReminderRequest } from "../types";
+import type { CreateIntervalReminderRequest, IntervalReminderDto, ReminderDto, TaskDto } from "../types";
 import { queryKeys } from "../queryKeys";
 import { useSession } from "../../state/SessionContext";
+import { syncReminders } from "../../notifications/useReminderSync";
 import { ALL_TASK_STATUSES, LIST_KEYS_FOR, removeTaskFromLists } from "./useTasks";
+
+/**
+ * A task's repeated-nudge window, if it has one.
+ *
+ * Interval reminders have existed server-side since V001 with no screen to reach them — this
+ * and the mutations below are what NudgeSheet needed in order to surface them.
+ */
+export function useIntervalRemindersQuery() {
+  const { user } = useSession();
+  return useQuery({
+    queryKey: queryKeys.intervalReminders(),
+    queryFn: () => remindersApi.getIntervalReminders(),
+    enabled: !!user,
+  });
+}
+
+export function useSetIntervalReminderMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      taskId,
+      existingId,
+      request,
+    }: {
+      taskId: string;
+      existingId?: string;
+      request: CreateIntervalReminderRequest;
+    }) => {
+      // Create and update are separate endpoints server-side, and creating a second one for a
+      // task 409s — so which to call depends on whether the task already has a window.
+      if (existingId) return remindersApi.updateIntervalReminder(existingId, request);
+      return remindersApi.createIntervalReminder(taskId, request);
+    },
+    onSuccess: () => {
+      // The create endpoint returns {success, message} rather than the row, so there's nothing
+      // to patch in with — this is a genuine "something changed, but not what to" refetch.
+      queryClient.invalidateQueries({ queryKey: queryKeys.intervalReminders() });
+      void syncReminders();
+    },
+  });
+}
+
+export function useDeleteIntervalReminderMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (intervalReminderId: string) => remindersApi.deleteIntervalReminder(intervalReminderId),
+    onSuccess: (_data, intervalReminderId) => {
+      queryClient.setQueryData<IntervalReminderDto[]>(queryKeys.intervalReminders(), (old) =>
+        old?.filter((r) => r.id !== intervalReminderId)
+      );
+      void syncReminders();
+    },
+  });
+}
 
 export function useRemindersQuery() {
   const { user } = useSession();
@@ -14,68 +69,13 @@ export function useRemindersQuery() {
   });
 }
 
-/**
- * Writing a reminder also rewrites its task's scheduled day server-side — the reminder's
- * date IS the schedule (see ReminderService.syncTaskSchedule), which is what decides
- * whether the task sits on Home or waits under a date in Scheduled. That change is
- * invisible in the reminder response, so the task caches have to be re-read rather than
- * patched: this is a genuine "we know something changed but not to what", the same
- * exception useCompleteTaskMutation makes for streak and goals.
+/*
+ * The create / update / delete reminder mutations are gone.
  *
- * Without this, setting "remind me Friday" would leave the task sitting on Home until the
- * next cold launch — the exact confusion the single-writer design exists to remove.
+ * Setting a notification is part of updating the task now (useUpdateTaskMutation with
+ * notifyTime / clearNotify), so there is no separate reminder write to keep the task caches
+ * in step with — which is what patchTaskSchedule existed to do. One call, one cache update.
  */
-function patchTaskSchedule(queryClient: QueryClient, taskId: string) {
-  queryClient.invalidateQueries({ queryKey: queryKeys.task(taskId) });
-  for (const status of ALL_TASK_STATUSES) {
-    queryClient.invalidateQueries({ queryKey: queryKeys.tasks(status) });
-  }
-}
-
-/** onSuccess already has the real created reminder — append it directly instead of re-fetching the whole list to learn it. */
-export function useCreateReminderMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ taskId, request }: { taskId: string; request: CreateReminderRequest }) =>
-      remindersApi.createReminder(taskId, request),
-    onSuccess: (newReminder) => {
-      queryClient.setQueryData<ReminderDto[]>(queryKeys.reminders(), (old) => (old ? [...old, newReminder] : old));
-      patchTaskSchedule(queryClient, newReminder.taskId);
-    },
-  });
-}
-
-/** onSuccess already has the real updated reminder — replace the matching cached entry directly. */
-export function useUpdateReminderMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ reminderId, request }: { reminderId: string; request: UpdateReminderRequest }) =>
-      remindersApi.updateReminder(reminderId, request),
-    onSuccess: (updatedReminder) => {
-      queryClient.setQueryData<ReminderDto[]>(queryKeys.reminders(), (old) =>
-        old?.map((r) => (r.id === updatedReminder.id ? updatedReminder : r))
-      );
-      patchTaskSchedule(queryClient, updatedReminder.taskId);
-    },
-  });
-}
-
-/** The id being deleted is the mutation's own input — no need to wait for a refetch to know which one disappeared. */
-export function useDeleteReminderMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (reminderId: string) => remindersApi.deleteReminder(reminderId),
-    onSuccess: (_data, reminderId) => {
-      // Read the taskId off the cached row before dropping it — deleting a reminder
-      // unschedules its task, and afterwards there's nothing left to say which task.
-      const taskId = queryClient
-        .getQueryData<ReminderDto[]>(queryKeys.reminders())
-        ?.find((r) => r.id === reminderId)?.taskId;
-      queryClient.setQueryData<ReminderDto[]>(queryKeys.reminders(), (old) => old?.filter((r) => r.id !== reminderId));
-      if (taskId) patchTaskSchedule(queryClient, taskId);
-    },
-  });
-}
 
 /**
  * Same real-world effect as completing a focus task, but this endpoint's response is
@@ -128,6 +128,14 @@ export function useMarkTaskDoneMutation() {
       // about when the completed task was actually attached to a goal.
       if (context?.previousTask?.goalId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.goals() });
+      }
+      // The server spawns the next occurrence of a repeating task as part of completing it
+      // — same reasoning as useCompleteTaskMutation, and needed on this path too so which
+      // button was pressed doesn't decide whether the routine reappears.
+      if (context?.previousTask?.recurrenceRule) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.tasks("pending") });
+        queryClient.invalidateQueries({ queryKey: queryKeys.tasks() });
+        queryClient.invalidateQueries({ queryKey: queryKeys.reminders() });
       }
     },
   });

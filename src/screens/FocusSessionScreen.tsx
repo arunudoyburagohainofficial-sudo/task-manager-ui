@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Modal, StyleSheet, Text, View } from "react-native";
+import { AppState, type AppStateStatus, Modal, StyleSheet, Text, View } from "react-native";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { focusSessionsApi } from "../api";
 import { useCompleteTaskMutation, useTaskQuery } from "../api/queries/useTasks";
+import { useToast } from "../state/ToastContext";
 import type { FocusSessionDto } from "../api/types";
 import {
   Body,
@@ -45,11 +46,26 @@ export function FocusSessionScreen() {
   const task = taskQuery.data ?? null;
   const [phase, setPhase] = useState<Phase>("working");
   const [currentCycle, setCurrentCycle] = useState(1);
+  /**
+   * The wall-clock instant this phase ends, not a count of ticks.
+   *
+   * The countdown used to be a plain setInterval decrementing a number, which meant it only
+   * advanced while JS was actually running — and JS is suspended the moment the app is
+   * backgrounded or the screen locks. Locking your phone is the single most natural thing to
+   * do during a focus session, and doing it froze the timer: come back after ten minutes
+   * away and a 25-minute session still claimed ten minutes remaining, so it ran 35 real
+   * minutes. Anchoring to a deadline makes elapsed time real time, however long the app
+   * spends in the background.
+   */
+  const [deadline, setDeadline] = useState(() => Date.now() + WORK_SECONDS * 1000);
+  /** Instant the user paused, or null while running. Resuming pushes `deadline` out by the gap. */
+  const [pausedAt, setPausedAt] = useState<number | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(WORK_SECONDS);
-  const [paused, setPaused] = useState(false);
+  const paused = pausedAt !== null;
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
   const [completedSession, setCompletedSession] = useState<FocusSessionDto | null>(null);
   const [finishing, setFinishing] = useState(false);
+  const { showToast } = useToast();
 
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
@@ -67,41 +83,72 @@ export function FocusSessionScreen() {
         });
         setCompletedSession(completed);
         setPhase("completePrompt");
+      } catch {
+        /*
+         * Previously a bare try/finally: if saving the session failed, the error escaped, the
+         * screen never advanced past the timer, and nothing was said. That's the worst place
+         * in the app to strand someone — they've just done the work.
+         *
+         * The session stays open server-side on failure, so retrying genuinely works, and
+         * "End session" is still on screen to retry with.
+         */
+        showToast({
+          tone: "error",
+          message: "Couldn't save this session — check your connection and end it again.",
+        });
       } finally {
         setFinishing(false);
       }
     },
-    [sessionId, focusMode, totalCycles]
+    [sessionId, focusMode, totalCycles, showToast]
   );
 
-  // Countdown ticks once per second while working or on a break; pausing only applies to work.
+  /**
+   * Reads the clock rather than counting ticks, and re-reads it whenever the app comes back
+   * to the foreground — a session that spent twenty minutes with the screen locked shows
+   * twenty minutes gone the instant it's reopened, instead of resuming where JS stopped.
+   *
+   * `firedFor` makes the end-of-phase transition idempotent: a tick from the interval and
+   * one from a foreground event can both observe zero before React has re-rendered with the
+   * new phase, and without it that fires finishSession twice.
+   */
+  const firedFor = useRef<number | null>(null);
   useEffect(() => {
     if (phase === "completePrompt") return;
     if (phase === "working" && paused) return;
 
-    const interval = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          if (phaseRef.current === "working") {
-            if (focusMode === "pomodoro" && cycleRef.current < totalCycles) {
-              setPhase("break");
-              return BREAK_SECONDS;
-            }
-            finishSession(false);
-            return 0;
-          }
-          // Break countdown reaching zero does NOT auto-start the next cycle — stays at 0.
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    function tick() {
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setSecondsLeft(remaining);
+      if (remaining > 0 || firedFor.current === deadline) return;
+      firedFor.current = deadline;
 
-    return () => clearInterval(interval);
-  }, [phase, paused, focusMode, totalCycles, finishSession]);
+      if (phaseRef.current === "working") {
+        if (focusMode === "pomodoro" && cycleRef.current < totalCycles) {
+          setPhase("break");
+          setDeadline(Date.now() + BREAK_SECONDS * 1000);
+          return;
+        }
+        finishSession(false);
+      }
+      // A break reaching zero does NOT auto-start the next cycle — it waits at 0.
+    }
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    const subscription = AppState.addEventListener("change", (state: AppStateStatus) => {
+      if (state === "active") tick();
+    });
+
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
+  }, [phase, paused, deadline, focusMode, totalCycles, finishSession]);
 
   function handleStartNextCycle() {
     setCurrentCycle((c) => c + 1);
+    setDeadline(Date.now() + WORK_SECONDS * 1000);
     setSecondsLeft(WORK_SECONDS);
     setPhase("working");
   }
@@ -113,7 +160,17 @@ export function FocusSessionScreen() {
 
   async function handleMarkTaskComplete() {
     if (!task || !completedSession) return;
-    await completeTaskMutation.mutateAsync({ taskId, points: completedSession.pointsEarned ?? undefined });
+    // The session itself is already saved and its points credited by this point — only the
+    // task's own completion can still fail here, and the session is not lost if it does.
+    try {
+      await completeTaskMutation.mutateAsync({ taskId, points: completedSession.pointsEarned ?? undefined });
+    } catch {
+      showToast({
+        tone: "error",
+        message: "Your focus time was saved, but the task couldn't be marked done. Try again.",
+      });
+      return;
+    }
     navigation.replace("Completion", {
       taskId,
       taskName: task.name,
@@ -273,7 +330,16 @@ export function FocusSessionScreen() {
         <Button
           label={paused ? "▶ Resume" : "❙❙ Pause"}
           variant="secondary"
-          onPress={() => setPaused((p) => !p)}
+          // Resuming pushes the deadline out by however long the pause lasted, so paused
+          // time genuinely doesn't count — under the old counter, pausing and walking away
+          // for an hour left the session's real elapsed time running anyway.
+          onPress={() =>
+            setPausedAt((at) => {
+              if (at === null) return Date.now();
+              setDeadline((d) => d + (Date.now() - at));
+              return null;
+            })
+          }
           style={styles.bottomButton}
         />
         <Button

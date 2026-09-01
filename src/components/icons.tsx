@@ -82,6 +82,53 @@ export const DoneCheckIcon = ({ size: s = size.iconLg }: IconProps) => (
   </Svg>
 );
 
+/**
+ * Two arrows chasing each other — the mark for a repeating task.
+ *
+ * Line-drawn rather than the filled "sticker" style the icons above use: it sits inside a
+ * neutral tile on the Recurring panel as a quiet status mark, not as one of the coloured
+ * task-type badges, and a filled version read as a fourth task type.
+ */
+export const RepeatIcon = ({ size: s = size.iconInline, color: c = "#7E8A85" }: IconProps & { color?: string }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M4.4 12a7.6 7.6 0 0 1 12.9-5.5l2.3 2.1"
+      stroke={c}
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M19.6 12a7.6 7.6 0 0 1-12.9 5.5l-2.3-2.1"
+      stroke={c}
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M19.6 4.6v4.4h-4.4M4.4 19.4V15h4.4"
+      stroke={c}
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
+/** Right chevron — "open this" on a row whose whole surface is the tap target. */
+export const ChevronRightIcon = ({ size: s = 16, color: c = color.interactive }: IconProps & { color?: string }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Path d="M9.5 6l6 6-6 6" stroke={c} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+/** Down chevron — the "N more" expander on the Overdue panel. */
+export const ChevronDownIcon = ({ size: s = 13, color: c = "#A66B58" }: IconProps & { color?: string }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Path d="M6 9.5l6 6 6-6" stroke={c} strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
 /** Lightning bolt — marks a points/XP figure. */
 export const XpIcon = ({ size: s = 11 }: IconProps) => (
   <Svg width={s} height={s} viewBox="0 0 24 24">

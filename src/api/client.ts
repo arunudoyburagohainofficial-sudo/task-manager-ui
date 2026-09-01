@@ -76,12 +76,13 @@ function buildUrl(path: string, query?: RequestOptions["query"]): string {
  * that drops mid-request otherwise hangs forever, leaving whatever spinner triggered it
  * (create task, complete, sign-in) stuck with no way out. 20s was the original guess at
  * "generous enough to absorb a Cloud Run cold start" — measured against a real cold
- * start (Cloud Run's min-instances: 0 means the container restarts from nothing after
- * any idle period), Spring Boot itself took up to ~60s just to finish booting before it
- * could even answer, nearly 3x that budget. 75s covers the worst observed boot with
- * headroom, at the cost of a genuinely long wait on that one first request — the actual
- * fix for the wait itself is giving task-svc a warm (min-instances: 1) instance so it
- * never cold-starts at all; this is the client just refusing to give up too early on it.
+ * start, Spring Boot itself took up to ~60s just to finish booting before it could even
+ * answer, nearly 3x that budget. 75s covers the worst observed boot with headroom.
+ *
+ * task-svc now runs with min-instances: 1 (see service.yaml), so a warm instance should
+ * always be up and that worst case shouldn't happen in practice — this timeout is the
+ * backstop for when it does (a deploy, a scale-up, an instance being replaced), not the
+ * everyday path.
  */
 const REQUEST_TIMEOUT_MS = 75_000;
 

@@ -36,3 +36,14 @@ export function completeFocusSession(
     body: request,
   });
 }
+
+/**
+ * Throws an in-progress session away without crediting any time.
+ *
+ * Completing was the only exit, and completing always credits — so a session left running
+ * overnight had to be "finished" for hours the user never worked, purely to unblock starting
+ * a new one. Refused on a session that has already finished.
+ */
+export function abandonFocusSession(sessionId: string): Promise<void> {
+  return apiRequest<void>(`/focus-sessions/${sessionId}`, { method: "DELETE" });
+}

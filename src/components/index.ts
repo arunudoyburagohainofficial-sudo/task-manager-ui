@@ -20,6 +20,7 @@ export * from "./primitives";
 
 // Composed screen blocks
 export * from "./blocks";
+export * from "./schedulePanels";
 
 // Icon marks
 export * from "./icons";
@@ -31,8 +32,10 @@ export * from "./InfoTooltip";
 
 // Feature components
 export * from "./GoalEditSheet";
+export * from "./ScheduleSheet";
+export * from "./NudgeSheet";
+export * from "./QuickReminderSheet";
 export * from "./GoalPickerSheet";
-export * from "./ReminderTimeSheet";
 export * from "./ReminderNotificationModal";
 export * from "./ScreenContainer";
 export * from "./GoogleIcon";
