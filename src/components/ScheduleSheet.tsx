@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import type { NotificationSpec, RecurrenceRule } from "../api/types";
-import { color, radius, size, space, text as t, type as T } from "../theme";
+import { color, font, radius, size, space, text as t, type as T } from "../theme";
 import {
   RECURRENCE_OPTIONS,
   WEEKDAYS,
@@ -14,11 +14,19 @@ import {
   type RecurrencePattern,
   type Weekday,
 } from "../utils/recurrence";
+import {
+  fireDayOf as sharedFireDayOf,
+  notificationHealth as sharedNotificationHealth,
+  notificationVerdict,
+  outpacedByRepeat as isOutpacedByRepeat,
+  type NotifyHealth,
+  type NotifyVerdict,
+} from "../notifications/schedulingLogic";
 import { BottomSheet } from "./BottomSheet";
 import { Button } from "./Button";
+import { AlertGlyph, BellGlyph, CalendarGlyph, RepeatIcon } from "./icons";
 import { Stepper } from "./primitives";
-import { Body, H2, Label, Meta } from "./Text";
-import { Toggle } from "./Toggle";
+import { Meta } from "./Text";
 
 /**
  * The one place a task's timing is decided.
@@ -125,10 +133,35 @@ function nthOf(date: Date): { week: number; day: Weekday } {
 
 /** "3rd Tue" / "last Fri" — the label for the nth-weekday option. */
 function nthLabel(date: Date): string {
-  const { week, day } = nthOf(date);
-  const name = WEEKDAYS.find((d) => d.code === day)?.short ?? day;
-  const ordinal = week === -1 ? "last" : ["", "1st", "2nd", "3rd", "4th"][week];
-  return `${ordinal} ${name}`;
+  return nthLabelOf(nthOf(date));
+}
+
+/**
+ * The same label, read off a *stored* anchor rather than derived from the selected date.
+ *
+ * The monthly chips used to label themselves from `selectedDate` while the rule underneath
+ * kept whatever anchor it was seeded with, so changing the date relabelled the chip without
+ * moving the value — it would read "Day 9" while still storing day 1.
+ */
+function nthLabelOf(nth: { week: number; day: Weekday }): string {
+  const name = WEEKDAYS.find((d) => d.code === nth.day)?.short ?? nth.day;
+  const ordinal = nth.week === -1 ? "last" : ["", "1st", "2nd", "3rd", "4th"][nth.week];
+  return `The ${ordinal} ${name}`;
+}
+
+/** "9:00" — just the clock, for the notification row's headline. */
+function formatClock(time: string): string {
+  const [h, m] = time.split(":").map(Number);
+  const at = new Date();
+  at.setHours(h, m, 0, 0);
+  return at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/** "1 day before" — the offset, shown under the clock rather than run into it. */
+function leadLabel(n: NotificationSpec, hasDate: boolean): string {
+  if (!hasDate) return "Every day";
+  if (n.daysBefore === 0) return "On the day";
+  return `${n.daysBefore} day${n.daysBefore === 1 ? "" : "s"} before`;
 }
 
 /**
@@ -156,16 +189,68 @@ export interface ScheduleSelection {
   notifications: NotificationSpec[];
 }
 
-/** Small selectable pill — shared by the date shortcuts and the repeat options. */
-function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+type ChoiceProps = { label: string; active: boolean; onPress: () => void };
+
+/** An equal share of a four-across row — the When shortcuts. */
+function GridChip({ label, active, onPress }: ChoiceProps) {
   return (
     <Pressable
       accessibilityRole="radio"
       accessibilityState={{ selected: active }}
       onPress={onPress}
-      style={[styles.chip, active && styles.chipActive]}
+      style={[styles.gridChip, active && styles.pillOn]}
     >
-      <Text style={t(T.label, { fontWeight: active ? "800" : "600", color: active ? color.selectedText : color.textBody })}>
+      <Text
+        style={t(T.meta, {
+          fontWeight: active ? "800" : "700",
+          color: active ? color.selectedText : color.textMuted,
+        })}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** One of the five mutually exclusive repeat frequencies, inside the shared track. */
+function SegmentItem({ label, active, onPress }: ChoiceProps) {
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={[styles.segmentItem, active && styles.segmentItemOn]}
+    >
+      <Text
+        style={t(T.eyebrow, {
+          letterSpacing: 0,
+          textTransform: "none",
+          color: active ? color.selectedText : color.textMuted,
+        })}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** A standalone choice that sizes to its own label — the qualifiers inside the rail. */
+function PillChip({ label, active, onPress }: ChoiceProps) {
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={[styles.pill, active && styles.pillOn]}
+    >
+      <Text
+        style={t(T.meta, {
+          fontWeight: active ? "800" : "700",
+          color: active ? color.selectedText : color.textMuted,
+        })}
+      >
         {label}
       </Text>
     </Pressable>
@@ -181,6 +266,8 @@ interface ScheduleSheetProps {
   initial?: Partial<ScheduleSelection>;
   /** Offered only when the task already has a schedule to clear. */
   onClear?: () => void;
+  /** Shown under the title, so a sheet opened from a list says which task it is about. */
+  taskName?: string;
 }
 
 export function ScheduleSheet({
@@ -190,6 +277,7 @@ export function ScheduleSheet({
   submitting = false,
   initial,
   onClear,
+  taskName,
 }: ScheduleSheetProps) {
   const today = startOfDay(new Date());
   const tomorrow = addDays(today, 1);
@@ -234,26 +322,97 @@ export function ScheduleSheet({
   }, [visible, initial?.scheduledFor, initial?.recurrenceRule, initial?.notifications]);
 
   /**
-   * True when the chosen notification time has already passed today.
+   * Whether one notification can actually fire, and if not, which way it failed.
    *
-   * A dated notification in the past never fires — the device only schedules occurrences
-   * still in the future. The date picker refuses past *dates*, but nothing stops picking a
-   * past *time* on today, which was silently accepted and then never went off.
+   * A notification in the past never fires — the device only schedules occurrences still
+   * ahead of now — and there are two separate ways to end up there:
+   *
+   *   "passed-today"  the day is right, the clock time is behind us. The date picker refuses
+   *                   past dates, but nothing stops picking 9am at 10am.
+   *   "before-today"  the *day* itself is already gone, because the lead time is longer than
+   *                   the runway: "a week before" on something due in three days is four days
+   *                   ago. No time of day can rescue it.
+   *
+   * The second case used to be missed entirely. This function's predecessor skipped every
+   * notification not landing today ("a lead-time notification for a future date fires on its
+   * own earlier day") — true only while the offset fits inside the gap. A fire-day in the past
+   * and a fire-day next week both read as "not today", so the impossible one was waved through
+   * looking perfectly healthy. Setting a task three days out and tapping "+ 1 week before" —
+   * one tap, no warning — produced a notification that could never fire. Worse, pairing it with
+   * an on-the-day notification hid it completely: the task still buzzed, so nothing looked
+   * wrong. It also affects every occurrence of a short-cycle repeat, forever, since a daily
+   * task's successor is always a day away and can never satisfy a week's warning.
    */
-  const passedNotification = (() => {
-    if (!hasDate) return null;
-    // Only the ones landing today can already have passed — a lead-time notification for a
-    // future date fires on its own earlier day.
-    for (const n of notifications) {
-      const fires = new Date(selectedDate);
-      fires.setDate(fires.getDate() - n.daysBefore);
-      if (!isSameDay(fires, today)) continue;
-      const [h, m] = n.time.split(":").map(Number);
-      fires.setHours(h, m, 0, 0);
-      if (fires.getTime() <= Date.now()) return n;
+  /**
+   * "3 Sep" — the day this notification lands on, formatted for the warning.
+   *
+   * The *calculation* is the shared one, not a second copy: this had its own Date-based
+   * version, and two definitions of "the day it lands on" is the duplication that let the
+   * sheet and everything else disagree in the first place.
+   */
+  function fireDayLabel(n: NotificationSpec): string {
+    const key = sharedFireDayOf(toLocalDateString(selectedDate), n.daysBefore);
+    if (!key) return "";
+    // "T00:00:00" parses as local midnight rather than UTC — same reason toLocalDateString exists.
+    return new Date(`${key}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  }
+
+  const taskDateKey = hasDate ? toLocalDateString(selectedDate) : null;
+
+  /**
+   * Delegates to the shared classifier rather than repeating it. It used to live here, which
+   * meant every other way of changing a task's date — "move all to today" especially — had no
+   * way to ask the same question and stranded notifications silently.
+   */
+  function notificationHealth(n: NotificationSpec): NotifyHealth {
+    return sharedNotificationHealth(taskDateKey, n.daysBefore, n.time);
+  }
+
+  /** What this notification will actually do, once the repeat is taken into account. */
+  function verdictFor(n: NotificationSpec): NotifyVerdict {
+    return notificationVerdict(taskDateKey, n.daysBefore, n.time, repeat);
+  }
+
+  /**
+   * What to say about one notification, and whether it's a problem.
+   *
+   * Only a permanent loss is worth alarming anyone about. A repeating task whose time has passed
+   * today is fine — the next occurrence fires — and painting that red taught users to ignore the
+   * warnings that do matter. It's now a quiet line, or nothing.
+   */
+  function noteFor(n: NotificationSpec): { text: string; bad: boolean } {
+    switch (verdictFor(n)) {
+      case "never":
+        // The repeat is the more useful explanation when it's the reason nothing can ever work.
+        if (isOutpacedByRepeat(n.daysBefore, repeat)) {
+          return {
+            text: "This repeats more often than the warning, so it can never fire. Shorten the warning, or repeat less often.",
+            bad: true,
+          };
+        }
+        if (notificationHealth(n) === "passed-today") {
+          return { text: "That time has already passed today — it won't fire. Pick a later time.", bad: true };
+        }
+        return {
+          text: `That lands on ${fireDayLabel(n)}, already past — it won't fire. Try a shorter warning or a later date.`,
+          bad: true,
+        };
+      case "only-this-time":
+        return {
+          text: "Fires this time, but not on the copies after it — this repeats sooner than the warning.",
+          bad: true,
+        };
+      case "not-this-time":
+        // Deliberately not an error: nothing is lost, it simply starts at the next occurrence.
+        return { text: "Too late for this one — starts from the next.", bad: false };
+      default:
+        if (!hasDate) return { text: "Every day until you finish it.", bad: false };
+        return {
+          text: n.daysBefore === 0 ? "On the day." : `${n.daysBefore} day${n.daysBefore === 1 ? "" : "s"} before.`,
+          bad: false,
+        };
     }
-    return null;
-  })();
+  }
 
   /** Rewrites one notification's time, keeping the rest of the list untouched. */
   function updateNotificationTime(index: number, when: Date) {
@@ -308,15 +467,107 @@ export function ScheduleSheet({
     });
   }
 
-  return (
-    <BottomSheet visible={visible} onClose={onClose}>
-      <H2>{initial?.scheduledFor || initial?.notifications?.length ? "Edit schedule" : "Set a schedule"}</H2>
+  /** The frequency's unit word, singular or plural to match the interval. */
+  const intervalUnit = (p: RecurrencePattern) =>
+    `${p.freq === "DAILY" ? "day" : p.freq === "WEEKLY" ? "week" : p.freq === "MONTHLY" ? "month" : "year"}${
+      p.interval === 1 ? "" : "s"
+    }`;
 
-      {/* ---- When ---- */}
-      <View style={styles.section}>
-        <Meta>Scheduled for</Meta>
-        <View style={styles.chipRow}>
-          <Chip
+  /* A weekday set *is* the pattern, so an interval on top of it needs a week-start rule to
+     mean anything — which is why it's the one shape with no "every N". */
+  const showInterval = !!repeat && !(repeat.freq === "WEEKLY" && repeat.byDay.length > 0);
+
+  /** "Thu" / "Fri" — the plain weekday name for the task's own date. */
+  const weekdayShort = (date: Date) => WEEKDAYS.find((d) => d.code === nthOf(date).day)?.short ?? "";
+
+  /** "Today (Thu)" / "Tomorrow (Fri)" / "Tue, Sep 22" — names the task's own date as a sentence's subject. */
+  function startPhrase(): string {
+    if (isSameDay(selectedDate, today)) return `Today (${weekdayShort(selectedDate)})`;
+    if (isSameDay(selectedDate, tomorrow)) return `Tomorrow (${weekdayShort(selectedDate)})`;
+    return selectedDate.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  }
+
+  /** The same date, lower-cased for the middle of a sentence: "starting today (Thu)". */
+  const startPhraseLower = () => {
+    const s = startPhrase();
+    return s.charAt(0).toLowerCase() + s.slice(1);
+  };
+
+  /** "today" / "tomorrow" / "Tue" — a short back-reference once the date's already been named. */
+  function anchorWord(): string {
+    if (isSameDay(selectedDate, today)) return "today";
+    if (isSameDay(selectedDate, tomorrow)) return "tomorrow";
+    return weekdayShort(selectedDate);
+  }
+
+  /** "6 to go, counting today." — spells out that the live occurrence is included in the count,
+      rather than leaving "6 left" to be read as "6 more after this one". */
+  function endsClause(p: RecurrencePattern): string {
+    return p.count != null ? ` ${p.count} to go, counting ${anchorWord()}.` : "";
+  }
+
+  /**
+   * "Today (Sat) — a one-time reminder." — only when the task's own date isn't one of the
+   * ticked days. Kept as its own short line rather than folded into the rule sentence: naming
+   * the exception and stating the ongoing pattern in one run-on sentence was the thing that
+   * actually confused people, not the words used for either half.
+   *
+   * The live occurrence always keeps the date it was given, regardless of the day-set — picking
+   * Sat as the date and ticking Tue/Wed/Thu doesn't move Saturday's occurrence, it just means the
+   * one *after* it lands on the next Tue, Wed or Thu.
+   */
+  function weeklyStartNote(p: RecurrencePattern): string | null {
+    if (p.freq !== "WEEKLY" || p.byDay.length === 0) return null;
+    if (p.byDay.includes(nthOf(selectedDate).day)) return null;
+    return `${startPhrase()} — a one-time reminder.`;
+  }
+
+  /**
+   * The summary box's text — a one-off note on its own line when there is one, then the ongoing
+   * rule on the line below it, so the exception and the pattern never compete for the same
+   * sentence.
+   */
+  function summaryLine(p: RecurrencePattern): string {
+    const note = weeklyStartNote(p);
+    const base = describeRecurrence(buildRecurrence(p))?.split(" · ")[0];
+    const rule = note
+      ? `${base}, starting next week.`
+      : showInterval
+      ? `${base}, starting ${startPhraseLower()}.`
+      : `${base}.`;
+    const tail = `${rule}${endsClause(p)} Finishing one schedules the next.`;
+    return note ? `${note}\n${tail}` : tail;
+  }
+
+  return (
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      background={color.screen}
+      footer={
+        <>
+          <Pressable accessibilityRole="button" onPress={onClose} style={styles.cancel} hitSlop={6}>
+            <Text style={t(T.label, { color: color.textMuted })}>Cancel</Text>
+          </Pressable>
+          <Button label="Save schedule" loading={submitting} onPress={handleSave} style={styles.save} />
+        </>
+      }
+    >
+      <View style={styles.heading}>
+        <Text style={t(T.h2, { color: color.text, letterSpacing: -0.4 })}>
+          {initial?.scheduledFor || initial?.notifications?.length ? "Edit schedule" : "Set a schedule"}
+        </Text>
+        {taskName ? <Meta style={{ color: color.textMuted, marginTop: 3 }}>{taskName}</Meta> : null}
+      </View>
+
+      {/* ───────────────── WHEN ───────────────── */}
+      <View style={styles.card}>
+        <Text style={t(T.eyebrow, { color: color.textMuted })}>When</Text>
+
+        {/* Four across, each an equal share of the row — the design's grid, which keeps the
+            labels reading as one set of choices rather than a wrapped pile of pills. */}
+        <View style={styles.grid4}>
+          <GridChip
             label="No date"
             active={!hasDate}
             onPress={() => {
@@ -331,7 +582,7 @@ export function ScheduleSheet({
             { label: "Today", date: today },
             { label: "Tomorrow", date: tomorrow },
           ].map(({ label, date }) => (
-            <Chip
+            <GridChip
               key={label}
               label={label}
               active={hasDate && isSameDay(selectedDate, date) && !showDatePicker}
@@ -342,11 +593,11 @@ export function ScheduleSheet({
               }}
             />
           ))}
-          <Chip
+          <GridChip
             label={
               hasDate && (showDatePicker || (!isSameDay(selectedDate, today) && !isSameDay(selectedDate, tomorrow)))
                 ? selectedDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-                : "Pick a date"
+                : "Pick date"
             }
             active={hasDate && showDatePicker}
             onPress={() => (Platform.OS === "android" ? openAndroidDatePicker() : (setHasDate(true), setShowDatePicker(true)))}
@@ -365,26 +616,42 @@ export function ScheduleSheet({
           />
         )}
 
-        {hasDate && !isSameDay(selectedDate, today) ? (
-          <Meta style={{ color: color.textFaint }}>
-            Waits under Scheduled until{" "}
-            {selectedDate.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}.
+        <View style={styles.hint}>
+          <CalendarGlyph size={14} color={color.textFaint} />
+          <Meta style={styles.hintText}>
+            {!hasDate ? (
+              <>
+                Stays on <Text style={styles.hintStrong}>Home</Text> until you give it a day
+              </>
+            ) : isSameDay(selectedDate, today) ? (
+              <>
+                Shows on <Text style={styles.hintStrong}>Home</Text> today
+              </>
+            ) : (
+              <>
+                Waits under <Text style={styles.hintStrong}>Scheduled</Text> until{" "}
+                {selectedDate.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}
+              </>
+            )}
           </Meta>
-        ) : null}
-        {!hasDate ? (
-          <Meta style={{ color: color.textFaint }}>Stays on Home until you give it a day.</Meta>
-        ) : null}
+        </View>
       </View>
 
-      {/* ---- Repeat: only meaningful once there's a day to repeat from ---- */}
-      <View style={styles.section}>
-        <Meta>Repeat</Meta>
+      {/* ───────────────── REPEAT ───────────────── */}
+      <View style={styles.card}>
+        <View style={styles.cardHead}>
+          <RepeatIcon size={14} color={color.textFaint} />
+          <Text style={t(T.eyebrow, { color: color.textMuted })}>Repeat</Text>
+        </View>
+
         {hasDate ? (
           <>
-            <View style={styles.chipRow}>
-              <Chip label="Doesn't repeat" active={repeat === null} onPress={() => setRepeat(null)} />
+            {/* One track, five choices — a segmented control rather than loose chips, because
+                these are mutually exclusive and "Never" belongs in the same set as the rest. */}
+            <View style={styles.segment}>
+              <SegmentItem label="Never" active={repeat === null} onPress={() => setRepeat(null)} />
               {RECURRENCE_OPTIONS.map((option) => (
-                <Chip
+                <SegmentItem
                   key={option.value}
                   label={option.label}
                   active={repeat?.freq === option.value}
@@ -398,103 +665,115 @@ export function ScheduleSheet({
 
             {repeat ? (
               <>
-                {/* Interval — "every N". Hidden for a weekday set, where the set is the
-                    pattern and an interval on top needs a week-start rule to be meaningful. */}
-                {!(repeat.freq === "WEEKLY" && repeat.byDay.length > 0) ? (
-                  <View style={styles.inlineRow}>
-                    <Meta style={{ color: color.textBody }}>Every</Meta>
-                    <Stepper
-                      value={repeat.interval}
-                      onChange={(interval) => setRepeat({ ...repeat, interval })}
-                      min={1}
-                      max={30}
-                      label="repeat interval"
-                    />
-                    <Meta style={{ color: color.textBody }}>
-                      {repeat.freq === "DAILY"
-                        ? "day"
-                        : repeat.freq === "WEEKLY"
-                          ? "week"
-                          : repeat.freq === "MONTHLY"
-                            ? "month"
-                            : "year"}
-                      {repeat.interval === 1 ? "" : "s"}
-                    </Meta>
-                  </View>
-                ) : null}
-
-                {/* Weekly: which days. Selecting any day switches the rule to a day-set, which
-                    is why the interval control disappears above. */}
-                {repeat.freq === "WEEKLY" ? (
-                  <View style={styles.chipRow}>
-                    {WEEKDAYS.map((d) => {
-                      const on = repeat.byDay.includes(d.code);
-                      return (
-                        <Chip
-                          key={d.code}
-                          label={d.short}
-                          active={on}
-                          onPress={() => {
-                            const byDay: Weekday[] = on
-                              ? repeat.byDay.filter((x) => x !== d.code)
-                              : [...repeat.byDay, d.code];
-                            // Clearing the last day returns to a plain weekly rule rather than
-                            // an empty set, which the server would refuse.
-                            setRepeat({ ...repeat, byDay, interval: byDay.length > 0 ? 1 : repeat.interval });
-                          }}
+                {/* Everything that qualifies the frequency sits inside one indented rail, so
+                    it reads as belonging to the choice above rather than as more top-level
+                    settings competing with it. */}
+                <View style={styles.subBlock}>
+                  {showInterval ? (
+                    <View>
+                      <Text style={t(T.eyebrow, { color: color.textMuted, letterSpacing: 0.9 })}>Every</Text>
+                      <View style={styles.subRow}>
+                        <Stepper
+                          value={repeat.interval}
+                          onChange={(interval) => setRepeat({ ...repeat, interval })}
+                          min={1}
+                          max={30}
+                          label="repeat interval"
                         />
-                      );
-                    })}
-                  </View>
-                ) : null}
+                        <Meta style={{ color: color.textBody }}>{intervalUnit(repeat)}</Meta>
+                      </View>
+                    </View>
+                  ) : null}
 
-                {/* Monthly: by date, or by nth weekday. Two ways to say "which day", so they
-                    are a choice rather than two independent controls. */}
-                {repeat.freq === "MONTHLY" ? (
-                  <View style={styles.chipRow}>
-                    <Chip
-                      label={`On day ${selectedDate.getDate()}`}
-                      active={!repeat.nth}
-                      onPress={() => setRepeat({ ...repeat, nth: null, byMonthDay: selectedDate.getDate() })}
-                    />
-                    <Chip
-                      label={`On the ${nthLabel(selectedDate)}`}
-                      active={!!repeat.nth}
-                      onPress={() => setRepeat({ ...repeat, nth: nthOf(selectedDate), byMonthDay: null })}
-                    />
-                  </View>
-                ) : null}
+                  {repeat.freq === "WEEKLY" ? (
+                    <View>
+                      <Text style={t(T.eyebrow, { color: color.textMuted, letterSpacing: 0.9 })}>On these days</Text>
+                      <View style={styles.dayRow}>
+                        {WEEKDAYS.map((d) => {
+                          const on = repeat.byDay.includes(d.code);
+                          return (
+                            <Pressable
+                              key={d.code}
+                              accessibilityRole="checkbox"
+                              accessibilityState={{ checked: on }}
+                              accessibilityLabel={d.short}
+                              onPress={() => {
+                                const byDay: Weekday[] = on
+                                  ? repeat.byDay.filter((x) => x !== d.code)
+                                  : [...repeat.byDay, d.code];
+                                // Clearing the last day returns to a plain weekly rule rather
+                                // than an empty set, which the server would refuse.
+                                setRepeat({ ...repeat, byDay, interval: byDay.length > 0 ? 1 : repeat.interval });
+                              }}
+                              style={[styles.day, on && styles.dayOn]}
+                            >
+                              <Text
+                                style={t(T.eyebrow, {
+                                  letterSpacing: 0,
+                                  color: on ? color.selectedText : color.textMuted,
+                                })}
+                              >
+                                {d.short}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  ) : null}
 
-                {/* Ends — Never / after N times / on a date. */}
-                <View style={styles.chipRow}>
-                  <Chip
-                    label="Forever"
-                    active={repeat.count == null && repeat.until == null}
-                    onPress={() => setRepeat({ ...repeat, count: null, until: null })}
-                  />
-                  <Chip
-                    label="For a while"
-                    active={repeat.count != null}
-                    onPress={() => setRepeat({ ...repeat, count: repeat.count ?? 10, until: null })}
-                  />
+                  {repeat.freq === "MONTHLY" ? (
+                    <View>
+                      <Text style={t(T.eyebrow, { color: color.textMuted, letterSpacing: 0.9 })}>On</Text>
+                      <View style={styles.subRow}>
+                        {/* Both labels read off the *stored* anchor, never off the currently
+                            selected date. Reading the date instead let the chip say "day 9"
+                            while the rule underneath still held day 1 — it relabelled itself
+                            whenever the date moved, without the value moving with it. */}
+                        <PillChip
+                          label={`Day ${repeat.byMonthDay ?? selectedDate.getDate()}`}
+                          active={!repeat.nth}
+                          onPress={() => setRepeat({ ...repeat, nth: null, byMonthDay: selectedDate.getDate() })}
+                        />
+                        <PillChip
+                          label={repeat.nth ? nthLabelOf(repeat.nth) : `The ${nthLabel(selectedDate)}`}
+                          active={!!repeat.nth}
+                          onPress={() => setRepeat({ ...repeat, nth: nthOf(selectedDate), byMonthDay: null })}
+                        />
+                      </View>
+                    </View>
+                  ) : null}
+
+                  <View>
+                    <Text style={t(T.eyebrow, { color: color.textMuted, letterSpacing: 0.9 })}>Ends</Text>
+                    <View style={styles.subRow}>
+                      <PillChip
+                        label="Forever"
+                        active={repeat.count == null && repeat.until == null}
+                        onPress={() => setRepeat({ ...repeat, count: null, until: null })}
+                      />
+                      <PillChip
+                        label="After"
+                        active={repeat.count != null}
+                        onPress={() => setRepeat({ ...repeat, count: repeat.count ?? 10, until: null })}
+                      />
+                      {repeat.count != null ? (
+                        <Stepper
+                          value={repeat.count}
+                          onChange={(count) => setRepeat({ ...repeat, count })}
+                          min={2}
+                          max={365}
+                          suffix="×"
+                          label="number of times"
+                        />
+                      ) : null}
+                    </View>
+                  </View>
                 </View>
-                {repeat.count != null ? (
-                  <View style={styles.inlineRow}>
-                    <Meta style={{ color: color.textBody }}>Stop after</Meta>
-                    <Stepper
-                      value={repeat.count}
-                      onChange={(count) => setRepeat({ ...repeat, count })}
-                      min={2}
-                      max={365}
-                      label="number of times"
-                    />
-                    <Meta style={{ color: color.textBody }}>times</Meta>
-                  </View>
-                ) : null}
 
-                <Meta style={{ color: color.textFaint }}>
-                  {describeRecurrence(buildRecurrence(repeat))} · finishing it schedules the next one.
-                </Meta>
+                <View style={styles.summary}>
+                  <Meta style={{ color: color.textBody, lineHeight: 17 }}>{summaryLine(repeat)}</Meta>
+                </View>
               </>
             ) : null}
           </>
@@ -503,57 +782,69 @@ export function ScheduleSheet({
         )}
       </View>
 
-      {/* ---- Notify: independent of both of the above ---- */}
-      <View style={styles.section}>
-        <Label>Notify me</Label>
+      {/* ───────────────── NOTIFY ───────────────── */}
+      <View style={styles.card}>
+        <View style={styles.cardHead}>
+          <BellGlyph size={14} color={color.textFaint} />
+          <Text style={t(T.eyebrow, { color: color.textMuted })}>Notify me</Text>
+        </View>
 
         {notifications.length === 0 ? (
-          <Meta style={{ color: color.textFaint }}>
-            {hasDate ? "Off — no notification." : "Off — no notification."}
-          </Meta>
+          <Meta style={{ color: color.textFaint }}>Off — no notification.</Meta>
         ) : null}
 
-        {/* One row per notification. Tapping a row opens the time picker for that one; the
-            offsets are what make several meaningful rather than duplicates. */}
+        {/* One bordered group per notification, with its own note attached underneath rather
+            than pooled into a summary at the bottom of the card — the fix belongs beside the
+            thing that needs fixing. */}
         {notifications.map((n, index) => {
-          const isPast = passedNotification === n;
+          const note = noteFor(n);
           return (
-            <View key={`${n.daysBefore}-${n.time}-${index}`} style={styles.notifyRow}>
-              <Pressable
-                accessibilityRole="button"
-                style={styles.notifyText}
-                onPress={() => {
-                  const [h, m] = n.time.split(":").map(Number);
-                  const seeded = new Date();
-                  seeded.setHours(h, m, 0, 0);
-                  setClockTime(seeded);
-                  setEditingIndex(editingIndex === index ? null : index);
-                }}
-              >
-                <Body style={{ color: isPast ? color.danger : color.text }}>
-                  {formatNotification(n, hasDate)}
-                </Body>
-                <Meta style={{ color: color.textFaint, marginTop: 2 }}>
-                  {isPast
-                    ? "That time has already passed today — it won't fire."
-                    : hasDate
-                      ? n.daysBefore === 0
-                        ? "On the day."
-                        : `${n.daysBefore} day${n.daysBefore === 1 ? "" : "s"} before.`
-                      : "Every day until you finish it."}
-                </Meta>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Remove this notification"
-                hitSlop={8}
-                onPress={() => {
-                  setNotifications(notifications.filter((_, i) => i !== index));
-                  setEditingIndex(null);
-                }}
-              >
-                <Meta style={{ color: color.danger, fontWeight: "800" }}>Remove</Meta>
-              </Pressable>
+            <View key={`${n.daysBefore}-${n.time}-${index}`} style={styles.notify}>
+              <View style={styles.notifyRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Change the time for ${formatNotification(n, hasDate)}`}
+                  style={styles.notifyText}
+                  onPress={() => {
+                    const [h, m] = n.time.split(":").map(Number);
+                    const seeded = new Date();
+                    seeded.setHours(h, m, 0, 0);
+                    setClockTime(seeded);
+                    setEditingIndex(editingIndex === index ? null : index);
+                  }}
+                >
+                  <Text style={t(T.bodyLg, { fontWeight: "800", color: note.bad ? color.danger : color.text })}>
+                    {formatClock(n.time)}
+                  </Text>
+                  <Meta style={{ color: color.textMuted, marginTop: 1 }}>{leadLabel(n, hasDate)}</Meta>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove this notification"
+                  hitSlop={8}
+                  onPress={() => {
+                    setNotifications(notifications.filter((_, i) => i !== index));
+                    setEditingIndex(null);
+                  }}
+                  style={styles.remove}
+                >
+                  <Text style={t(T.meta, { fontWeight: "800", color: color.selectedText })}>✕</Text>
+                </Pressable>
+              </View>
+
+              {/* Only a permanent loss is painted as a problem. A repeating task whose time has
+                  passed today is fine — the next occurrence fires — so that case gets the same
+                  quiet treatment as any other explanatory line. */}
+              {note.bad ? (
+                <View style={styles.notifyAlert}>
+                  <AlertGlyph size={14} color={color.danger} />
+                  <Meta style={{ flex: 1, color: color.danger, fontWeight: "700", lineHeight: 17 }}>{note.text}</Meta>
+                </View>
+              ) : note.text ? (
+                <View style={styles.notifyNote}>
+                  <Meta style={{ color: color.textFaint, lineHeight: 17 }}>{note.text}</Meta>
+                </View>
+              ) : null}
             </View>
           );
         })}
@@ -561,9 +852,9 @@ export function ScheduleSheet({
         {/* The time picker, shown for whichever row is being edited. */}
         {editingIndex !== null && notifications[editingIndex] ? (
           <>
-            <View style={styles.chipRow}>
+            <View style={styles.subRow}>
               {TIME_PRESETS.map(({ label, hour }) => (
-                <Chip
+                <PillChip
                   key={label}
                   label={label}
                   active={clockTime.getHours() === hour && clockTime.getMinutes() === 0}
@@ -601,15 +892,14 @@ export function ScheduleSheet({
         {/* Adding another. Lead-time options only make sense once there's a date to count
             back from, and only up to the per-task ceiling the server enforces. */}
         {notifications.length < MAX_NOTIFICATIONS ? (
-          <View style={styles.chipRow}>
+          <View style={styles.addRow}>
             {(hasDate ? LEAD_TIME_PRESETS : LEAD_TIME_PRESETS.slice(0, 1)).map((preset) => {
               const taken = notifications.some((n) => n.daysBefore === preset.daysBefore);
               if (taken) return null;
               return (
-                <Chip
+                <Pressable
                   key={preset.daysBefore}
-                  label={notifications.length === 0 && preset.daysBefore === 0 ? "Notify me" : `+ ${preset.label}`}
-                  active={false}
+                  accessibilityRole="button"
                   onPress={() => {
                     const next = [...notifications, { time: DEFAULT_NOTIFY_TIME, daysBefore: preset.daysBefore }];
                     // Earliest warning first, so the list reads in the order things happen.
@@ -617,7 +907,12 @@ export function ScheduleSheet({
                     setNotifications(next);
                     setEditingIndex(null);
                   }}
-                />
+                  style={styles.add}
+                >
+                  <Text style={t(T.meta, { fontWeight: "700", color: color.textMuted })}>
+                    {notifications.length === 0 && preset.daysBefore === 0 ? "Notify me" : `+ ${preset.label}`}
+                  </Text>
+                </Pressable>
               );
             })}
           </View>
@@ -626,27 +921,195 @@ export function ScheduleSheet({
             {MAX_NOTIFICATIONS} notifications is the limit for one task.
           </Meta>
         )}
-
-        {/* Stated plainly rather than blocking the save: the day is still worth keeping even
-            when a notification can't fire, and refusing the whole thing would cost the
-            schedule too. */}
-        {passedNotification ? (
-          <Meta style={{ color: color.danger }}>
-            One of these has already passed today and won't fire. The task is still scheduled;
-            pick a later time or another day to be notified.
-          </Meta>
-        ) : null}
       </View>
 
-      <Button label="Save schedule" loading={submitting} onPress={handleSave} />
       {onClear ? <Button label="Clear schedule" variant="destructiveText" onPress={onClear} /> : null}
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  section: {
+  heading: {
+    paddingBottom: 2,
+  },
+  /** The white surfaces the sheet is built from — they only read as cards against the cream
+      ground the sheet asks BottomSheet for. */
+  card: {
+    backgroundColor: color.card,
+    borderWidth: 1,
+    borderColor: color.border,
+    borderRadius: 14,
+    padding: space.card,
+    gap: space.base,
+  },
+  cardHead: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: space.sm,
+  },
+
+  /* ---- When ---- */
+  grid4: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  gridChip: {
+    flex: 1,
+    minHeight: size.minTouch,
+    paddingHorizontal: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: color.border,
+  },
+  hint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+    paddingTop: space.base,
+    borderTopWidth: 1,
+    borderTopColor: color.divider,
+  },
+  hintText: {
+    flex: 1,
+    color: color.textMuted,
+  },
+  hintStrong: {
+    fontFamily: font.black,
+    color: color.textBody,
+  },
+
+  /* ---- Repeat ---- */
+  segment: {
+    flexDirection: "row",
+    gap: 3,
+    backgroundColor: color.track,
+    borderRadius: radius.track,
+    padding: 3,
+  },
+  segmentItem: {
+    flex: 1,
+    minHeight: 34,
+    paddingHorizontal: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.tab,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
+  segmentItemOn: {
+    backgroundColor: color.card,
+    borderColor: color.interactive,
+  },
+  /** The rail that ties every qualifier back to the frequency it belongs to. */
+  subBlock: {
+    paddingLeft: 11,
+    borderLeftWidth: 2,
+    borderLeftColor: color.divider,
+    gap: space.card,
+  },
+  subRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: space.sm,
+  },
+  dayRow: {
+    flexDirection: "row",
+    gap: 4,
+    marginTop: space.sm,
+  },
+  day: {
+    flex: 1,
+    aspectRatio: 1,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: color.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dayOn: {
+    borderColor: color.interactive,
+    backgroundColor: color.selectedTint,
+  },
+  pill: {
+    minHeight: 38,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: color.border,
+  },
+  pillOn: {
+    borderWidth: 1.5,
+    borderColor: color.interactive,
+    backgroundColor: color.selectedTint,
+  },
+  summary: {
+    backgroundColor: color.track,
+    borderRadius: radius.track,
+    padding: space.base,
+  },
+
+  /* ---- Notify ---- */
+  notify: {
+    borderWidth: 1,
+    borderColor: color.border,
+    borderRadius: radius.card,
+    overflow: "hidden",
+  },
+  notifyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.base,
+    padding: space.base,
+  },
+  notifyText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  remove: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  /** Attached to the row it describes, inside the same border, so the two can't be read apart. */
+  notifyAlert: {
+    flexDirection: "row",
+    gap: space.sm,
+    paddingHorizontal: space.base,
+    paddingVertical: space.md,
+    backgroundColor: color.selectedTint,
+    borderTopWidth: 1,
+    borderTopColor: color.border,
+  },
+  notifyNote: {
+    paddingHorizontal: space.base,
+    paddingBottom: space.md,
+    marginTop: -space.sm,
+  },
+  addRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  add: {
+    flex: 1,
+    minHeight: size.minTouch,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: color.border,
   },
   androidTimeButton: {
     minHeight: size.button + 2,
@@ -658,39 +1121,13 @@ const styles = StyleSheet.create({
     borderColor: color.border,
     backgroundColor: color.card,
   },
-  notifyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.md,
+
+  /* ---- Footer ---- */
+  cancel: {
+    paddingVertical: 12,
+    paddingHorizontal: 6,
   },
-  notifyText: {
+  save: {
     flex: 1,
-  },
-  chipRow: {
-    flexDirection: "row",
-    gap: space.sm,
-    flexWrap: "wrap",
-  },
-  /** "Every [2] weeks" — label, control and unit reading as one line. */
-  inlineRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.sm,
-  },
-  chip: {
-    // A real tap target, not a general-purpose card — held at the accessibility floor
-    // rather than trimmed with the rest, same reasoning as size.minTouch itself.
-    minHeight: size.minTouch,
-    paddingHorizontal: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 9,
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  chipActive: {
-    borderWidth: 1.5,
-    borderColor: color.interactive,
-    backgroundColor: color.selectedTint,
   },
 });

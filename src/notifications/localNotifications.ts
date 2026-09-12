@@ -2,6 +2,14 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import type { IntervalReminderDto, ReminderDto, TaskDto } from "../api/types";
 import { REMINDER_CATEGORY, registerNotificationCategory } from "./notificationActions";
+import {
+  allocateFairly,
+  intervalOccurrences,
+  leadIn,
+  MAX_PENDING,
+  reminderOccurrences,
+  type Scheduled,
+} from "./schedulingLogic";
 
 /**
  * Reminder delivery lives here, on the device — the backend stores reminders so they sync
@@ -16,20 +24,6 @@ import { REMINDER_CATEGORY, registerNotificationCategory } from "./notificationA
  * The one real constraint: iOS allows an app only 64 pending local notifications. Every
  * scheduling decision below is shaped by that budget — see scheduleAll.
  */
-
-/** iOS hard limit is 64; stay under it so we never silently lose the tail of the queue. */
-const MAX_PENDING = 50;
-
-/** How far ahead repeating interval reminders are materialised. */
-const INTERVAL_HORIZON_HOURS = 24;
-
-/**
- * How many days of a repeating daily reminder are queued at once. Previously only the very
- * next one was, which meant a daily reminder stopped firing entirely if the app wasn't
- * opened between two firings — nothing re-arms it except a foreground (see useReminderSync).
- * A week of headroom means the app has to go unopened for seven days before that happens.
- */
-const DAILY_HORIZON_DAYS = 7;
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -62,140 +56,6 @@ export async function configureAndroidChannel(): Promise<void> {
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
   });
-}
-
-/**
- * Every upcoming firing time for a single reminder, soonest first.
- *
- * A dated reminder yields at most one; a daily one (no date) yields DAILY_HORIZON_DAYS of
- * them. Built by copying the first slot and stepping the *date* rather than adding 24h of
- * milliseconds, so a daily 9am reminder stays 9am across a DST change instead of drifting
- * to 8am or 10am.
- */
-function reminderOccurrences(
-  time: string | null,
-  date: string | null,
-  snoozedUntil?: string | null,
-  daysBefore: number = 0
-): Date[] {
-  // A reminder with a date but no time is deliberately silent: it exists to carry the task's
-  // day, not to interrupt anyone. Nothing to schedule, so it produces no firing times at all.
-  if (!time) return [];
-
-  const [hours, minutes] = time.split(":").map(Number);
-
-  /**
-   * A live snooze replaces the reminder's own schedule until it expires.
-   *
-   * Previously this function never saw `snoozedUntil` at all, so snoozing wrote a value the
-   * server stored and the device then completely ignored — the notification came back at
-   * its original time regardless, which is the one thing a snooze must not do.
-   */
-  if (snoozedUntil) {
-    const until = new Date(snoozedUntil);
-    if (until.getTime() > Date.now()) return [until];
-  }
-
-  if (date) {
-    const at = new Date(`${date}T${time}`);
-    // Offsets are subtracted here rather than stored as dates, so "a week before" follows the
-    // task automatically when its day moves — see V018. setDate handles month and year
-    // boundaries, and DST is unaffected because the clock time is re-applied by the string.
-    if (daysBefore > 0) at.setDate(at.getDate() - daysBefore);
-    // A one-off in the past never fires again. That covers a lead-time notification whose
-    // offset lands before today — a task created two days out with a week-before warning
-    // simply doesn't get that one, rather than firing it late.
-    return at.getTime() > Date.now() ? [at] : [];
-  }
-
-  // No date means "every day at this time" — start at today's slot, or tomorrow's if it passed.
-  const first = new Date();
-  first.setHours(hours, minutes, 0, 0);
-  if (first.getTime() <= Date.now()) first.setDate(first.getDate() + 1);
-
-  const occurrences: Date[] = [];
-  for (let dayOffset = 0; dayOffset < DAILY_HORIZON_DAYS; dayOffset++) {
-    const at = new Date(first);
-    at.setDate(at.getDate() + dayOffset);
-    occurrences.push(at);
-  }
-  return occurrences;
-}
-
-/** Every firing time for an interval reminder within the horizon, soonest first. */
-function intervalOccurrences(interval: IntervalReminderDto): Date[] {
-  const [startHour, startMinute] = interval.startTime.split(":").map(Number);
-  const [endHour, endMinute] = interval.endTime.split(":").map(Number);
-  const stepMinutes = interval.intervalMinutes > 0 ? interval.intervalMinutes : 30;
-
-  const occurrences: Date[] = [];
-  const horizon = Date.now() + INTERVAL_HORIZON_HOURS * 60 * 60 * 1000;
-
-  // Walk today's window, then tomorrow's, until the horizon is reached.
-  for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
-    const cursor = new Date();
-    cursor.setDate(cursor.getDate() + dayOffset);
-    cursor.setHours(startHour, startMinute, 0, 0);
-
-    const windowEnd = new Date(cursor);
-    windowEnd.setHours(endHour, endMinute, 0, 0);
-    // An end time at or before the start means the window crosses midnight ("22:00 to
-    // 02:00"). Without this the loop below never runs and such a reminder silently
-    // produces nothing at all.
-    if (windowEnd <= cursor) windowEnd.setDate(windowEnd.getDate() + 1);
-
-    while (cursor <= windowEnd) {
-      const at = cursor.getTime();
-      if (at > Date.now() && at <= horizon) occurrences.push(new Date(cursor));
-      cursor.setMinutes(cursor.getMinutes() + stepMinutes);
-    }
-  }
-  return occurrences;
-}
-
-type Scheduled = { at: Date; title: string; body: string; taskId: string; reminderId?: string };
-
-/**
- * The notification body, which has to say *when* the task is actually due when the
- * notification is firing ahead of time.
- *
- * Without this a week-before warning and the day-of nudge are word-for-word identical, so the
- * early one reads as "this is due now" and the user either acts a week early or learns to
- * ignore both.
- */
-function leadIn(daysBefore: number, name: string | undefined, focus: boolean): string {
-  const task = name ?? (focus ? "your task" : "Your task");
-  if (daysBefore <= 0) return focus ? `You planned to work on: ${task}` : task;
-  if (daysBefore === 1) return `${task} — due tomorrow`;
-  if (daysBefore === 7) return `${task} — due in a week`;
-  return `${task} — due in ${daysBefore} days`;
-}
-
-/**
- * Picks which occurrences fit inside MAX_PENDING, fairly, by taking one from every source
- * before taking a second from any of them.
- *
- * A plain "sort everything by time, truncate" is what a single busy source needs to starve
- * every other one: an interval reminder nudging every 15 minutes from 9am to 9pm generates
- * ~49 occurrences, all sooner than tomorrow morning's daily reminders, so it would consume
- * the entire budget and silently drop every other task's reminder. Round-robin guarantees
- * each source's *next* firing is scheduled before any source's second one — so no task
- * ever goes completely silent because another task is noisy.
- *
- * `groups` must each already be sorted soonest-first.
- */
-function allocateFairly(groups: Scheduled[][], budget: number): Scheduled[] {
-  const picked: Scheduled[] = [];
-  const deepest = groups.reduce((max, group) => Math.max(max, group.length), 0);
-
-  for (let round = 0; round < deepest && picked.length < budget; round++) {
-    for (const group of groups) {
-      if (round >= group.length) continue;
-      picked.push(group[round]);
-      if (picked.length >= budget) break;
-    }
-  }
-  return picked;
 }
 
 /**

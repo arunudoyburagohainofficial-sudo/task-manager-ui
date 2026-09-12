@@ -643,6 +643,7 @@ export function TaskDetailScreen() {
         onClose={() => setScheduleSheetOpen(false)}
         onSubmit={handleSaveSchedule}
         submitting={updateTaskMutation.isPending}
+        taskName={task.name}
         initial={{
           scheduledFor: task.scheduledFor,
           // The stored rule, not just its frequency — the sheet reads intervals, weekday sets

@@ -177,6 +177,11 @@ export function SettingsScreen() {
             }
           />
           <SettingsRow
+            label="Upcoming notifications"
+            onPress={() => navigation.navigate("ScheduledNotifications")}
+            right={<Body style={{ color: color.textFaint }}>›</Body>}
+          />
+          <SettingsRow
             label="Default focus duration"
             onPress={cycleFocusDuration}
             right={<Body style={{ color: color.text }}>{formatMinutes(draftFocusMinutes)} ▾</Body>}

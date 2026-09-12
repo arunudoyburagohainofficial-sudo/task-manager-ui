@@ -327,6 +327,7 @@ export function ConfirmOrganizeScreen() {
       <ScheduleSheet
         visible={scheduleSheetFor !== null}
         onClose={() => setScheduleSheetFor(null)}
+        taskName={editingDraft?.name}
         onSubmit={(selection: ScheduleSelection) => {
           if (scheduleSheetFor) {
             updateDraft(scheduleSheetFor, {

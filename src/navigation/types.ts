@@ -5,6 +5,7 @@ export type RootStackParamList = {
   PhoneSignIn: undefined;
   Main: NavigatorScreenParams<MainTabParamList>;
   TaskDetail: { taskId: string };
+  ScheduledNotifications: undefined;
   FocusSession: {
     sessionId: string;
     taskId: string;

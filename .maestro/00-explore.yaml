@@ -1,0 +1,5 @@
+appId: com.mactora.taskManager
+---
+- launchApp:
+    clearState: false
+- takeScreenshot: ex-a-launch

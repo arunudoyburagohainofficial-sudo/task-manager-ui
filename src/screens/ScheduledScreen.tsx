@@ -5,6 +5,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useMarkTaskDoneMutation, useRemindersQuery } from "../api/queries/useReminders";
 import { useReopenTaskMutation, useTasksQuery, useUpdateTaskMutation } from "../api/queries/useTasks";
 import type { ReminderDto, TaskDto } from "../api/types";
+import { countUnfireable } from "../notifications/schedulingLogic";
 import {
   Card,
   ConfirmModal,
@@ -87,11 +88,37 @@ export function ScheduledScreen() {
     }
   }
 
-  const remindersByTaskId = useMemo(
-    () =>
-      new Map((remindersQuery.data ?? []).filter((r: ReminderDto) => r.isActive).map((r: ReminderDto) => [r.taskId, r])),
-    [remindersQuery.data]
-  );
+  /**
+   * Every active notification on a task, keyed by task — a list, not one row.
+   *
+   * This was `new Map(rows.map(r => [r.taskId, r]))`, which silently keeps only the *last* row
+   * for a task while V018 allows three. Harmless for the two display call sites, which only
+   * ever wanted one, but wrong for anything that has to reason about the whole set: the
+   * move-all count below under-reported precisely the case it exists to catch, because
+   * notifications arrive ordered by lead time descending, so the day-of one lands last, wins
+   * the map, and is the one most likely to still be healthy. Verified live: a task with
+   * week-before + day-before + day-of reported one stranded reminder where three were.
+   */
+  const remindersByTaskId = useMemo(() => {
+    const byTask = new Map<string, ReminderDto[]>();
+    for (const reminder of (remindersQuery.data ?? []).filter((r: ReminderDto) => r.isActive)) {
+      const existing = byTask.get(reminder.taskId);
+      if (existing) existing.push(reminder);
+      else byTask.set(reminder.taskId, [reminder]);
+    }
+    return byTask;
+  }, [remindersQuery.data]);
+
+  /**
+   * The single notification worth showing on a row: the one landing on the task's own day, or
+   * failing that the closest to it. A row has space for one time, and the day-of is the one a
+   * user reads as "when this pings me" — the lead times are warnings about it.
+   */
+  function displayReminder(taskId: string): ReminderDto | undefined {
+    const list = remindersByTaskId.get(taskId);
+    if (!list?.length) return undefined;
+    return list.reduce((best, r) => ((r.daysBefore ?? 0) < (best.daysBefore ?? 0) ? r : best));
+  }
 
   // One "today" for the whole pass, and re-derived when the day actually rolls over — so the
   // panels move a task from Upcoming to Overdue on their own rather than at the next refetch.
@@ -147,8 +174,14 @@ export function ScheduledScreen() {
   /**
    * Re-dates every overdue task to today, in one pass.
    *
-   * Just the task's own scheduledFor now — one field, one write. Any notification time the
-   * task has is untouched and carries over automatically, since the two are independent.
+   * Just the task's own scheduledFor — one field, one write. Notifications are offsets from the
+   * task's day, so they follow it automatically and nothing here has to touch them.
+   *
+   * That automatic move is also the catch, and it's why this counts what it strands. Pulling a
+   * task *forward* shortens its runway, and a lead time longer than what's left can no longer
+   * fire — "a week before" on something now due today is a week ago. The schedule sheet warns
+   * about that as you edit, but this changes dates with no sheet open, so without the count
+   * below a bulk move would silence reminders and say only "Moved 5 tasks to today".
    */
   async function handleMoveAllToToday() {
     setMoveAllConfirm(false);
@@ -160,6 +193,7 @@ export function ScheduledScreen() {
     // Still counted as we go rather than taken from overdue.length up front, so a failure
     // part-way through reports what actually moved instead of what was attempted.
     let moved = 0;
+    let silenced = 0;
     try {
       for (const task of overdue) {
         await updateTaskMutation.mutateAsync({
@@ -167,9 +201,21 @@ export function ScheduledScreen() {
           request: { scheduledFor: targetDay },
         });
         moved += 1;
+        // The whole set, judged against the day it just moved to rather than the day it came
+        // from. Counted by the shared helper so this can't drift from how the sheet judges the
+        // same thing.
+        silenced += countUnfireable(remindersByTaskId.get(task.id) ?? [], targetDay);
       }
       await syncReminders();
-      showToast({ message: `Moved ${moved} task${moved === 1 ? "" : "s"} to today` });
+      showToast({
+        message:
+          `Moved ${moved} task${moved === 1 ? "" : "s"} to today` +
+          (silenced > 0
+            ? ` · ${silenced} reminder${silenced === 1 ? "" : "s"} can't fire that soon — open ${
+                silenced === 1 ? "it" : "them"
+              } to pick a new time`
+            : ""),
+      });
     } catch {
       showToast({ tone: "error", message: "Couldn't move everything — check your connection." });
     } finally {
@@ -193,7 +239,7 @@ export function ScheduledScreen() {
    * rather than printing an empty slot.
    */
   function trailingFor(task: TaskDto): string {
-    const reminder = remindersByTaskId.get(task.id);
+    const reminder = displayReminder(task.id);
     const time = reminder ? formatClockTime(reminder.reminderTime) : null;
     if (time) return time;
     return task.taskType === "focus" ? "Focus" : "Reminder";
@@ -232,7 +278,7 @@ export function ScheduledScreen() {
             }
           >
             {visibleOverdue.map((task) => {
-              const reminder = remindersByTaskId.get(task.id);
+              const reminder = displayReminder(task.id);
               // Falls back to the task type when there's no clock time to show — a silent
               // schedule (date, no notification) has none, and the old form interpolated that
               // null into the subtitle as the literal word "null". Same rule as trailingFor

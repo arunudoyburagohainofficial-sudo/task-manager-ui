@@ -31,16 +31,53 @@ const styles = StyleSheet.create({
   content: {
     gap: space.base,
   },
+  /** With a pinned footer the sheet drops its own side padding so the footer's rule spans
+      edge to edge; the scroll area takes that padding back on itself. */
+  contentWithFooter: {
+    paddingHorizontal: space.gutter,
+    paddingBottom: 14,
+  },
+  sheetWithFooter: {
+    paddingHorizontal: 0,
+    paddingBottom: 0,
+  },
+  footer: {
+    borderTopWidth: 1,
+    borderTopColor: color.border,
+    paddingTop: 11,
+    paddingHorizontal: space.gutter,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.base,
+  },
 });
 
 interface BottomSheetProps {
   visible: boolean;
   onClose: () => void;
   children: React.ReactNode;
+  /**
+   * The sheet's own surface. Defaults to `card` (white), which is right when the content is
+   * plain rows. A sheet built out of white cards needs the cream ground behind them instead,
+   * or the cards are invisible against the sheet — see ScheduleSheet.
+   */
+  background?: string;
+  /**
+   * Pinned below the scroll area rather than scrolling with it, for sheets whose primary
+   * action must stay reachable however long the content grows. Left out entirely by every
+   * sheet whose actions are short enough to scroll to.
+   */
+  footer?: React.ReactNode;
 }
 
 /** Slides up from the bottom over a dimmed backdrop (design §7: 200–300ms ease-out). */
-export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
+export function BottomSheet({
+  visible,
+  onClose,
+  children,
+  background = color.card,
+  footer,
+}: BottomSheetProps) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -59,15 +96,26 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
             it explicitly, the card's fixed padding stops short of the home-indicator zone
             on devices that have one, leaving a sliver where the real (undimmed) screen
             behind shows through instead of the sheet's own background. */}
-        <View style={[styles.sheet, { paddingBottom: 22 + insets.bottom }]}>
+        <View
+          style={[
+            styles.sheet,
+            { backgroundColor: background },
+            // A pinned footer carries the bottom inset itself, so the scroll area can run all
+            // the way down to it instead of stopping short above a gap.
+            footer ? styles.sheetWithFooter : { paddingBottom: 22 + insets.bottom },
+          ]}
+        >
           <View style={styles.handle} />
           <ScrollView
-            contentContainerStyle={styles.content}
+            contentContainerStyle={[styles.content, footer ? styles.contentWithFooter : null]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
             {children}
           </ScrollView>
+          {footer ? (
+            <View style={[styles.footer, { paddingBottom: 14 + insets.bottom }]}>{footer}</View>
+          ) : null}
         </View>
       </KeyboardAvoidingView>
     </Modal>

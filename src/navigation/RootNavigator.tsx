@@ -7,6 +7,7 @@ import { AuthScreen } from "../screens/AuthScreen";
 import { PhoneSignInScreen } from "../screens/PhoneSignInScreen";
 import { CaptureScreen } from "../screens/CaptureScreen";
 import { TaskDetailScreen } from "../screens/TaskDetailScreen";
+import { ScheduledNotificationsScreen } from "../screens/ScheduledNotificationsScreen";
 import { FocusSessionScreen } from "../screens/FocusSessionScreen";
 import { CompletionScreen } from "../screens/CompletionScreen";
 import { ConfirmOrganizeScreen } from "../screens/ConfirmOrganizeScreen";
@@ -44,6 +45,7 @@ export function RootNavigator() {
         <>
           <Stack.Screen name="Main" component={MainTabs} />
           <Stack.Screen name="TaskDetail" component={TaskDetailScreen} options={{ presentation: "card" }} />
+          <Stack.Screen name="ScheduledNotifications" component={ScheduledNotificationsScreen} options={{ presentation: "card" }} />
           <Stack.Screen name="FocusSession" component={FocusSessionScreen} options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
           <Stack.Screen name="Completion" component={CompletionScreen} options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
           <Stack.Screen name="Capture" component={CaptureScreen} options={{ presentation: "modal" }} />

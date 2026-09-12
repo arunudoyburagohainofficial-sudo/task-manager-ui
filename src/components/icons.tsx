@@ -4,7 +4,7 @@
  * Never line-only. Never add faces (Ferne is the only character).
  */
 import React from "react";
-import Svg, { Circle, Path } from "react-native-svg";
+import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { color, size } from "../theme";
 
 type IconProps = { size?: number };
@@ -218,5 +218,28 @@ export const SettingsTabIcon = ({ active }: { active: boolean }) => (
       strokeLinecap="round"
       strokeLinejoin="round"
     />
+  </Svg>
+);
+
+/**
+ * Calendar outline — the "waits under Scheduled until…" hint in ScheduleSheet.
+ *
+ * A glyph rather than a reuse of ScheduledTabIcon: that one is bound to the tab bar's
+ * active/inactive pair and its stroke weight is tuned for 20px in a tab, not for sitting
+ * inline beside 12px hint text.
+ */
+export const CalendarGlyph = ({ size: s = 14, color: c = color.textFaint }: IconProps & { color?: string }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Rect x={3.6} y={5.2} width={16.8} height={15.2} rx={2.4} stroke={c} strokeWidth={2} />
+    <Path d="M3.6 9.6h16.8M8 3.6v3M16 3.6v3" stroke={c} strokeWidth={2} strokeLinecap="round" />
+  </Svg>
+);
+
+/** Filled warning disc — the inline "this can never fire" note inside the notify card. */
+export const AlertGlyph = ({ size: s = 14, color: c = color.danger }: IconProps & { color?: string }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Circle cx={12} cy={12} r={9} fill={c} />
+    <Path d="M12 7.6v5" stroke={color.selectedTint} strokeWidth={2.2} strokeLinecap="round" />
+    <Circle cx={12} cy={16.3} r={1.3} fill={color.selectedTint} />
   </Svg>
 );

@@ -1,0 +1,321 @@
+import React, { useCallback, useEffect, useState } from "react";
+import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { ApiError } from "../api/client";
+import {
+  useDeleteIntervalReminderMutation,
+  useIntervalRemindersQuery,
+  useRemindersQuery,
+} from "../api/queries/useReminders";
+import { useTasksQuery, useUpdateTaskMutation } from "../api/queries/useTasks";
+import {
+  BackLink,
+  Body,
+  Card,
+  H1,
+  Meta,
+  ProgressBar,
+  ScreenContainer,
+} from "../components";
+import { syncReminders } from "../notifications/useReminderSync";
+import {
+  NOTIFICATION_BUDGET,
+  readScheduledNotifications,
+  type ScheduledNotification,
+} from "../notifications/scheduledInspector";
+import { color, space, text as t, type as T } from "../theme";
+import { formatScheduleDate, toDateKey } from "../utils/schedule";
+import type { RootStackParamList } from "../navigation/types";
+
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+/**
+ * Whether this platform can queue a local notification at all.
+ *
+ * On web expo-notifications resolves its scheduler to a stub with neither
+ * scheduleNotificationAsync nor getAllScheduledNotificationsAsync, so every scheduling call
+ * throws and the queue is permanently empty — regardless of what the user has set up. Worth
+ * naming explicitly, because "no notifications queued" and "this device will never queue one"
+ * look identical from here and mean completely different things to the person reading it.
+ */
+const SCHEDULING_UNSUPPORTED = Platform.OS === "web";
+
+/**
+ * Everything the phone is actually going to buzz about, and a way to stop any of it.
+ *
+ * The app schedules local notifications directly with the OS, which means it can queue things
+ * the user can neither see nor call off — the notification centre shows them only once they've
+ * fired, and by then it's too late. This is the missing view: the real pending queue, read from
+ * the device rather than inferred from the server.
+ *
+ * Cancelling here deliberately changes the *configuration*, not just the queued firing. A
+ * purely local cancel would be undone within seconds: every foreground runs syncReminders,
+ * which clears the queue and rebuilds it from server state, so the notification would silently
+ * come back. Turning it off for real is the only honest meaning of a cancel button here.
+ */
+export function ScheduledNotificationsScreen() {
+  const navigation = useNavigation<Nav>();
+  const [scheduled, setScheduled] = useState<ScheduledNotification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const tasksQuery = useTasksQuery("pending");
+  const remindersQuery = useRemindersQuery();
+  const intervalsQuery = useIntervalRemindersQuery();
+  const updateTaskMutation = useUpdateTaskMutation();
+  const deleteNudgeMutation = useDeleteIntervalReminderMutation();
+
+  const load = useCallback(async () => {
+    setScheduled(await readScheduledNotifications());
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await syncReminders();
+    await load();
+    setRefreshing(false);
+  }
+
+  const taskName = new Map((tasksQuery.data ?? []).map((task) => [task.id, task.name]));
+
+  /**
+   * Turns off the configured notification behind a queued firing.
+   *
+   * A daily reminder appears in the queue several times (one per day materialised ahead), and
+   * all of those come from a single configured notification — so cancelling any one of them
+   * turns off that notification entirely rather than skipping one morning. Said plainly in the
+   * confirmation, because "cancel" could otherwise be read as "just this one".
+   */
+  async function cancelReminder(item: ScheduledNotification) {
+    // Every other live notification on the task — the set is sent whole, so turning one off is
+    // "here is what's left" rather than a delete of one row.
+    const remaining = (remindersQuery.data ?? [])
+      .filter((r) => r.taskId === item.taskId && r.isActive && r.id !== item.reminderId && r.reminderTime)
+      .map((r) => ({ time: r.reminderTime as string, daysBefore: r.daysBefore ?? 0 }));
+
+    try {
+      await updateTaskMutation.mutateAsync({
+        taskId: item.taskId as string,
+        request: remaining.length > 0 ? { notifications: remaining } : { clearNotify: true },
+      });
+      await syncReminders();
+      await load();
+    } catch (e) {
+      Alert.alert(
+        "Couldn't turn it off",
+        e instanceof ApiError ? e.message : "Check your connection and try again."
+      );
+    }
+  }
+
+  async function cancelNudge(item: ScheduledNotification) {
+    const window = (intervalsQuery.data ?? []).find((r) => r.taskId === item.taskId && r.isActive);
+    if (!window) return;
+    try {
+      await deleteNudgeMutation.mutateAsync(window.id);
+      await syncReminders();
+      await load();
+    } catch (e) {
+      Alert.alert(
+        "Couldn't stop the nudges",
+        e instanceof ApiError ? e.message : "Check your connection and try again."
+      );
+    }
+  }
+
+  function confirmCancel(item: ScheduledNotification) {
+    const name = (item.taskId && taskName.get(item.taskId)) || "this task";
+    const isNudge = item.kind === "nudge";
+    // How many other queued firings share this configuration — the number that will also
+    // disappear, which is the thing a "cancel" button could easily mislead about.
+    const siblings = scheduled.filter(
+      (other) =>
+        other.id !== item.id &&
+        (isNudge ? other.taskId === item.taskId && other.kind === "nudge" : other.reminderId === item.reminderId)
+    ).length;
+
+    Alert.alert(
+      isNudge ? "Stop these nudges?" : "Turn off this notification?",
+      isNudge
+        ? `“${name}” will stop nudging you. The task itself stays exactly as it is.`
+        : siblings > 0
+          ? `This turns the notification off for “${name}” — including the ${siblings} other ` +
+            `time${siblings === 1 ? "" : "s"} it's already queued to fire. The task itself stays as it is.`
+          : `“${name}” won't notify you. The task itself stays exactly as it is.`,
+      [
+        { text: "Keep it", style: "cancel" },
+        {
+          text: isNudge ? "Stop nudges" : "Turn off",
+          style: "destructive",
+          onPress: () => (isNudge ? cancelNudge(item) : cancelReminder(item)),
+        },
+      ]
+    );
+  }
+
+  // Grouped by the day they fire, so the list reads as a forecast rather than a flat dump.
+  const byDay = scheduled.reduce<Record<string, ScheduledNotification[]>>((acc, item) => {
+    const key = toDateKey(item.at);
+    (acc[key] ??= []).push(item);
+    return acc;
+  }, {});
+  const days = Object.keys(byDay).sort();
+
+  const used = scheduled.length;
+  const busy = updateTaskMutation.isPending || deleteNudgeMutation.isPending;
+
+  return (
+    <ScreenContainer>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+      >
+        <BackLink onPress={() => navigation.goBack()} />
+        <H1>Upcoming notifications</H1>
+        <Meta style={{ color: color.textFaint }}>
+          Exactly what your phone is queued to buzz about — read from the device itself, not from
+          what's set up. Pull down to refresh.
+        </Meta>
+
+        {/*
+          The budget is shown because it genuinely changes what happens: the queue is capped,
+          and once it's full the fair-share allocator drops the tail. Someone whose reminder
+          never arrived deserves to be able to see why rather than assume the app is broken.
+
+          Hidden where nothing can be scheduled at all — "0 of 50 slots used" invites the
+          reader to conclude they have room to spare, which is the opposite of the truth.
+        */}
+        {SCHEDULING_UNSUPPORTED ? null : (
+          <Card style={styles.budgetCard}>
+            <View style={styles.budgetRow}>
+              <Body style={{ fontWeight: "700" }}>
+                {used} of {NOTIFICATION_BUDGET} slots used
+              </Body>
+              <Meta style={{ color: used >= NOTIFICATION_BUDGET ? color.danger : color.textFaint }}>
+                {used >= NOTIFICATION_BUDGET ? "Full" : `${NOTIFICATION_BUDGET - used} free`}
+              </Meta>
+            </View>
+            <ProgressBar
+              pct={(used / NOTIFICATION_BUDGET) * 100}
+              fill={used >= NOTIFICATION_BUDGET ? color.danger : color.progress}
+            />
+            {used >= NOTIFICATION_BUDGET ? (
+              <Meta style={{ color: color.danger }}>
+                The queue is full, so some notifications you've set up aren't scheduled. Turning a
+                few off here frees up room for the rest.
+              </Meta>
+            ) : null}
+          </Card>
+        )}
+
+        {loading ? (
+          <Meta style={{ color: color.textFaint }}>Reading the queue…</Meta>
+        ) : days.length === 0 ? (
+          <Card style={styles.emptyCard}>
+            {/*
+              On web the queue is empty for a reason that has nothing to do with the user's
+              setup: expo-notifications has no scheduler in a browser, so nothing is ever
+              queued no matter how many notifications are configured. Saying "you probably
+              haven't set one up" there sends people off to re-check settings that are
+              already correct.
+            */}
+            <Body style={{ fontWeight: "700" }}>
+              {SCHEDULING_UNSUPPORTED ? "Not available in a browser" : "Nothing queued"}
+            </Body>
+            <Meta style={styles.emptyText}>
+              {SCHEDULING_UNSUPPORTED
+                ? "Notifications are scheduled by the phone itself, and a browser can't do it. " +
+                  "Your notifications are saved and will work in the app on your phone — there's " +
+                  "just no device queue to show here."
+                : "Nothing is scheduled to buzz. That's expected if none of your tasks have a " +
+                  "notification, or if notification permission was declined."}
+            </Meta>
+          </Card>
+        ) : (
+          days.map((dayKey) => (
+            <View key={dayKey} style={styles.dayGroup}>
+              <Text style={t(T.eyebrow, { fontSize: 11, letterSpacing: 1.32, color: color.textMuted })}>
+                {formatScheduleDate(dayKey).toUpperCase()}
+              </Text>
+              {byDay[dayKey].map((item) => (
+                <Card key={item.id} style={styles.row}>
+                  <View style={styles.rowText}>
+                    <Body style={{ fontWeight: "700" }} numberOfLines={1}>
+                      {(item.taskId && taskName.get(item.taskId)) || item.title || "Notification"}
+                    </Body>
+                    <Meta style={{ color: color.textFaint, marginTop: 2 }} numberOfLines={2}>
+                      {item.at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                      {item.kind === "nudge" ? " · repeated nudge" : ""}
+                      {item.body ? ` · ${item.body}` : ""}
+                    </Meta>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Turn off this notification"
+                    hitSlop={8}
+                    disabled={busy}
+                    onPress={() => confirmCancel(item)}
+                  >
+                    <Meta style={{ color: busy ? color.textFaint : color.danger, fontWeight: "800" }}>
+                      Turn off
+                    </Meta>
+                  </Pressable>
+                </Card>
+              ))}
+            </View>
+          ))
+        )}
+
+        {/*
+          Stated rather than left to be discovered: a daily reminder legitimately appears here
+          several times, and without saying so the list looks duplicated or broken.
+        */}
+        {days.length > 0 ? (
+          <Meta style={{ color: color.textFaint }}>
+            A repeating notification appears once for each day it's queued ahead. Turning one off
+            turns off all of them for that task.
+          </Meta>
+        ) : null}
+      </ScrollView>
+    </ScreenContainer>
+  );
+}
+
+const styles = StyleSheet.create({
+  content: {
+    padding: space.gutter,
+    gap: space.md,
+    paddingBottom: space.lg,
+  },
+  budgetCard: {
+    gap: space.sm,
+  },
+  budgetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  dayGroup: {
+    gap: space.sm,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.md,
+  },
+  rowText: {
+    flex: 1,
+  },
+  emptyCard: {
+    gap: space.sm,
+  },
+  emptyText: {
+    color: color.textFaint,
+  },
+});
