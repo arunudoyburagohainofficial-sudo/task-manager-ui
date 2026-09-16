@@ -20,6 +20,7 @@ export * from "./primitives";
 
 // Composed screen blocks
 export * from "./blocks";
+export * from "./home";
 export * from "./schedulePanels";
 
 // Icon marks

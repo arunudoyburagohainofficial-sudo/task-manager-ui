@@ -7,7 +7,7 @@ import { ChevronDownIcon, ChevronRightIcon, RepeatIcon } from "./icons";
 /**
  * The Scheduled screen's building blocks.
  *
- * Its rows are deliberately not the `TaskRow` used on Home. Home's row is a workspace — a
+ * Its rows are deliberately not the `HomeTaskRow` used on Home. Home's row is a workspace — a
  * type tile, a goal tag, an XP figure and a Focus/Done button, because that's where work
  * actually gets done. This screen is a plan: three panels you scan to understand your next
  * few days, where a row's job is to say what and when in one line. Reusing Home's row here

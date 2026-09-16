@@ -14,6 +14,12 @@ export type RootStackParamList = {
     /** Minutes per work block, chosen on Task Detail — a pomodoro cycle's length in that mode, the whole session's length in Regular mode. */
     sessionMinutes: number;
     dndEnabled: boolean;
+    /**
+     * When the session actually began, for one already running (resumed from Home's "Right now",
+     * or after a 409). The countdown is anchored to it so reopening the screen continues the
+     * session instead of starting its clock again. Absent when the session starts here.
+     */
+    startedAt?: string;
   };
   Completion: { taskId: string; taskName: string; durationSeconds: number; pointsEarned: number };
   Capture: undefined;

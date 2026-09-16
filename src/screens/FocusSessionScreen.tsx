@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, type AppStateStatus, Modal, StyleSheet, Text, View } from "react-native";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useQueryClient } from "@tanstack/react-query";
 import { focusSessionsApi } from "../api";
+import { queryKeys } from "../api/queryKeys";
 import { useCompleteTaskMutation, useTaskQuery } from "../api/queries/useTasks";
 import { useToast } from "../state/ToastContext";
 import type { FocusSessionDto } from "../api/types";
@@ -43,6 +45,7 @@ export function FocusSessionScreen() {
   // here) already has this exact task cached under this exact key.
   const taskQuery = useTaskQuery(taskId);
   const completeTaskMutation = useCompleteTaskMutation();
+  const queryClient = useQueryClient();
   const task = taskQuery.data ?? null;
   const [phase, setPhase] = useState<Phase>("working");
   const [currentCycle, setCurrentCycle] = useState(1);
@@ -57,10 +60,20 @@ export function FocusSessionScreen() {
    * minutes. Anchoring to a deadline makes elapsed time real time, however long the app
    * spends in the background.
    */
-  const [deadline, setDeadline] = useState(() => Date.now() + WORK_SECONDS * 1000);
+  /**
+   * A resumed session (params.startedAt) keeps counting from when it really began — reopening
+   * this screen must not hand the user a fresh full-length timer for one that's been running
+   * twenty minutes. The server credits wall-clock time from the same instant.
+   */
+  const resumedFrom = params.startedAt ? Date.parse(params.startedAt) : null;
+  const [deadline, setDeadline] = useState(() => (resumedFrom ?? Date.now()) + WORK_SECONDS * 1000);
   /** Instant the user paused, or null while running. Resuming pushes `deadline` out by the gap. */
   const [pausedAt, setPausedAt] = useState<number | null>(null);
-  const [secondsLeft, setSecondsLeft] = useState(WORK_SECONDS);
+  // Seeded from the same deadline rather than from the full length, so a resumed session doesn't
+  // show its whole length for the one frame before the first tick corrects it.
+  const [secondsLeft, setSecondsLeft] = useState(() =>
+    resumedFrom ? Math.max(0, Math.ceil((resumedFrom + WORK_SECONDS * 1000 - Date.now()) / 1000)) : WORK_SECONDS
+  );
   const paused = pausedAt !== null;
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
   const [completedSession, setCompletedSession] = useState<FocusSessionDto | null>(null);
@@ -83,6 +96,10 @@ export function FocusSessionScreen() {
         });
         setCompletedSession(completed);
         setPhase("completePrompt");
+        // Home reads both: the session is no longer running, and the minutes it credited are
+        // part of today's totals.
+        queryClient.invalidateQueries({ queryKey: queryKeys.currentFocusSession() });
+        queryClient.invalidateQueries({ queryKey: ["todayProgress"] });
       } catch {
         /*
          * Previously a bare try/finally: if saving the session failed, the error escaped, the
@@ -100,7 +117,7 @@ export function FocusSessionScreen() {
         setFinishing(false);
       }
     },
-    [sessionId, focusMode, totalCycles, showToast]
+    [sessionId, focusMode, totalCycles, showToast, queryClient]
   );
 
   /**
@@ -163,7 +180,7 @@ export function FocusSessionScreen() {
     // The session itself is already saved and its points credited by this point — only the
     // task's own completion can still fail here, and the session is not lost if it does.
     try {
-      await completeTaskMutation.mutateAsync({ taskId, points: completedSession.pointsEarned ?? undefined });
+      await completeTaskMutation.mutateAsync(taskId);
     } catch {
       showToast({
         tone: "error",

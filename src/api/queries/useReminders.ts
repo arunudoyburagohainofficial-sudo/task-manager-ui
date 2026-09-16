@@ -4,6 +4,7 @@ import type { CreateIntervalReminderRequest, IntervalReminderDto, ReminderDto, T
 import { queryKeys } from "../queryKeys";
 import { useSession } from "../../state/SessionContext";
 import { syncReminders } from "../../notifications/useReminderSync";
+import { REMINDER_POINTS } from "../../utils/points";
 import { ALL_TASK_STATUSES, LIST_KEYS_FOR, removeTaskFromLists } from "./useTasks";
 
 /**
@@ -101,7 +102,14 @@ export function useMarkTaskDoneMutation() {
       const previousReminders = queryClient.getQueryData<ReminderDto[]>(queryKeys.reminders());
 
       if (previousTask) {
-        const completedTask: TaskDto = { ...previousTask, status: "completed", completedAt: new Date().toISOString() };
+        const completedTask: TaskDto = {
+          ...previousTask,
+          status: "completed",
+          completedAt: new Date().toISOString(),
+          // Known up front for a reminder, so the finished row shows its points straight away. A
+          // focus task's total depends on its sessions, so that one waits for the refetch below.
+          pointsEarned: previousTask.taskType === "focus" ? null : REMINDER_POINTS,
+        };
         queryClient.setQueryData(queryKeys.task(taskId), completedTask);
         removeTaskFromLists(queryClient, taskId);
         for (const key of LIST_KEYS_FOR("completed")) {
@@ -124,6 +132,12 @@ export function useMarkTaskDoneMutation() {
     onSuccess: (_data, taskId, context) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.streak() });
       queryClient.invalidateQueries({ queryKey: ["weeklyProgress"] });
+      queryClient.invalidateQueries({ queryKey: ["todayProgress"] });
+      // This endpoint answers {success, message}, not the task, so the points it stored for a
+      // focus task can only be learned by asking again.
+      if (context?.previousTask?.taskType === "focus") {
+        queryClient.invalidateQueries({ queryKey: queryKeys.tasks("completed") });
+      }
       // Same "changed, but the response can't say to what" case — and only worth asking
       // about when the completed task was actually attached to a goal.
       if (context?.previousTask?.goalId) {

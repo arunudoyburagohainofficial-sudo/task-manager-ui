@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { streaksApi, weeklyProgressApi } from "..";
 import { queryKeys } from "../queryKeys";
 import { useSession } from "../../state/SessionContext";
+import { useTodayKey } from "../../utils/useTodayKey";
 
 export function useStreakQuery() {
   const { user } = useSession();
@@ -35,6 +36,20 @@ export function useAllTimeProgressQuery() {
   return useQuery({
     queryKey: queryKeys.weeklyProgressAllTime(),
     queryFn: () => weeklyProgressApi.getAllTimeStats(),
+    enabled: !!user,
+  });
+}
+
+/**
+ * Home's "points today" and "min focused". Both are computed server-side — completing, undoing
+ * and finishing a session invalidate this rather than guessing at the new totals.
+ */
+export function useTodayProgressQuery() {
+  const { user } = useSession();
+  const today = useTodayKey();
+  return useQuery({
+    queryKey: queryKeys.todayProgress(today),
+    queryFn: () => weeklyProgressApi.getTodayProgress(),
     enabled: !!user,
   });
 }

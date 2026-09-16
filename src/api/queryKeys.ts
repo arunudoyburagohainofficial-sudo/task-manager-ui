@@ -15,4 +15,10 @@ export const queryKeys = {
   weeklyProgressCurrent: () => ["weeklyProgress", "current"] as const,
   weeklyProgressHistory: (weeks: number) => ["weeklyProgress", "history", weeks] as const,
   weeklyProgressAllTime: () => ["weeklyProgress", "allTime"] as const,
+  /**
+   * Keyed by the day, so an app left open past midnight asks again rather than showing
+   * yesterday's totals as today's. Invalidate with the bare ["todayProgress"] prefix.
+   */
+  todayProgress: (day: string) => ["todayProgress", day] as const,
+  currentFocusSession: () => ["focusSession", "current"] as const,
 };

@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import {
   useFonts,
+  PlusJakartaSans_400Regular,
   PlusJakartaSans_600SemiBold,
   PlusJakartaSans_700Bold,
   PlusJakartaSans_800ExtraBold,
@@ -53,8 +54,9 @@ function AppContent() {
 }
 
 export default function App() {
-  // 600/700/800 only — the design uses no 400 weight anywhere in UI text.
+  // 600/700/800 carry the UI; 400 exists for one line, the date under Home's greeting.
   const [fontsLoaded] = useFonts({
+    PlusJakartaSans_400Regular,
     PlusJakartaSans_600SemiBold,
     PlusJakartaSans_700Bold,
     PlusJakartaSans_800ExtraBold,

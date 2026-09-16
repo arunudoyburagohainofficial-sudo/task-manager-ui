@@ -13,12 +13,13 @@ export function getTasks(status?: TaskStatus): Promise<TaskDto[]> {
   return apiRequest<TaskDto[]>("/tasks", { query: { status } });
 }
 
-/** Marks the task completed, sends a celebration push, and (for focus-type tasks) updates streak + weekly progress. */
-export function completeTask(taskId: string, points?: number): Promise<TaskDto> {
-  return apiRequest<TaskDto>(`/tasks/${taskId}/complete`, {
-    method: "POST",
-    query: { points },
-  });
+/**
+ * Marks the task completed, sends a celebration push, and (for focus-type tasks) updates streak +
+ * weekly progress. What it earned comes back as pointsEarned — decided by the server, so nothing
+ * is sent for it.
+ */
+export function completeTask(taskId: string): Promise<TaskDto> {
+  return apiRequest<TaskDto>(`/tasks/${taskId}/complete`, { method: "POST" });
 }
 
 /** Partial update — name, taskType, and/or category (see UpdateTaskRequest for clearing it). */

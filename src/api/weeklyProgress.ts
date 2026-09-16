@@ -1,5 +1,10 @@
 import { apiRequest } from "./client";
-import type { AllTimeProgressDto, WeeklyProgressDto } from "./types";
+import type { AllTimeProgressDto, TodayProgressDto, WeeklyProgressDto } from "./types";
+
+/** Today's points and focus minutes, over the user's own day (the X-Timezone header decides it). */
+export function getTodayProgress(): Promise<TodayProgressDto> {
+  return apiRequest<TodayProgressDto>("/progress/today");
+}
 
 /** Read-only — current ISO week (Monday start). */
 export function getCurrentWeekProgress(): Promise<WeeklyProgressDto> {

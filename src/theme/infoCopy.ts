@@ -24,11 +24,13 @@ export const infoCopy: Record<InfoTopic, { title: string; body: string }> = {
       "resets to 1.",
   },
   xp: {
-    title: "XP",
+    title: "Points",
     body:
-      "Earned only from focus sessions — 1 XP per full minute you spend focused on a task. " +
-      "A session under a minute earns 0 XP.\n\n" +
-      "Reminder-type tasks don't earn XP, since they're not tracked as focused work.",
+      "A focus session earns 1 point per full minute you spend focused, so a session under a " +
+      "minute earns none.\n\n" +
+      "Finishing a reminder earns a flat 5 points. Undoing it takes them back.\n\n" +
+      "Only focus time counts toward your streak, weekly progress and goals — points are the " +
+      "one thing every finished task earns.",
   },
   weeklyProgress: {
     title: "Weekly progress",

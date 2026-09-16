@@ -1,4 +1,5 @@
-import { goalsApi, remindersApi, streaksApi, tasksApi, weeklyProgressApi } from ".";
+import { focusSessionsApi, goalsApi, remindersApi, streaksApi, tasksApi, weeklyProgressApi } from ".";
+import { todayKey } from "../utils/schedule";
 import { queryClient } from "./queryClient";
 import { queryKeys } from "./queryKeys";
 
@@ -26,7 +27,7 @@ import { queryKeys } from "./queryKeys";
  *
  * Returns a promise resolving once every prefetch has settled — used by SessionContext to
  * know when it's safe to hide the splash screen (see isReady there). Promise.allSettled,
- * not Promise.all: one endpoint failing (offline, a 500) shouldn't hold up the other eight
+ * not Promise.all: one endpoint failing (offline, a 500) shouldn't hold up the rest
  * or throw here — the caller just wants to know "everything that COULD load, has."
  *
  * Deliberately does NOT include interval reminders — nothing in the UI renders them today
@@ -44,5 +45,9 @@ export function prefetchAppData(): Promise<void> {
     queryClient.prefetchQuery({ queryKey: queryKeys.weeklyProgressCurrent(), queryFn: () => weeklyProgressApi.getCurrentWeekProgress(), staleTime: 0 }),
     queryClient.prefetchQuery({ queryKey: queryKeys.weeklyProgressHistory(4), queryFn: () => weeklyProgressApi.getHistory(4), staleTime: 0 }),
     queryClient.prefetchQuery({ queryKey: queryKeys.weeklyProgressAllTime(), queryFn: () => weeklyProgressApi.getAllTimeStats(), staleTime: 0 }),
+    // Both drive Home's first frame: the stat strip, and whether "Right now" exists at all —
+    // without the second, a running session's card would pop in after Home was already shown.
+    queryClient.prefetchQuery({ queryKey: queryKeys.todayProgress(todayKey()), queryFn: () => weeklyProgressApi.getTodayProgress(), staleTime: 0 }),
+    queryClient.prefetchQuery({ queryKey: queryKeys.currentFocusSession(), queryFn: () => focusSessionsApi.getCurrentSession(), staleTime: 0 }),
   ]).then(() => undefined);
 }

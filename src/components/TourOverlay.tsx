@@ -21,7 +21,7 @@ const CARD_ESTIMATED_HEIGHT = 170;
 const COPY: Record<TourStep, { title: string; body: string; waiting?: string }> = {
   goal: {
     title: "Start with a goal",
-    body: "A goal is something you show up for repeatedly. Tap “+ Goal” to make your first one.",
+    body: "A goal is something you show up for repeatedly. Tap + beside Goals to make your first one.",
   },
   capture: {
     title: "Now capture a task",
@@ -30,7 +30,7 @@ const COPY: Record<TourStep, { title: string; body: string; waiting?: string }> 
   describe: {
     title: "Name your task",
     body: "Type what you want to work on, then tap “Confirm & Organize”.",
-    waiting: "Open capture from Home to name your task.",
+    waiting: "Tap Ferne at the bottom of the screen to name your task.",
   },
   attachGoal: {
     title: "Count it toward your goal",

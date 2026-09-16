@@ -99,12 +99,16 @@ export const color = {
  * so screens keep using the design's vocabulary while the platform gets what it needs.
  */
 const FAMILY_BY_WEIGHT: Record<string, string> = {
+  // Regular exists for one line: the date under Home's greeting, which the Docked Ferne screens
+  // draw at 400. Nothing else in the app uses it — everything else is 600 and up.
+  "400": "PlusJakartaSans_400Regular",
   "600": "PlusJakartaSans_600SemiBold",
   "700": "PlusJakartaSans_700Bold",
   "800": "PlusJakartaSans_800ExtraBold",
 };
 
 export const font = {
+  regular: FAMILY_BY_WEIGHT["400"],
   semiBold: FAMILY_BY_WEIGHT["600"],
   bold: FAMILY_BY_WEIGHT["700"],
   black: FAMILY_BY_WEIGHT["800"],
@@ -169,11 +173,13 @@ const TYPE_SCALE = 0.9;
  * automatically to anything passed through it; reach for this only when a value genuinely
  * can't go through `t()`.
  */
-export const FONT_SCALE_CORRECTION = (() => {
+/** The OS cap on its own, with no TYPE_SCALE trim — see textAtDesignSize. */
+const OS_FONT_CAP = (() => {
   const scale = PixelRatio.getFontScale();
-  const capped = scale > MAX_FONT_SCALE ? MAX_FONT_SCALE / scale : 1;
-  return capped * TYPE_SCALE;
+  return scale > MAX_FONT_SCALE ? MAX_FONT_SCALE / scale : 1;
 })();
+
+export const FONT_SCALE_CORRECTION = OS_FONT_CAP * TYPE_SCALE;
 
 /**
  * Resolves a design type token into a React Native text style, attaching the font family
@@ -196,6 +202,32 @@ export function text(token: TypeToken, extra?: TextStyle): TextStyle {
     // Explicit line heights have to move with the text, or capped type sits in gaps sized
     // for the uncapped version.
     if (typeof style.lineHeight === "number") style.lineHeight *= FONT_SCALE_CORRECTION;
+  }
+
+  return style;
+}
+
+/**
+ * Type at exactly the size the design draws it — everything above, minus TYPE_SCALE's trim.
+ *
+ * The trim exists because the earlier screens were drawn at a comfortable desktop scale and came
+ * out too big on a phone. Home and the tab bar are transcribed from the Docked Ferne screens,
+ * which are drawn at a phone's own size (a 375×812 frame) with the capture hero gone, so taking
+ * another 10% off would make them smaller than the design asks for rather than right.
+ *
+ * The OS text-size cap still applies: someone who has asked for larger text still gets it.
+ * Use this only for surfaces transcribed from those screens; everything else goes through text().
+ */
+export function textAtDesignSize(token: TypeToken, extra?: TextStyle): TextStyle {
+  const style: TextStyle = {
+    ...token,
+    fontFamily: FAMILY_BY_WEIGHT[String(token.fontWeight)] ?? font.semiBold,
+    ...extra,
+  };
+
+  if (OS_FONT_CAP !== 1) {
+    if (typeof style.fontSize === "number") style.fontSize *= OS_FONT_CAP;
+    if (typeof style.lineHeight === "number") style.lineHeight *= OS_FONT_CAP;
   }
 
   return style;
@@ -316,6 +348,71 @@ export const schedulePanel = {
   reminderDot: "#7B96C0",
 } as const;
 
+/**
+ * Home's own surface, transcribed from the Docked Ferne screens (9a / 9b).
+ *
+ * Grouped here rather than left as literals on the screen for the same reason schedulePanel is:
+ * these are tokens like any other, and a second screen showing a finished row should reach for
+ * the same cream rather than re-pick a similar one by eye.
+ */
+export const home = {
+  /** Greeting block. */
+  avatarBg: "#F7F1E6",
+  avatarInk: "#6A4F6A",
+  /** The date, the stat labels, and every quiet second line on this screen. */
+  subtle: "#5F6A66",
+
+  /** Stat strip. */
+  statDivider: "#E8DCC4",
+  streakInk: "#9E3F16",
+  pointsInk: "#7A5408",
+  focusedInk: color.success,
+  /** The strip's bolt is outlined a shade deeper than the one on a row. */
+  statBoltStroke: "#8A6112",
+
+  /** Section headers: the count pill for each, and the collapse caret. */
+  countAmberBg: color.amberFill,
+  countAmberInk: "#8A6112",
+  countDoneBg: "#EAF0DA",
+  countDoneInk: "#6F8429",
+  caret: "#A0A79F",
+
+  /** Open rows. */
+  actionBg: "#EBC294",
+  actionInk: "#4A3608",
+  /** A row counting toward a goal — the olive pair, not the goal's own colour. */
+  goalKindBg: "#EFF4E2",
+  goalKindInk: "#5F7226",
+  xpInk: "#A9760B",
+
+  /** Finished rows. */
+  doneBg: "#FBF7EC",
+  doneBorder: "#EFE6D2",
+  doneTileBg: "#EAF0DA",
+  doneTileBorder: "#D4E0B4",
+  doneTick: "#6F8429",
+  doneTitle: "#67716D",
+  doneStrike: "#AEB6B1",
+  /** Two metas: one for a row that counted toward a goal, one for everything else. */
+  doneMetaGoal: "#4C5A76",
+  doneMeta: "#5C564B",
+  donePillBg: color.amberFill,
+  donePillInk: "#8A6112",
+  closingLine: "#6B7571",
+
+  /** "Right now" — the countdown ring and the card it sits in. */
+  sessionTrack: "#F4E3D4",
+  sessionRing: color.ferne,
+  sessionInk: color.taskTypeFocusFg,
+  cardShadow: "rgba(139,109,74,.07)",
+
+  /** The docked capture button. */
+  captureDiscLit: "#FFF3E8",
+  captureDiscShade: "#F8DCC8",
+  captureRim: "rgba(223,109,65,.34)",
+  captureShadow: "rgba(142,61,29,.24)",
+} as const;
+
 /* ------------------------------------------------------------------- depth */
 
 /**
@@ -374,13 +471,8 @@ function hexToRgb(hex: string): [number, number, number] {
   return [parseInt(full.slice(0, 2), 16), parseInt(full.slice(2, 4), 16), parseInt(full.slice(4, 6), 16)];
 }
 
-/**
- * Shifts a colour's HSL lightness by `delta` (in points, so 8 means +8%), leaving hue and
- * saturation alone. A straight blend toward white/black desaturates as it goes and turns
- * the goal accents chalky; moving lightness keeps them the same colour, only lit
- * differently.
- */
-export function shade(hex: string, delta: number): string {
+/** A colour's hue, saturation and lightness — lightness in points, so 67.6 rather than 0.676. */
+function toHsl(hex: string): { h: number; s: number; l: number } {
   const [r, g, b] = hexToRgb(hex).map((v) => v / 255) as [number, number, number];
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
@@ -397,19 +489,56 @@ export function shade(hex: string, delta: number): string {
     if (h < 0) h += 360;
   }
 
-  const l2 = Math.min(1, Math.max(0, l + delta / 100));
-  const c = (1 - Math.abs(2 * l2 - 1)) * s;
+  return { h, s, l: l * 100 };
+}
+
+function fromHsl(h: number, s: number, lightness: number): string {
+  const l = Math.min(1, Math.max(0, lightness / 100));
+  const c = (1 - Math.abs(2 * l - 1)) * s;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = l2 - c / 2;
-  const [r2, g2, b2] =
+  const m = l - c / 2;
+  const [r, g, b] =
     h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
 
   return (
     "#" +
-    [r2, g2, b2]
+    [r, g, b]
       .map((v) => Math.round((v + m) * 255).toString(16).padStart(2, "0"))
       .join("")
   );
+}
+
+/**
+ * Shifts a colour's HSL lightness by `delta` (in points, so 8 means +8%), leaving hue and
+ * saturation alone. A straight blend toward white/black desaturates as it goes and turns
+ * the goal accents chalky; moving lightness keeps them the same colour, only lit
+ * differently.
+ */
+export function shade(hex: string, delta: number): string {
+  const { h, s, l } = toHsl(hex);
+  return fromHsl(h, s, l + delta);
+}
+
+/**
+ * The same colour lit to a fixed lightness, rather than shifted by a step.
+ *
+ * The goal ring's groove needs one: the design's two examples sit at 94.9% and 92.9% lightness
+ * whatever they started from (a blue at 67.6% and a green at 50.6%), so a step would leave a
+ * dark goal colour's groove far too dark to read as an empty track.
+ */
+export function atLightness(hex: string, lightness: number): string {
+  const { h, s } = toHsl(hex);
+  return fromHsl(h, s, lightness);
+}
+
+/**
+ * A goal's ring, from the goal's own colour: the pale groove behind it, and the darker ink the
+ * percentage is written in. Measured off the design's two goals — the blue #8DA6CC draws
+ * #EDF1F7 / #4C6B99, the olive #A4BF43 draws #F0F4E6 / #5F7226 — and derived rather than listed,
+ * since the colour is the user's to pick.
+ */
+export function goalRing(hex: string): { track: string; ink: string } {
+  return { track: atLightness(hex, 94), ink: shade(hex, -22) };
 }
 
 /**

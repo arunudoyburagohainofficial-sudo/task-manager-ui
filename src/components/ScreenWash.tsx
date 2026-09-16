@@ -1,5 +1,5 @@
-import React from "react";
-import { StyleSheet, useWindowDimensions, View, type BoxShadowValue } from "react-native";
+import React, { useEffect, useRef } from "react";
+import { Animated, Easing, StyleSheet, useWindowDimensions, View, type BoxShadowValue } from "react-native";
 import Svg, {
   Defs,
   Ellipse,
@@ -10,6 +10,7 @@ import Svg, {
 } from "react-native-svg";
 import { LinearGradient } from "expo-linear-gradient";
 import { color } from "../theme";
+import { useReduceMotion } from "./Ferne";
 
 /**
  * The app's background wash — transcribed from the design's layered CSS gradients.
@@ -70,8 +71,52 @@ function cssLinearEndpoints(angleDeg: number, w: number, h: number) {
   };
 }
 
-export function ScreenWash() {
+/**
+ * Two versions of the same field.
+ *
+ * "ambient" is what every screen has had: the five layers plus a closing overlay that brightens
+ * the top and warms the bottom. "home" is the Docked Ferne screens' own wash — the same five
+ * layers with no closing overlay, and with the three colour blooms drifting the way the design
+ * animates them. The drift is confined to Home on purpose: the handoff rules out looping ambient
+ * motion everywhere else, and a focus session is the last place that should have any.
+ */
+export type WashVariant = "ambient" | "home";
+
+/** The design's three drifting blooms: seconds per cycle, and where each one travels to. */
+const DRIFT = {
+  violet: { duration: 23_000, x: 26, y: -34, scale: 1.12 },
+  terra: { duration: 29_000, x: -30, y: 26, scale: 1.08 },
+  olive: { duration: 34_000, x: -16, y: 20, rotate: 9 },
+} as const;
+
+/** CSS `ease-in-out` there and back, on the native driver. */
+function useDrift(durationMs: number, enabled: boolean) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!enabled) {
+      v.setValue(0);
+      return;
+    }
+    const half = { duration: durationMs / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true };
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(v, { toValue: 1, ...half }),
+        Animated.timing(v, { toValue: 0, ...half }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [durationMs, enabled, v]);
+  return v;
+}
+
+export function ScreenWash({ variant = "ambient" }: { variant?: WashVariant }) {
   const { width, height } = useWindowDimensions();
+  const reduceMotion = useReduceMotion();
+  const drifting = variant === "home" && !reduceMotion;
+  const violetDrift = useDrift(DRIFT.violet.duration, drifting);
+  const terraDrift = useDrift(DRIFT.terra.duration, drifting);
+  const oliveDrift = useDrift(DRIFT.olive.duration, drifting);
 
   const VIOLET = "#8B5CF6";
   const TERRA = "#DF6D41";
@@ -89,6 +134,45 @@ export function ScreenWash() {
   const olive = bloom(220, 0.46, 0.5, 250, 300);
   const lift = bloom(280, 0.42, 0.4, -40, -40);
 
+  /**
+   * A bloom on its own layer, so it can move. Each fills the screen and is shaped entirely by
+   * its own gradient; the transform is applied to the layer, around the bloom's own centre
+   * rather than the screen's, which is what the design scales and rotates about.
+   */
+  const bloomLayer = (
+    id: string,
+    at: { cx: number; cy: number },
+    progress: Animated.Value,
+    motion: { x: number; y: number; scale?: number; rotate?: number },
+    stops: React.ReactNode
+  ) => (
+    <Animated.View
+      key={id}
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        {
+          transformOrigin: [at.cx, at.cy, 0],
+          transform: [
+            { translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [0, motion.x] }) },
+            { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [0, motion.y] }) },
+            ...(motion.scale
+              ? [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, motion.scale] }) }]
+              : []),
+            ...(motion.rotate
+              ? [{ rotate: progress.interpolate({ inputRange: [0, 1], outputRange: ["0deg", `${motion.rotate}deg`] }) }]
+              : []),
+          ],
+        },
+      ]}
+    >
+      <Svg width={width} height={height}>
+        <Defs>{stops}</Defs>
+        <Rect width={width} height={height} fill={`url(#${id})`} />
+      </Svg>
+    </Animated.View>
+  );
+
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
@@ -99,59 +183,80 @@ export function ScreenWash() {
             <Stop offset="0.74" stopColor={VIOLET} stopOpacity={0.05} />
             <Stop offset="1" stopColor={VIOLET} stopOpacity={0.11} />
           </SvgLinearGradient>
+        </Defs>
 
-          <RadialGradient id="wViolet" gradientUnits="userSpaceOnUse" {...violet}>
-            <Stop offset="0" stopColor={VIOLET} stopOpacity={0.3} />
-            <Stop offset="0.56" stopColor={VIOLET} stopOpacity={0.06} />
-            <Stop offset="0.74" stopColor={VIOLET} stopOpacity={0} />
-          </RadialGradient>
+        <Rect width={width} height={height} fill={color.screen} />
+        <Rect width={width} height={height} fill="url(#wRamp)" />
+      </Svg>
 
-          <RadialGradient id="wTerra" gradientUnits="userSpaceOnUse" {...terra}>
-            <Stop offset="0" stopColor={TERRA} stopOpacity={0.24} />
-            <Stop offset="0.58" stopColor={TERRA} stopOpacity={0.05} />
-            <Stop offset="0.76" stopColor={TERRA} stopOpacity={0} />
-          </RadialGradient>
+      {/* Each bloom fills the screen and is shaped entirely by its own gradient — see
+          `bloom()` for why they aren't clipped to circles the way the design's divs are. */}
+      {bloomLayer(
+        "wViolet",
+        violet,
+        violetDrift,
+        DRIFT.violet,
+        <RadialGradient id="wViolet" gradientUnits="userSpaceOnUse" {...violet}>
+          <Stop offset="0" stopColor={VIOLET} stopOpacity={0.3} />
+          <Stop offset="0.56" stopColor={VIOLET} stopOpacity={0.06} />
+          <Stop offset="0.74" stopColor={VIOLET} stopOpacity={0} />
+        </RadialGradient>
+      )}
+      {bloomLayer(
+        "wTerra",
+        terra,
+        terraDrift,
+        DRIFT.terra,
+        <RadialGradient id="wTerra" gradientUnits="userSpaceOnUse" {...terra}>
+          <Stop offset="0" stopColor={TERRA} stopOpacity={0.24} />
+          <Stop offset="0.58" stopColor={TERRA} stopOpacity={0.05} />
+          <Stop offset="0.76" stopColor={TERRA} stopOpacity={0} />
+        </RadialGradient>
+      )}
+      {bloomLayer(
+        "wOlive",
+        olive,
+        oliveDrift,
+        DRIFT.olive,
+        <RadialGradient id="wOlive" gradientUnits="userSpaceOnUse" {...olive}>
+          <Stop offset="0" stopColor={OLIVE} stopOpacity={0.16} />
+          <Stop offset="0.7" stopColor={OLIVE} stopOpacity={0} />
+        </RadialGradient>
+      )}
 
-          <RadialGradient id="wOlive" gradientUnits="userSpaceOnUse" {...olive}>
-            <Stop offset="0" stopColor={OLIVE} stopOpacity={0.16} />
-            <Stop offset="0.7" stopColor={OLIVE} stopOpacity={0} />
-          </RadialGradient>
-
-          <RadialGradient id="wLift" gradientUnits="userSpaceOnUse" {...lift}>
+      <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
+        <Defs>
+          <RadialGradient id="wLiftTop" gradientUnits="userSpaceOnUse" {...lift}>
             <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.85} />
             <Stop offset="0.62" stopColor="#FFFFFF" stopOpacity={0} />
           </RadialGradient>
-
-          {/* The closing two are ellipses in the design — 120%×78% and 130%×62% of the
-              screen — so they're drawn on <Ellipse> nodes below and their gradients stay a
-              plain centred circle in each one's own (elliptical) bounding box. Expressed as
-              a radius on a full-screen <Rect> instead, SVG normalises against the box
-              diagonal and the shape comes out neither the right height nor the right width. */}
-          <RadialGradient id="wTop" cx="50%" cy="50%" r="50%">
+          {/* Ellipses rather than a radius on a full-screen Rect — 120%×78% and 130%×62% of the
+              screen — so each gradient stays a plain centred circle in its own (elliptical) box.
+              On a Rect, SVG normalises against the box diagonal and the shape comes out neither
+              the right height nor the right width. */}
+          <RadialGradient id="wTopField" cx="50%" cy="50%" r="50%">
             <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.34} />
             <Stop offset="0.46" stopColor="#FFFFFF" stopOpacity={0} />
           </RadialGradient>
-
-          <RadialGradient id="wFoot" cx="50%" cy="50%" r="50%">
+          <RadialGradient id="wFootField" cx="50%" cy="50%" r="50%">
             <Stop offset="0" stopColor="#8B6D4A" stopOpacity={0.13} />
             <Stop offset="0.58" stopColor="#8B6D4A" stopOpacity={0} />
           </RadialGradient>
         </Defs>
 
-        <Rect width={width} height={height} fill={color.screen} />
-        <Rect width={width} height={height} fill="url(#wRamp)" />
+        <Rect width={width} height={height} fill="url(#wLiftTop)" />
 
-        {/* Each bloom fills the screen and is shaped entirely by its own gradient — see
-            `bloom()` for why they aren't clipped to circles the way the design's divs are. */}
-        <Rect width={width} height={height} fill="url(#wViolet)" />
-        <Rect width={width} height={height} fill="url(#wTerra)" />
-        <Rect width={width} height={height} fill="url(#wOlive)" />
-        <Rect width={width} height={height} fill="url(#wLift)" />
-
-        {/* 120% 78% at 50% 8% */}
-        <Ellipse cx={width / 2} cy={height * 0.08} rx={width * 1.2} ry={height * 0.78} fill="url(#wTop)" />
-        {/* 130% 62% at 50% 106% */}
-        <Ellipse cx={width / 2} cy={height * 1.06} rx={width * 1.3} ry={height * 0.62} fill="url(#wFoot)" />
+        {/* The design's Home screens stop here. The closing overlay below belongs to the older
+            screens the rest of the app is drawn from — brightening the top and warming the very
+            bottom — and Home leaves it off rather than sitting under a wash it wasn't drawn with. */}
+        {variant === "ambient" ? (
+          <>
+            {/* 120% 78% at 50% 8% */}
+            <Ellipse cx={width / 2} cy={height * 0.08} rx={width * 1.2} ry={height * 0.78} fill="url(#wTopField)" />
+            {/* 130% 62% at 50% 106% */}
+            <Ellipse cx={width / 2} cy={height * 1.06} rx={width * 1.3} ry={height * 0.62} fill="url(#wFootField)" />
+          </>
+        ) : null}
       </Svg>
     </View>
   );

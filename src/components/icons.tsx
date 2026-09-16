@@ -129,24 +129,87 @@ export const ChevronDownIcon = ({ size: s = 13, color: c = "#A66B58" }: IconProp
   </Svg>
 );
 
-/** Lightning bolt — marks a points/XP figure. */
-export const XpIcon = ({ size: s = 11 }: IconProps) => (
+/**
+ * Lightning bolt — marks a points figure. The design draws it in three sizes with slightly
+ * different outlines (11px on a row, 11px with a heavier stroke in the earned pill, 14px in the
+ * stat strip), which is what the two overrides are for.
+ */
+export const XpIcon = ({
+  size: s = 11,
+  stroke = "#A9760B",
+  strokeWidth = 1.5,
+}: IconProps & { stroke?: string; strokeWidth?: number }) => (
   <Svg width={s} height={s} viewBox="0 0 24 24">
     <Path
       d="M13.6 2.4 5.2 13.4h5.1l-1.3 8.2 8.6-11.2h-5.2z"
       fill="#F0B429"
-      stroke="#A9760B"
-      strokeWidth={1.5}
+      stroke={stroke}
+      strokeWidth={strokeWidth}
       strokeLinejoin="round"
     />
   </Svg>
 );
 
 /**
- * Single-colour glyphs for the task-type tile on Home's To do / Completed rows — distinct
- * from ReminderIcon/FocusIcon above, which are fixed-palette "stickers" and can't be
- * recoloured per row (reminder tinted blue, focus tinted terracotta, completed tinted
- * olive, all from the same shape).
+ * The stat strip's flame — one solid shape, unlike StreakIcon's two-tone version. Home draws it
+ * at 15px beside a single number, where the inner highlight turns to mud.
+ */
+export const StreakFlameMark = ({ size: s = 15 }: IconProps) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M12 2.2c3.5 3.3 6.4 6 6.4 10a6.4 6.4 0 0 1-12.8 0c0-4 2.9-6.7 6.4-10z"
+      fill="#FF6B2C"
+      stroke="#C63C06"
+      strokeWidth={1.8}
+    />
+  </Svg>
+);
+
+/** The + beside the GOALS rule on Home. */
+export const PlusMark = ({ size: s = 15, color: c = color.success }: IconProps & { color?: string }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Path d="M12 5.5v13M5.5 12h13" stroke={c} strokeWidth={2.6} strokeLinecap="round" />
+  </Svg>
+);
+
+/**
+ * The four marks that sit in a Home row's tile, one per kind of thing the row is: a bell for a
+ * task that notifies, an envelope for a plain one, a bullseye for focus (GoalTargetIcon) and a
+ * tick for one counting toward a goal (DoneCheckIcon).
+ */
+export const ReminderBellMark = ({ size: s = 19 }: IconProps) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M12 3.2a5.6 5.6 0 0 0-5.6 5.6c0 3.3-.7 5.1-1.6 6.2-.5.6-.1 1.5.7 1.5h13c.8 0 1.2-.9.7-1.5-.9-1.1-1.6-2.9-1.6-6.2A5.6 5.6 0 0 0 12 3.2Z"
+      fill={color.taskTypeReminderFg}
+    />
+    <Path d="M9.8 18.4a2.2 2.2 0 0 0 4.4 0Z" fill="#2E5C93" />
+  </Svg>
+);
+
+export const EnvelopeMark = ({ size: s = 19 }: IconProps) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Rect x={3.4} y={6} width={17.2} height={12} rx={2.2} fill={color.goal} />
+    <Path
+      d="M4.6 7.4 12 13l7.4-5.6"
+      stroke={color.screen}
+      strokeWidth={1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
+/** Drawn rather than filled — the tile behind it is what carries the colour on a finished row. */
+export const DoneTickMark = ({ size: s = 19, color: c = "#6F8429" }: IconProps & { color?: string }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Path d="M6 12.4l4 4 8-8.4" stroke={c} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+/**
+ * A bell that takes its colour from the caller — ScheduleSheet tints it per state, which the
+ * fixed-palette ReminderIcon above can't do.
  */
 type GlyphProps = { size?: number; color: string };
 
@@ -160,20 +223,12 @@ export const BellGlyph = ({ size: s = 18, color: c }: GlyphProps) => (
   </Svg>
 );
 
-export const TargetGlyph = ({ size: s = 18, color: c }: GlyphProps) => (
-  <Svg width={s} height={s} viewBox="0 0 24 24">
-    <Circle cx={12} cy={12} r={9} stroke={c} strokeWidth={1.7} fill="none" />
-    <Circle cx={12} cy={12} r={5} stroke={c} strokeWidth={1.7} fill="none" />
-    <Circle cx={12} cy={12} r={1.8} fill={c} />
-  </Svg>
-);
-
 /**
  * Bottom tab icons (line style). One constant rather than four hardcoded literals, so the
  * tab bar's icon size and MainTabs' own height math (which has to match it) stay in sync
  * from a single number.
  */
-export const TAB_ICON_SIZE = 20;
+export const TAB_ICON_SIZE = 22;
 
 const TabIcon = ({ d, active }: { d: string[]; active: boolean }) => (
   <Svg width={TAB_ICON_SIZE} height={TAB_ICON_SIZE} viewBox="0 0 24 24" fill="none">
@@ -195,13 +250,24 @@ export const HomeTabIcon = ({ active }: { active: boolean }) => (
 );
 
 export const ScheduledTabIcon = ({ active }: { active: boolean }) => (
-  <TabIcon
-    active={active}
-    d={[
-      "M4.4 6.6h15.2v13.2H4.4zM4.4 10.6h15.2",
-      "M8.6 4.2v3.4M15.4 4.2v3.4",
-    ]}
-  />
+  <Svg width={TAB_ICON_SIZE} height={TAB_ICON_SIZE} viewBox="0 0 24 24" fill="none">
+    <Rect
+      x={3.6}
+      y={5.2}
+      width={16.8}
+      height={15.2}
+      rx={2.4}
+      stroke={active ? color.interactive : color.textFaint}
+      strokeWidth={1.6}
+    />
+    <Path
+      d="M3.6 9.6h16.8M8 3.6v3M16 3.6v3"
+      stroke={active ? color.interactive : color.textFaint}
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
 );
 
 export const ProgressTabIcon = ({ active }: { active: boolean }) => (

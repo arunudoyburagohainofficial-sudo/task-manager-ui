@@ -191,6 +191,8 @@ export function useReopenTaskMutation() {
       queryClient.invalidateQueries({ queryKey: queryKeys.tasks("pending") });
       queryClient.invalidateQueries({ queryKey: queryKeys.tasks() });
       queryClient.invalidateQueries({ queryKey: ["weeklyProgress"] });
+      // Undoing a finished reminder takes its points back, so today's total changes.
+      queryClient.invalidateQueries({ queryKey: ["todayProgress"] });
       queryClient.setQueryData<ReminderDto[]>(queryKeys.reminders(), (old) =>
         old?.map((r) => (r.taskId === reopened.id ? { ...r, isActive: true } : r))
       );
@@ -239,7 +241,7 @@ export function useDeleteTaskMutation() {
 export function useCompleteTaskMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, points }: { taskId: string; points?: number }) => tasksApi.completeTask(taskId, points),
+    mutationFn: (taskId: string) => tasksApi.completeTask(taskId),
     onSuccess: (completedTask) => {
       queryClient.setQueryData(queryKeys.task(completedTask.id), completedTask);
       removeTaskFromLists(queryClient, completedTask.id);
@@ -248,6 +250,7 @@ export function useCompleteTaskMutation() {
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.streak() });
       queryClient.invalidateQueries({ queryKey: ["weeklyProgress"] });
+      queryClient.invalidateQueries({ queryKey: ["todayProgress"] });
       if (completedTask.goalId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.goals() });
       }

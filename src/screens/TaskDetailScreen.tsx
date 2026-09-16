@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useQueryClient } from "@tanstack/react-query";
 import { focusSessionsApi } from "../api";
 import { ApiError } from "../api/client";
+import { queryKeys } from "../api/queryKeys";
 import { useGoalsQuery } from "../api/queries/useGoals";
 import {
   useDeleteIntervalReminderMutation,
@@ -44,15 +46,14 @@ import { syncReminders } from "../notifications/useReminderSync";
 import { usePreferences } from "../state/PreferencesContext";
 import { useSession } from "../state/SessionContext";
 import { color, radius, size, space, text as t, type as T } from "../theme";
-import { formatClockTime, formatMinutes } from "../utils/format";
+import { formatClockTime } from "../utils/format";
+import { DEFAULT_POMODORO_MINUTES, resumeSessionParams } from "../utils/focusSession";
 import { recurrenceShortLabel } from "../utils/recurrence";
 import { formatScheduleDate, isOverdue } from "../utils/schedule";
 import type { RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, "TaskDetail">;
-
-const DEFAULT_POMODORO_MINUTES = 25;
 
 /**
  * Icon · title/subtitle · action row. Reminder and goal are the same shape of thing — an
@@ -67,7 +68,6 @@ function DetailRow({
   title,
   badge,
   subtitle,
-  subtitleColor,
   action,
   onPress,
 }: {
@@ -75,27 +75,29 @@ function DetailRow({
   title: string;
   /** Status tag shown beside the title — the schedule row uses it for where the task sits. */
   badge?: React.ReactNode;
-  subtitle: string;
-  subtitleColor?: string;
+  /** Left off when the title and badge already carry the whole fact, as an overdue task does. */
+  subtitle?: string;
   action: string;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${title}. ${subtitle}. ${action}`}
+      accessibilityLabel={[title, subtitle, action].filter(Boolean).join(". ")}
       onPress={onPress}
       style={styles.detailRow}
     >
       <View style={styles.detailIcon}>{icon}</View>
       <View style={styles.detailText}>
         <View style={styles.detailTitleRow}>
-          <Label numberOfLines={1} style={styles.detailTitle}>
+          {/* Two lines rather than one: a dated repeating task's summary is three facts joined
+              by "·", and clipping it to "Yesterday · Every 2 we…" hid the half that matters. */}
+          <Label numberOfLines={2} style={styles.detailTitle}>
             {title}
           </Label>
           {badge}
         </View>
-        <Meta style={{ marginTop: 2, color: subtitleColor ?? color.textFaint }}>{subtitle}</Meta>
+        {subtitle ? <Meta style={{ marginTop: 2, color: color.textFaint }}>{subtitle}</Meta> : null}
       </View>
       <Meta style={{ color: color.selectedText, fontWeight: "800" }}>{action}</Meta>
       <Meta style={{ color: color.textFaint, marginLeft: 4 }}>›</Meta>
@@ -116,6 +118,7 @@ export function TaskDetailScreen() {
   const deleteTaskMutation = useDeleteTaskMutation();
   const markDoneMutation = useMarkTaskDoneMutation();
   const intervalRemindersQuery = useIntervalRemindersQuery();
+  const queryClient = useQueryClient();
   const setNudgeMutation = useSetIntervalReminderMutation();
   const deleteNudgeMutation = useDeleteIntervalReminderMutation();
 
@@ -302,6 +305,9 @@ export function TaskDetailScreen() {
         focusMode,
         plannedMinutes,
       });
+      // Home's "Right now" reads this cache entry, so it's written here rather than left for
+      // Home's next refetch — otherwise backing out of a session shows no sign of it running.
+      queryClient.setQueryData(queryKeys.currentFocusSession(), session);
       navigation.navigate("FocusSession", {
         sessionId: session.id,
         taskId: params.taskId,
@@ -314,19 +320,11 @@ export function TaskDetailScreen() {
       if (e instanceof ApiError && e.status === 409) {
         const current = user ? await focusSessionsApi.getCurrentSession() : null;
         if (current) {
-          // numPomodoroCycles is only recorded when a session completes, so it's still
-          // null on one in progress — fall back to a sane default rather than guessing.
-          // Same reasoning for the session length: task-svc has no field for it at all
-          // (see FocusSessionScreen), so a resumed session can't recover whatever was
-          // chosen when it was originally started.
-          navigation.navigate("FocusSession", {
-            sessionId: current.id,
-            taskId: current.taskId,
-            focusMode: current.focusMode,
-            totalCycles: current.numPomodoroCycles ?? 4,
-            sessionMinutes: current.focusMode === "pomodoro" ? DEFAULT_POMODORO_MINUTES : defaultFocusDurationMinutes,
-            dndEnabled: sessionDndEnabled,
-          });
+          queryClient.setQueryData(queryKeys.currentFocusSession(), current);
+          // The session's own planned length and start now come back with it, so a regular
+          // session picks up where it actually is — see resumeSessionParams for why a Pomodoro
+          // can only reopen at the start of a block.
+          navigation.navigate("FocusSession", resumeSessionParams(current, defaultFocusDurationMinutes, sessionDndEnabled));
         } else {
           /*
            * A session is open but we can't reach it to resume — so the user is blocked with
@@ -346,6 +344,7 @@ export function TaskDetailScreen() {
                   try {
                     const stuck = await focusSessionsApi.getCurrentSession();
                     if (stuck) await focusSessionsApi.abandonFocusSession(stuck.id);
+                    queryClient.setQueryData(queryKeys.currentFocusSession(), null);
                   } catch {
                     Alert.alert("Couldn't discard it", "Check your connection and try again.");
                   }
@@ -416,6 +415,93 @@ export function TaskDetailScreen() {
           ]}
         />
 
+        {/* The action first, its configuration after.
+            Starting a session is what this screen gets opened for, and it used to sit below
+            four rows, a paragraph, a mode switch and a stepper — everything on the screen
+            carried the same weight whether it was tapped every time or never. */}
+        {isFocus ? (
+          <Card>
+            <View style={styles.cardHeader}>
+              <Eyebrow>FOCUS SESSION</Eyebrow>
+            </View>
+            <Segmented<FocusMode>
+              value={focusMode}
+              onChange={setFocusMode}
+              options={[
+                /* Just "Regular": the design carried the length in this label because it had
+                   no stepper, and the Session length row below is the one that can change it.
+                   Both showing 25 min is one edit away from the two disagreeing. */
+                { value: "regular", label: "Regular" },
+                { value: "pomodoro", label: "Pomodoro" },
+              ]}
+            />
+
+            {focusMode === "regular" ? (
+              <View style={styles.settingRow}>
+                <Body style={{ fontWeight: "700" }}>Session length</Body>
+                <Stepper
+                  value={regularMinutes}
+                  onChange={setRegularMinutes}
+                  min={5}
+                  max={90}
+                  step={5}
+                  suffix="min"
+                  label="session length"
+                />
+              </View>
+            ) : null}
+
+            {/* Pomodoro-only — absent in regular mode, not disabled (design §3). */}
+            {focusMode === "pomodoro" ? (
+              <>
+                <View style={styles.settingRow}>
+                  <Body style={{ fontWeight: "700" }}>Cycles</Body>
+                  <Stepper value={pomodoroCycles} onChange={setPomodoroCycles} min={1} max={10} label="cycles" />
+                </View>
+                <View style={styles.settingRow}>
+                  <Body style={{ fontWeight: "700" }}>Session length</Body>
+                  <Stepper
+                    value={pomodoroMinutes}
+                    onChange={setPomodoroMinutes}
+                    min={5}
+                    max={60}
+                    step={5}
+                    suffix="min"
+                    label="pomodoro session length"
+                  />
+                </View>
+                <Meta style={{ color: color.textFaint }}>
+                  {pomodoroCycles} × {pomodoroMinutes} min · {pomodoroCycles * pomodoroMinutes} minutes total
+                </Meta>
+              </>
+            ) : null}
+
+            <View style={styles.rowDivider} />
+
+            <View style={styles.dndRow}>
+              {/* 18, matching FocusSessionScreen's DND pill — the two screens show the
+                  same "Do Not Disturb" concept and should read at the same size. */}
+              <DoNotDisturbIcon size={18} />
+              <View style={styles.dndText}>
+                <Label>Do Not Disturb</Label>
+                <Meta style={{ marginTop: 2 }}>Silences your phone for this session · coming soon</Meta>
+              </View>
+              <Toggle
+                value={sessionDndEnabled}
+                onChange={setSessionDndEnabled}
+                label="Do Not Disturb for this session"
+              />
+            </View>
+
+            <Button
+              label="Start focus session"
+              loading={starting}
+              onPress={handleStartSession}
+              style={styles.startButton}
+            />
+          </Card>
+        ) : null}
+
         {/* Reminder and goal are one card of rows rather than two headed cards: they're the
             same kind of thing — an optional attachment with a single action — and heading
             each one separately made the screen read as four sections before the actual
@@ -450,17 +536,19 @@ export function TaskDetailScreen() {
               ) : null
             }
             /* Saying where the task is sitting is what makes it vanishing from Home read as
-               a consequence of the date, not a bug. */
+               a consequence of the date, not a bug — but only where that isn't already said.
+               An overdue task had the date in the title, "OVERDUE" in the badge, and then
+               "Was due Yesterday — waiting under Overdue" underneath: three elements, one
+               fact, and the only one carrying anything new was the badge. */
             subtitle={
               !task.scheduledFor && !reminder
                 ? "No date — stays on Home"
                 : !task.scheduledFor
                   ? "Stays on Home until it's done"
                   : isOverdue(task)
-                    ? `Was due ${formatScheduleDate(task.scheduledFor)} — waiting under Overdue`
-                    : `Waiting under ${formatScheduleDate(task.scheduledFor)} until that day`
+                    ? undefined
+                    : "Waits under Scheduled until that day"
             }
-            subtitleColor={task.scheduledFor && isOverdue(task) ? color.danger : undefined}
             /* Read-only once the task is finished. Rescheduling something already done can't
                change anything — a repeat set here could never fire (the server refuses it),
                and a notification would be stopped on arrival. Showing the row keeps the
@@ -526,99 +614,19 @@ export function TaskDetailScreen() {
 
         </Card>
 
+        {/* A plain line, not a card: this is a statement of fact about focus tasks, and
+            dressing it as a panel gave it the same weight as the controls around it.
+            "goal or not" only when unattached — it answers the question the empty goal row
+            above has just raised, so it stays below those rows even though the session card
+            it used to introduce now sits above them. */}
         {isFocus ? (
-          <>
-            {/* A plain line, not a card: this is a statement of fact about focus tasks, and
-                dressing it as a panel gave it the same weight as the controls around it.
-                "goal or not" only when unattached — it answers the question the empty goal
-                row above has just raised. */}
-            <View style={styles.trackingNote}>
-              <StreakIconInline size={14} />
-              <Meta style={styles.trackingText}>
-                Counts toward your streak and weekly progress{goal ? "" : ", goal or not"} — automatic for focus
-                tasks.
-              </Meta>
-            </View>
-
-            <Card>
-              <View style={styles.cardHeader}>
-                <Eyebrow>FOCUS SESSION</Eyebrow>
-              </View>
-              <Segmented<FocusMode>
-                value={focusMode}
-                onChange={setFocusMode}
-                options={[
-                  { value: "regular", label: `Regular · ${formatMinutes(regularMinutes)}` },
-                  { value: "pomodoro", label: "Pomodoro" },
-                ]}
-              />
-
-              {focusMode === "regular" ? (
-                <View style={styles.settingRow}>
-                  <Body style={{ fontWeight: "700" }}>Session length</Body>
-                  <Stepper
-                    value={regularMinutes}
-                    onChange={setRegularMinutes}
-                    min={5}
-                    max={90}
-                    step={5}
-                    suffix="min"
-                    label="session length"
-                  />
-                </View>
-              ) : null}
-
-              {/* Pomodoro-only — absent in regular mode, not disabled (design §3). */}
-              {focusMode === "pomodoro" ? (
-                <>
-                  <View style={styles.settingRow}>
-                    <Body style={{ fontWeight: "700" }}>Cycles</Body>
-                    <Stepper value={pomodoroCycles} onChange={setPomodoroCycles} min={1} max={10} label="cycles" />
-                  </View>
-                  <View style={styles.settingRow}>
-                    <Body style={{ fontWeight: "700" }}>Session length</Body>
-                    <Stepper
-                      value={pomodoroMinutes}
-                      onChange={setPomodoroMinutes}
-                      min={5}
-                      max={60}
-                      step={5}
-                      suffix="min"
-                      label="pomodoro session length"
-                    />
-                  </View>
-                  <Meta style={{ color: color.textFaint }}>
-                    {pomodoroCycles} × {pomodoroMinutes} min · {pomodoroCycles * pomodoroMinutes} minutes total
-                  </Meta>
-                </>
-              ) : null}
-
-              <View style={styles.rowDivider} />
-
-              <View style={styles.dndRow}>
-                {/* 18, matching FocusSessionScreen's DND pill — the two screens show the
-                    same "Do Not Disturb" concept and should read at the same size. */}
-                <DoNotDisturbIcon size={18} />
-                <View style={styles.dndText}>
-                  <Label>Do Not Disturb</Label>
-                  <Meta style={{ marginTop: 2 }}>Silences your phone for this session · coming soon</Meta>
-                </View>
-                <Toggle
-                  value={sessionDndEnabled}
-                  onChange={setSessionDndEnabled}
-                  label="Do Not Disturb for this session"
-                />
-              </View>
-
-              <Button
-                label="Start focus session"
-                loading={starting}
-                onPress={handleStartSession}
-                style={styles.startButton}
-              />
-              <Meta style={styles.startCaption}>Starts only when you tap — never automatic</Meta>
-            </Card>
-          </>
+          <View style={styles.trackingNote}>
+            <StreakIconInline size={14} />
+            <Meta style={styles.trackingText}>
+              Counts toward your streak and weekly progress{goal ? "" : ", goal or not"} — automatic for focus
+              tasks.
+            </Meta>
+          </View>
         ) : (
           <>
             <View style={styles.dashedNote}>
@@ -806,11 +814,6 @@ const styles = StyleSheet.create({
   },
   startButton: {
     marginTop: space.base,
-  },
-  startCaption: {
-    color: color.textFaint,
-    textAlign: "center",
-    marginTop: 9,
   },
   dashedNote: {
     borderWidth: 1,

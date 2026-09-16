@@ -217,9 +217,9 @@ export function SettingsScreen() {
           <Eyebrow>GETTING STARTED</Eyebrow>
         </View>
         <Card style={styles.group}>
-          {/* Jumps to Home as well as restarting: the walkthrough's first step points at
-              the "+ Goal" control there, and starting it from this screen would leave the
-              overlay with nothing to spotlight. */}
+          {/* Jumps to Home as well as restarting: the walkthrough's first step points at the
+              + beside GOALS there, and starting it from this screen would leave the overlay
+              with nothing to spotlight. */}
           <SettingsRow
             label="Replay walkthrough"
             last

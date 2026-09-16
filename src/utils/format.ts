@@ -27,8 +27,34 @@ export function isToday(isoDateTime: string): boolean {
   );
 }
 
+/**
+ * "Wednesday 26 August" — the line under Home's greeting, in the design's own order.
+ *
+ * Assembled from the locale's own names rather than handed to toLocaleDateString whole: that
+ * puts the month first in some locales and adds a comma in others, so the one line this screen
+ * is measured against would render differently depending on the phone's region.
+ */
 export function formatGreetingDate(date: Date = new Date()): string {
-  return date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  const weekday = date.toLocaleDateString(undefined, { weekday: "long" });
+  const day = date.toLocaleDateString(undefined, { day: "numeric" });
+  const month = date.toLocaleDateString(undefined, { month: "long" });
+  return `${weekday} ${day} ${month}`;
+}
+
+/**
+ * "8:10 AM" from an instant — the time a finished task was finished.
+ *
+ * Built by hand for the same reason formatClockTime is: the design's clock is 12-hour with an
+ * uppercase meridiem, which a locale-formatted time only sometimes is.
+ */
+export function formatInstantClock(iso: string): string | null {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const hour = date.getHours();
+  const minute = date.getMinutes();
+  const period = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+  return `${displayHour}:${String(minute).padStart(2, "0")} ${period}`;
 }
 
 /** "Jul 27" — used for weekly-progress-history rows. */

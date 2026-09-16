@@ -1,5 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, Text, View } from "react-native";
+import {
+  AppState,
+  type AppStateStatus,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  SectionList,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
@@ -8,37 +19,43 @@ import {
   useGoalsQuery,
   useUpdateGoalMutation,
 } from "../api/queries/useGoals";
-import { useStreakQuery } from "../api/queries/useProgress";
+import { useCurrentFocusSessionQuery } from "../api/queries/useFocusSessions";
+import { useStreakQuery, useTodayProgressQuery } from "../api/queries/useProgress";
 import { useMarkTaskDoneMutation, useRemindersQuery } from "../api/queries/useReminders";
 import { useReopenTaskMutation, useTasksQuery } from "../api/queries/useTasks";
 import type { GoalDto, ReminderDto, TaskDto } from "../api/types";
 import {
-  AddGoalCard,
-  Card,
-  CompletedRow,
-  Eyebrow,
-  Ferne,
-  GoalCard,
   GoalEditSheet,
-  H1,
-  CaptureRing,
-  DoneCheckIcon,
-  GoalTargetIcon,
-  InfoTooltip,
-  Meta,
+  GoalRingCard,
+  GoalsAddButton,
+  HomeClosingLine,
+  HomeDoneRow,
+  HomeEmptyRow,
+  HomeListHeader,
+  HomeRuleHeader,
+  HomeStatStrip,
+  HomeTaskRow,
+  type HomeRowKind,
+  RightNowCard,
+  RightNowHeader,
   ScreenContainer,
-  SectionHeader,
-  StatChip,
-  StreakIconInline,
-  TaskRow,
 } from "../components";
 import { syncReminders } from "../notifications/useReminderSync";
 import { usePreferences } from "../state/PreferencesContext";
 import { useToast } from "../state/ToastContext";
 import { useSession } from "../state/SessionContext";
 import { TourTarget, useTour } from "../state/TourContext";
-import { color, radius, space, text as t, type as T } from "../theme";
-import { formatClockTime, formatFirstName, formatGreetingDate, greetingForHour, isToday } from "../utils/format";
+import { color, home, textAtDesignSize as td, type as T } from "../theme";
+import {
+  formatClockTime,
+  formatFirstName,
+  formatGreetingDate,
+  formatInstantClock,
+  greetingForHour,
+  isToday,
+} from "../utils/format";
+import { readRunningSession, resumeSessionParams } from "../utils/focusSession";
+import { POINTS_PER_MINUTE, REMINDER_POINTS } from "../utils/points";
 import { belongsOnHome } from "../utils/schedule";
 import { useTodayKey } from "../utils/useTodayKey";
 import type { RootStackParamList } from "../navigation/types";
@@ -50,19 +67,43 @@ import type { RootStackParamList } from "../navigation/types";
  */
 type HomeSection = { key: string; title: string; count: number; data: TaskDto[] };
 
-/**
- * Mirrors FocusSessionService.POINTS_PER_MINUTE. Duplicated rather than fetched because
- * the server exposes no rate endpoint — if that constant ever changes, this is the one
- * place the client has to follow it.
- */
-const POINTS_PER_MINUTE = 1;
-
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+/** Gap between rows, and the space a section header leaves above itself. */
+const ROW_GAP = 9;
+
+/**
+ * How often the running session's "15 min left" is recomputed. It reads the clock rather than
+ * counting, so a slow tick only costs accuracy in the display, never in the count — and the
+ * figure is in whole minutes anyway.
+ */
+const SESSION_TICK_MS = 15_000;
+
+function useNow(intervalMs: number, enabled: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!enabled) return;
+    const tick = () => setNow(Date.now());
+    tick();
+    const interval = setInterval(tick, intervalMs);
+    // Timers don't fire reliably while the app is suspended, so a phone picked back up reads
+    // the clock again rather than resuming from wherever the interval left off.
+    const subscription = AppState.addEventListener("change", (state: AppStateStatus) => {
+      if (state === "active") tick();
+    });
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
+  }, [intervalMs, enabled]);
+  return now;
+}
 
 export function HomeScreen() {
   const { user } = useSession();
   const navigation = useNavigation<Nav>();
   const [refreshing, setRefreshing] = useState(false);
+  const { width } = useWindowDimensions();
 
   const tasksQuery = useTasksQuery("pending");
   // task-svc has no "completed today" endpoint — fetch completed tasks too and filter
@@ -70,6 +111,8 @@ export function HomeScreen() {
   const completedTasksQuery = useTasksQuery("completed");
   const remindersQuery = useRemindersQuery();
   const streakQuery = useStreakQuery();
+  const todayQuery = useTodayProgressQuery();
+  const sessionQuery = useCurrentFocusSessionQuery();
   const markDoneMutation = useMarkTaskDoneMutation();
   const reopenTaskMutation = useReopenTaskMutation();
   const { showToast } = useToast();
@@ -89,18 +132,32 @@ export function HomeScreen() {
   // Re-derived when the calendar day rolls over, not just when the data changes — an app left
   // open across midnight otherwise kept showing yesterday's Home.
   const today = useTodayKey();
+  const session = sessionQuery.data ?? null;
   const tasks = useMemo(
-    () => (tasksQuery.data ?? []).filter((task) => belongsOnHome(task, today)),
-    [tasksQuery.data, today]
+    () =>
+      (tasksQuery.data ?? [])
+        .filter((task) => belongsOnHome(task, today))
+        // The running task is lifted out of the list into "Right now" — it shouldn't be in
+        // both places, and the To do count follows it.
+        .filter((task) => task.id !== session?.taskId),
+    [tasksQuery.data, today, session?.taskId]
   );
   const goals = goalsQuery.data ?? [];
   const savingGoal = createGoalMutation.isPending || updateGoalMutation.isPending;
-  // Filtered to isActive for the same reason as TaskDetailScreen's lookup — the server
-  // keeps a stopped reminder's row around rather than deleting it, so an unfiltered map
-  // would still show its ⏰ time on the To do row it belongs to.
-  const remindersByTaskId = useMemo(
+  /**
+   * The notification each task fires on the day itself, if it has one — that's the time a row
+   * shows. A week-before warning says nothing useful about today.
+   *
+   * isActive matters as much as the task id: the server keeps a stopped reminder's row rather
+   * than deleting it, so an unfiltered map would still show a finished task's time.
+   */
+  const dayOfReminderByTaskId = useMemo(
     () =>
-      new Map((remindersQuery.data ?? []).filter((r: ReminderDto) => r.isActive).map((r: ReminderDto) => [r.taskId, r])),
+      new Map(
+        (remindersQuery.data ?? [])
+          .filter((r: ReminderDto) => r.isActive && r.reminderTime && (r.daysBefore ?? 0) === 0)
+          .map((r: ReminderDto) => [r.taskId, r.reminderTime as string])
+      ),
     [remindersQuery.data]
   );
   const goalsById = useMemo(() => new Map(goals.map((g) => [g.id, g])), [goals]);
@@ -120,26 +177,31 @@ export function HomeScreen() {
     return (created ?? tasks.find((t) => t.taskType === "focus") ?? tasks[0])?.id;
   }, [tasks, tourTaskId]);
   const currentStreak = streakQuery.data?.currentStreak ?? 0;
-  // Scoped to today deliberately: the "completed" query returns every task ever finished,
-  // which would turn the done section into an ever-growing archive. Home is a today view —
-  // the full history lives on Progress.
+  const pointsToday = todayQuery.data?.pointsEarned ?? 0;
+  const focusMinutesToday = todayQuery.data?.focusMinutes ?? 0;
+  /**
+   * Scoped to today deliberately: the "completed" query returns every task ever finished,
+   * which would turn the done section into an ever-growing archive. Home is a today view —
+   * the full history lives on Progress.
+   *
+   * Oldest first, the way the design lists them: the day reads as a sequence of things that
+   * happened rather than as a stack with the most recent on top.
+   */
   const completedToday = useMemo(
-    () => (completedTasksQuery.data ?? []).filter((t) => t.completedAt && isToday(t.completedAt)),
+    () =>
+      (completedTasksQuery.data ?? [])
+        .filter((t) => t.completedAt && isToday(t.completedAt))
+        .sort((a, b) => Date.parse(a.completedAt as string) - Date.parse(b.completedAt as string)),
     [completedTasksQuery.data]
   );
-  const doneTodayCount = completedToday.length;
-  const activeGoalCount = useMemo(() => goals.filter((g) => g.status === "active").length, [goals]);
-  /** Drives the DONE TODAY chip's "N/M" fraction. */
-  const todayTotal = tasks.length + doneTodayCount;
 
   /**
-   * What a focus task is worth if its session runs the planned length. Not a stored value
-   * — the server awards POINTS_PER_MINUTE (1) per full minute actually focused, so this is
-   * that same rate applied to the length the session will start at. Reminder tasks earn no
-   * points at all and get no tag rather than a made-up one.
+   * What a focus task is worth if its session runs the planned length — the server awards
+   * POINTS_PER_MINUTE per full minute actually focused, so this is that rate applied to the
+   * length the session will start at. A reminder is worth a flat amount whenever it's finished.
    */
-  const { defaultFocusDurationMinutes } = usePreferences();
-  const projectedXp = defaultFocusDurationMinutes * POINTS_PER_MINUTE;
+  const { defaultFocusDurationMinutes, dndDuringFocusEnabled } = usePreferences();
+  const projectedFocusPoints = defaultFocusDurationMinutes * POINTS_PER_MINUTE;
 
   // Keyed rather than a boolean per section, so adding a third section later needs no new
   // state. Intentionally not persisted: collapsing is a "get this out of my way right now"
@@ -166,7 +228,7 @@ export function HomeScreen() {
         ? [
             {
               key: "done",
-              title: "COMPLETED TODAY",
+              title: "DONE",
               count: completedToday.length,
               data: collapsedSections.done ? [] : completedToday,
             },
@@ -219,6 +281,23 @@ export function HomeScreen() {
     };
   }, [tourStep, remeasure]);
 
+  /* --------------------------------------------------------- right now */
+
+  const now = useNow(SESSION_TICK_MS, !!session);
+  const running = session ? readRunningSession(session, now) : null;
+  const runningTask = useMemo(
+    () => (session ? (tasksQuery.data ?? []).find((t) => t.id === session.taskId) ?? null : null),
+    [session, tasksQuery.data]
+  );
+
+  function handleResumeSession() {
+    if (!session) return;
+    navigation.navigate(
+      "FocusSession",
+      resumeSessionParams(session, defaultFocusDurationMinutes, dndDuringFocusEnabled)
+    );
+  }
+
   async function handleRefresh() {
     setRefreshing(true);
     await Promise.all([
@@ -227,6 +306,8 @@ export function HomeScreen() {
       goalsQuery.refetch(),
       remindersQuery.refetch(),
       streakQuery.refetch(),
+      todayQuery.refetch(),
+      sessionQuery.refetch(),
     ]);
     setRefreshing(false);
   }
@@ -284,8 +365,43 @@ export function HomeScreen() {
 
   const displayName = user.displayName || user.username;
 
+  /**
+   * What a row is. A task counting toward a goal shows as that first — it's the thing worth
+   * seeing at a glance — then focus, then a reminder that actually notifies, and a plain task
+   * for everything else.
+   */
+  function kindOf(task: TaskDto, goal: GoalDto | undefined, notifyTime: string | undefined): HomeRowKind {
+    if (goal) return "goal";
+    if (task.taskType === "focus") return "focus";
+    return notifyTime ? "reminder" : "task";
+  }
+
+  function detailOf(kind: HomeRowKind, task: TaskDto, goal: GoalDto | undefined, notifyTime: string | undefined) {
+    if (kind === "goal") return goal?.name ?? null;
+    if (kind === "focus") return `${defaultFocusDurationMinutes} min`;
+    if (kind === "reminder") return formatClockTime(notifyTime ?? null);
+    return task.scheduledFor === today ? "today" : null;
+  }
+
+  /**
+   * Two goals fill the row exactly, as drawn. Beyond that they scroll, sized so the next one
+   * shows at the edge — a third card hidden entirely behind the screen edge is a goal the user
+   * has no reason to think exists.
+   */
+  const goalsInnerWidth = width - 2 * styles.listContent.paddingHorizontal;
+  const scrollingGoalWidth = Math.round(((goalsInnerWidth - ROW_GAP) / 2) * 0.92);
+
+  const goalCards = goals.map((goal) => (
+    <GoalRingCard
+      key={goal.id}
+      goal={goal}
+      width={goals.length > 2 ? scrollingGoalWidth : undefined}
+      onPress={() => setEditingGoal(goal)}
+    />
+  ));
+
   return (
-    <ScreenContainer>
+    <ScreenContainer wash="home">
       <SectionList
         ref={listRef}
         sections={sections}
@@ -299,21 +415,23 @@ export function HomeScreen() {
         // pinned over the greeting and goals while those are still on screen.
         stickySectionHeadersEnabled={false}
         contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={() => <View style={styles.rowGap} />}
         ListHeaderComponent={
           <View>
             <View style={styles.greetingRow}>
               <View style={styles.greetingText}>
-                {/* H1 is sized for a single-word screen title ("Progress", "Settings") —
-                    this is a full sentence, and a long name still wraps it to two lines at
-                    that size, costing ~60pt right above a body that's now much denser. An
-                    override here, not a change to H1 itself, since the single-word titles
-                    elsewhere don't have this problem. */}
-                <H1 numberOfLines={2} style={styles.greetingTitle}>
+                <Text
+                  numberOfLines={2}
+                  style={td(T.h2, { fontSize: 22, letterSpacing: -0.44, lineHeight: 25, color: color.text })}
+                >
                   {greetingForHour()}, {formatFirstName(displayName)}
-                </H1>
-                <Meta style={styles.date} numberOfLines={1}>
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={td(T.meta, { fontSize: 13, fontWeight: "400", color: home.subtle, marginTop: 3 })}
+                >
                   {formatGreetingDate()}
-                </Meta>
+                </Text>
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -321,147 +439,116 @@ export function HomeScreen() {
                 onPress={() => navigation.navigate("Main", { screen: "Settings" })}
                 style={styles.avatar}
               >
-                <Text style={t(T.body, { fontWeight: "800", color: "#6A4F6A" })}>
+                <Text style={td(T.body, { fontSize: 15, fontWeight: "800", color: home.avatarInk })}>
                   {displayName.charAt(0).toUpperCase()}
                 </Text>
               </Pressable>
             </View>
 
-            {/* One-word labels, measured rather than guessed: "DAY STREAK" and friends need
-                108–116pt of the ~92pt a third of this row actually has, so they truncated on
-                every screen size. The icon and number already say which stat this is, so the
-                second word was the redundant part to drop. The streak keeps its tooltip —
-                the explanation of the grace-day rule shouldn't vanish in a restyle. */}
-            <View style={styles.statRow}>
-              <StatChip
-                tint="streak"
-                icon={<StreakIconInline size={14} />}
-                value={String(currentStreak)}
-                label="STREAK"
-                trailing={<InfoTooltip topic="streak" />}
-              />
-              <StatChip
-                tint="done"
-                icon={<DoneCheckIcon size={14} />}
-                value={String(doneTodayCount)}
-                // "2/4" rather than "2": the count alone can't tell you whether the day is
-                // nearly finished or barely started.
-                outOf={todayTotal > 0 ? String(todayTotal) : undefined}
-                label="DONE"
-              />
-              <StatChip
-                tint="goals"
-                icon={<GoalTargetIcon size={14} />}
-                value={String(activeGoalCount)}
-                label="GOALS"
-              />
-            </View>
+            <HomeStatStrip streak={currentStreak} points={pointsToday} focusMinutes={focusMinutesToday} />
 
-            {/* capture — Ferne is the hero, tap opens capture */}
-            <TourTarget step="capture" style={styles.capture}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Capture tasks"
-                onPress={() => {
-                  advanceTour("capture");
-                  navigation.navigate("Capture");
-                }}
-                style={styles.captureInner}
-              >
-                {/* The ring is a frame around Ferne, not a second control: it renders with
-                    pointerEvents none inside the same Pressable, so the capture button is
-                    still one tappable region and the walkthrough still measures one target. */}
-                <CaptureRing size={104}>
-                  {/* Ferne's face carries the same message the line below her does: a
-                      broken streak gets the warm "come back" look rather than the neutral
-                      resting one. */}
-                  <Ferne size={84} state={currentStreak === 0 ? "nudge" : "idle"} />
-                </CaptureRing>
-                <Text style={t(T.body, { fontSize: 14, fontWeight: "800", color: color.success })}>Tap to capture tasks</Text>
-              </Pressable>
-            </TourTarget>
+            <HomeRuleHeader
+              label="GOALS"
+              ink={color.textLabel}
+              style={styles.goalsHeader}
+              trailing={
+                <TourTarget step="goal">
+                  <GoalsAddButton onPress={() => setCreatingGoal(true)} />
+                </TourTarget>
+              }
+            />
+            {goals.length > 2 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.goalsRow}>
+                {goalCards}
+              </ScrollView>
+            ) : goals.length > 0 ? (
+              <View style={styles.goalsRow}>{goalCards}</View>
+            ) : null}
 
-            <View style={styles.goalsHeader}>
-              <Eyebrow>GOALS</Eyebrow>
-              <InfoTooltip topic="goals" />
-              {/* Trailing rule, matching the TO DO / COMPLETED headers below — without it
-                  GOALS was the only section label on the screen left hanging. */}
-              <View style={styles.goalsRule} />
-            </View>
-            {/* "+ Goal" leads rather than trails: it stays reachable without scrolling
-                past every existing goal once the list grows. */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.goalsRow}
-            >
-              <TourTarget step="goal" style={styles.goalTourTarget}>
-                <AddGoalCard onPress={() => setCreatingGoal(true)} />
-              </TourTarget>
-              {goals.map((goal) => (
-                <GoalCard key={goal.id} goal={goal} width={150} onPress={() => setEditingGoal(goal)} />
-              ))}
-            </ScrollView>
+            {/* Exists only while something is running — there's no empty version of it, so with
+                nothing running the list simply starts higher. */}
+            {session && running ? (
+              <>
+                <RightNowHeader />
+                <RightNowCard
+                  title={runningTask?.name ?? "Focus session"}
+                  minutesLeft={running.minutesLeft}
+                  minutesElapsed={running.minutesElapsed}
+                  plannedMinutes={running.plannedMinutes}
+                  fractionLeft={running.fractionLeft}
+                  onResume={handleResumeSession}
+                />
+              </>
+            ) : null}
           </View>
         }
-        renderSectionHeader={({ section }) => (
-          <SectionHeader
-            label={section.title}
-            count={section.count}
-            collapsed={!!collapsedSections[section.key]}
-            onToggle={() => toggleSection(section.key)}
-            labelColor={section.key === "done" ? "#5F7226" : color.amberLabel}
-            countStyle={
-              section.key === "done"
-                ? { bg: "#EAF0D8", fg: "#5F7226" }
-                : { bg: color.amberFill, fg: "#8A6112" }
-            }
-          />
-        )}
+        renderSectionHeader={({ section }) =>
+          section.key === "done" ? (
+            <HomeListHeader
+              label={section.title}
+              ink={color.textLabel}
+              count={section.count}
+              countBg={home.countDoneBg}
+              countInk={home.countDoneInk}
+              collapsed={!!collapsedSections.done}
+              collapsedLabel="Show"
+              expandedLabel="Hide"
+              caret="up"
+              onToggle={() => toggleSection("done")}
+            />
+          ) : (
+            <HomeListHeader
+              label={section.title}
+              ink={color.amberLabel}
+              count={section.count}
+              countBg={home.countAmberBg}
+              countInk={home.countAmberInk}
+              collapsed={!!collapsedSections.todo}
+              collapsedLabel="Expand all"
+              expandedLabel="Collapse all"
+              caret="down"
+              onToggle={section.count > 0 ? () => toggleSection("todo") : undefined}
+            />
+          )
+        }
         // SectionList has no per-section empty state, and ListEmptyComponent only fires
         // when *every* section is empty — which would hide this the moment one task is
         // done. Rendering it as the To do section's footer keeps "nothing left to do"
         // correct even while the completed section below is full.
         renderSectionFooter={({ section }) =>
           section.key === "todo" && section.count === 0 ? (
-            <Card style={styles.emptyCard}>
-              <Text style={t(T.bodyLg, { color: color.text })}>
-                {doneTodayCount > 0 ? "All done for today" : "No tasks yet"}
-              </Text>
-              <Meta style={{ marginTop: 4 }}>Tap Ferne above to capture something.</Meta>
-            </Card>
+            <HomeEmptyRow
+              title={completedToday.length > 0 ? "All done for today" : "Nothing to do yet"}
+              body="Tap Ferne below to capture something."
+            />
           ) : null
         }
         renderItem={({ item, section }) => {
+          const itemGoal = item.goalId ? goalsById.get(item.goalId) : undefined;
+          const notifyTime = dayOfReminderByTaskId.get(item.id);
+          const kind = kindOf(item, itemGoal, notifyTime);
+
           if (section.key === "done") {
             return (
-              <View style={styles.rowSpacing}>
-                <CompletedRow
-                  title={item.name}
-                  taskType={item.taskType}
-                  onPress={() => navigation.navigate("TaskDetail", { taskId: item.id })}
-                />
-              </View>
+              <HomeDoneRow
+                kind={kind}
+                title={item.name}
+                detail={kind === "goal" ? itemGoal?.name ?? null : null}
+                finishedAt={item.completedAt ? formatInstantClock(item.completedAt) : null}
+                points={item.pointsEarned}
+                onPress={() => navigation.navigate("TaskDetail", { taskId: item.id })}
+              />
             );
           }
-          const reminder = remindersByTaskId.get(item.id);
-          const itemGoal = item.goalId ? goalsById.get(item.goalId) : undefined;
-          const isTourRow = item.id === tourRowId;
+
+          const isFocus = item.taskType === "focus";
           const row = (
-            <TaskRow
+            <HomeTaskRow
+              kind={kind}
               title={item.name}
-              taskType={item.taskType}
-              goalName={itemGoal?.name}
-              goalColor={itemGoal?.color ?? undefined}
-              subtitle={
-                reminder
-                  ? formatClockTime(reminder.reminderTime)
-                  : item.taskType === "focus"
-                    ? `${defaultFocusDurationMinutes} min`
-                    : null
-              }
-              xp={item.taskType === "focus" ? projectedXp : undefined}
-              actionLabel={item.taskType === "focus" ? "Focus" : "Done"}
+              detail={detailOf(kind, item, itemGoal, notifyTime)}
+              points={isFocus ? projectedFocusPoints : REMINDER_POINTS}
+              actionLabel={isFocus ? "Focus" : "Done"}
               // The whole row is inside the walkthrough's highlight, so opening the task by
               // tapping the row counts as completing the step just as much as the Focus
               // button does. Without this, that tap led away with the tour still running.
@@ -471,32 +558,34 @@ export function HomeScreen() {
               }}
               onAction={() => {
                 advanceTour("start");
-                if (item.taskType === "focus") navigation.navigate("TaskDetail", { taskId: item.id });
+                if (isFocus) navigation.navigate("TaskDetail", { taskId: item.id });
                 else handleMarkReminderDone(item.id, item.name);
               }}
             />
           );
-          return (
-            <View style={styles.rowSpacing}>
-              {isTourRow ? (
-                <TourTarget
-                  step="start"
-                  // The default copy names the Focus button, which a reminder row doesn't
-                  // have — it reads "Done" instead.
-                  body={
-                    item.taskType === "focus"
-                      ? undefined
-                      : "Tap Done when you’ve finished it. That’s the whole loop — capture, attach, done."
-                  }
-                >
-                  {row}
-                </TourTarget>
-              ) : (
-                row
-              )}
-            </View>
+
+          return item.id === tourRowId ? (
+            <TourTarget
+              step="start"
+              // The default copy names the Focus button, which a reminder row doesn't
+              // have — it reads "Done" instead.
+              body={
+                isFocus
+                  ? undefined
+                  : "Tap Done when you’ve finished it. That’s the whole loop — capture, attach, done."
+              }
+            >
+              {row}
+            </TourTarget>
+          ) : (
+            row
           );
         }}
+        ListFooterComponent={
+          tasks.length > 0 || completedToday.length > 0 ? (
+            <HomeClosingLine>That’s everything for today</HomeClosingLine>
+          ) : null
+        }
       />
 
       <GoalEditSheet
@@ -519,79 +608,39 @@ export function HomeScreen() {
 
 const styles = StyleSheet.create({
   listContent: {
-    paddingHorizontal: space.gutter,
-    paddingTop: space.sm,
-    paddingBottom: 24,
+    paddingHorizontal: 18,
+    paddingTop: 6,
+    // Clears the capture button, which rides 40pt above the tab bar and would otherwise sit
+    // over the last row.
+    paddingBottom: 48,
   },
   greetingRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: space.base,
+    alignItems: "center",
+    gap: 12,
   },
   greetingText: {
     flex: 1,
   },
-  greetingTitle: {
-    fontSize: 20,
-    lineHeight: 24,
-  },
-  date: {
-    marginTop: 2,
-  },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.card,
-    backgroundColor: "#F7F1E6",
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: home.avatarBg,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
   },
-  statRow: {
-    marginTop: 12,
-    flexDirection: "row",
-    gap: space.sm,
-  },
-  capture: {
-    marginTop: space.sm,
-  },
-  captureInner: {
-    alignItems: "center",
-    gap: space.sm,
-  },
-  goalsRule: {
-    flex: 1,
-    height: 1,
-    backgroundColor: color.border,
-    marginLeft: 2,
-  },
   goalsHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: space.md,
-    marginBottom: space.xs,
+    marginTop: 16,
+    marginBottom: 9,
   },
   goalsRow: {
     flexDirection: "row",
-    gap: space.md,
-    paddingRight: space.xs,
+    gap: ROW_GAP,
   },
-  /**
-   * The tour wrapper sits between the goal strip and the "+ Goal" card, which has only a
-   * minHeight and relied on being a direct child of the row to stretch to the height of
-   * the real goal cards beside it. flexDirection:row makes this wrapper's cross axis
-   * vertical, so its default alignItems:stretch passes that height back down to the card.
-   */
-  goalTourTarget: {
-    flexDirection: "row",
-  },
-  rowSpacing: {
-    marginBottom: 9,
-  },
-  emptyCard: {
-    alignItems: "center",
-    paddingVertical: 24,
+  rowGap: {
+    height: ROW_GAP,
   },
 });

@@ -132,8 +132,18 @@ export interface TaskDto {
    * src/utils/recurrence.ts, which handles that case rather than assuming.
    */
   recurrenceRule: string | null;
+  /**
+   * Instants with a "Z" (task-svc's ServerTimestamps). Before that they were server wall-clock
+   * times with no zone, which the device read as its own local time — hours out on a UTC server.
+   */
   createdAt: string;
   completedAt: string | null;
+  /**
+   * What finishing this task earned — a flat REMINDER_POINTS for a reminder, its sessions' total
+   * for a focus task. Null while pending, after an undo, and on reminders finished before
+   * reminders earned anything.
+   */
+  pointsEarned: number | null;
 }
 
 /**
@@ -273,7 +283,13 @@ export interface FocusSessionDto {
   durationSeconds: number | null;
   focusMode: FocusMode;
   numPomodoroCycles: number | null;
+  /**
+   * The length chosen when the session started — the whole sitting, so cycles × length for a
+   * Pomodoro. Null only on sessions started by builds that didn't send it.
+   */
+  plannedMinutes: number | null;
   pointsEarned: number | null;
+  /** An instant with a "Z" — safe to compare against the device clock. */
   startedAt: string;
   completedAt: string | null;
   wasInterrupted: boolean | null;
@@ -308,6 +324,17 @@ export interface WeeklyProgressDto {
   tasksCompleted: number;
   weeklyGoal: number;
   totalFocusTimeMinutes: number;
+}
+
+/**
+ * Home's "points today" and "min focused", over the user's own calendar day. Points include
+ * finished reminders; minutes are focus sessions only — which is why the two can differ.
+ */
+export interface TodayProgressDto {
+  /** "YYYY-MM-DD" — the day these totals cover. */
+  date: string;
+  pointsEarned: number;
+  focusMinutes: number;
 }
 
 /** Summed across every week the user has a row for — only focus-type completions count. */
