@@ -5,7 +5,7 @@
  */
 import React from "react";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
-import { color, size } from "../theme";
+import { color, detail, size } from "../theme";
 
 type IconProps = { size?: number };
 
@@ -307,5 +307,75 @@ export const AlertGlyph = ({ size: s = 14, color: c = color.danger }: IconProps 
     <Circle cx={12} cy={12} r={9} fill={c} />
     <Path d="M12 7.6v5" stroke={color.selectedTint} strokeWidth={2.2} strokeLinecap="round" />
     <Circle cx={12} cy={16.3} r={1.3} fill={color.selectedTint} />
+  </Svg>
+);
+
+/* ------------------------------------------------- Task Detail's own marks */
+
+/**
+ * Line-drawn, all on the same 1.7 stroke, because the Task Detail screens are quieter than
+ * the rest of the app — filled "sticker" icons would shout next to those soft white cards.
+ * Separate from the marks above rather than reusing them: the geometry is the design's own,
+ * and changing the shared ones would restyle screens nobody asked to change.
+ */
+export const BackChevronIcon = ({ size: s = 26, color: c = detail.ink }: IconProps & { color?: string }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Path d="M14.5 5.5L8 12l6.5 6.5" stroke={c} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+/** The chevron at the end of an open row — quieter than ChevronRightIcon's action arrow. */
+export const RowChevronIcon = ({ size: s = 16, color: c = detail.chevron }: IconProps & { color?: string }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Path d="M9.5 5.5L16 12l-6.5 6.5" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+/** The + inside the dashed circle where a goal would be. */
+export const AttachPlusIcon = ({ size: s = 17, color: c = detail.emptyPlus }: IconProps & { color?: string }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Path d="M12 5.5v13M5.5 12h13" stroke={c} strokeWidth={1.8} strokeLinecap="round" />
+  </Svg>
+);
+
+/** SCHEDULED — the day this is for. */
+export const TimingCalendarIcon = ({ size: s = 19, color: c = detail.rowIcon }: IconProps & { color?: string }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Rect x={3.5} y={5} width={17} height={15.5} rx={3.5} stroke={c} strokeWidth={1.7} strokeLinecap="round" />
+    <Path d="M3.5 10h17M8.5 3.2v3.4M15.5 3.2v3.4" stroke={c} strokeWidth={1.7} strokeLinecap="round" />
+  </Svg>
+);
+
+/** ONE NUDGE — an alarm clock, for the single buzz counted from now. */
+export const TimingAlarmIcon = ({ size: s = 19, color: c = detail.rowIcon }: IconProps & { color?: string }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Circle cx={12} cy={12.8} r={8.4} stroke={c} strokeWidth={1.7} />
+    <Path
+      d="M12 8.6v4.2l2.8 1.8M19 4.4l1.8 1.8M5 4.4L3.2 6.2"
+      stroke={c}
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
+/** KEEP NUDGING — the loop that buzzes again until the task is done. */
+export const TimingRepeatIcon = ({ size: s = 19, color: c = detail.rowIcon }: IconProps & { color?: string }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M4 12a8 8 0 0 1 13.7-5.6M20 12a8 8 0 0 1-13.7 5.6"
+      stroke={c}
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M17.8 3.2v3.5h-3.5M6.2 20.8v-3.5h3.5"
+      stroke={c}
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   </Svg>
 );

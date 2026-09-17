@@ -114,7 +114,7 @@ export function useCreateTaskMutation() {
       queryClient.setQueryData(queryKeys.task(newTask.id), newTask);
       // A task created with a notification also created a reminder row, which this response
       // doesn't carry — same reasoning as useUpdateTaskMutation's own onSuccess.
-      if (request.notifyTime !== undefined) {
+      if (request.notifyTime !== undefined || request.notifications !== undefined) {
         queryClient.invalidateQueries({ queryKey: queryKeys.reminders() });
         void syncReminders();
       }
@@ -158,7 +158,11 @@ export function useUpdateTaskMutation() {
      * a notification change; an ordinary rename doesn't pay for a refetch.
      */
     onSuccess: (_updated, { request }) => {
-      if (request.notifyTime !== undefined || request.clearNotify) {
+      // `notifications` as well as `notifyTime`: every screen sends the array now (the schedule
+      // sheet, and "nudge me in N minutes"), and checking only the older single-value field meant
+      // a notification the user had just set never reached the reminders cache *or* the device.
+      // The row went on saying "Not set", and nothing was scheduled until the next foreground sync.
+      if (request.notifyTime !== undefined || request.notifications !== undefined || request.clearNotify) {
         queryClient.invalidateQueries({ queryKey: queryKeys.reminders() });
         void syncReminders();
       }

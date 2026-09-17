@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,92 +18,51 @@ import { useDeleteTaskMutation, useTaskQuery, useUpdateTaskMutation } from "../a
 import type { FocusMode, TaskType } from "../api/types";
 import {
   BackLink,
-  Badge,
-  Body,
   Button,
   Card,
   ConfirmModal,
-  DoNotDisturbIcon,
-  Eyebrow,
-  FocusIcon,
+  DeleteTaskLink,
+  DetailCard,
+  DetailFooter,
+  DetailHeader,
+  DetailSection,
+  DetailTitle,
+  GoalAttachmentCard,
   GoalPickerSheet,
-  Label,
   Meta,
-  ReminderIcon,
   NudgeSheet,
   type NudgeSelection,
+  PomodoroPlan,
   QuickReminderSheet,
   type QuickReminderChoice,
   ScheduleSheet,
   type ScheduleSelection,
   ScreenContainer,
-  Segmented,
-  Stepper,
-  StreakIconInline,
-  Toggle,
+  SessionLength,
+  SessionModeSwitch,
+  StreakNote,
+  TaskTypeSwitch,
+  TimingAlarmIcon,
+  TimingCalendarIcon,
+  TimingRepeatIcon,
+  TimingRow,
+  WhyNoGoalCard,
 } from "../components";
 import { syncReminders } from "../notifications/useReminderSync";
 import { usePreferences } from "../state/PreferencesContext";
 import { useSession } from "../state/SessionContext";
-import { color, radius, size, space, text as t, type as T } from "../theme";
+import { detail, space, textAtDesignSize as td, type as T } from "../theme";
 import { formatClockTime } from "../utils/format";
 import { DEFAULT_POMODORO_MINUTES, resumeSessionParams } from "../utils/focusSession";
-import { recurrenceShortLabel } from "../utils/recurrence";
-import { formatScheduleDate, isOverdue } from "../utils/schedule";
+import { describeRecurrence } from "../utils/recurrence";
+import { formatScheduleDate, todayKey } from "../utils/schedule";
 import type { RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, "TaskDetail">;
 
-/**
- * Icon · title/subtitle · action row. Reminder and goal are the same shape of thing — an
- * optional attachment with one way to change it — so they share one row component rather
- * than each inventing its own layout.
- *
- * The whole row is the tap target, with the action word doubling as the affordance; a
- * text-sized hit area on the right alone is too small to aim at comfortably.
- */
-function DetailRow({
-  icon,
-  title,
-  badge,
-  subtitle,
-  action,
-  onPress,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  /** Status tag shown beside the title — the schedule row uses it for where the task sits. */
-  badge?: React.ReactNode;
-  /** Left off when the title and badge already carry the whole fact, as an overdue task does. */
-  subtitle?: string;
-  action: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={[title, subtitle, action].filter(Boolean).join(". ")}
-      onPress={onPress}
-      style={styles.detailRow}
-    >
-      <View style={styles.detailIcon}>{icon}</View>
-      <View style={styles.detailText}>
-        <View style={styles.detailTitleRow}>
-          {/* Two lines rather than one: a dated repeating task's summary is three facts joined
-              by "·", and clipping it to "Yesterday · Every 2 we…" hid the half that matters. */}
-          <Label numberOfLines={2} style={styles.detailTitle}>
-            {title}
-          </Label>
-          {badge}
-        </View>
-        {subtitle ? <Meta style={{ marginTop: 2, color: color.textFaint }}>{subtitle}</Meta> : null}
-      </View>
-      <Meta style={{ color: color.selectedText, fontWeight: "800" }}>{action}</Meta>
-      <Meta style={{ color: color.textFaint, marginLeft: 4 }}>›</Meta>
-    </Pressable>
-  );
-}
+/** Minutes of rest between Pomodoro rounds — mirrors FocusSessionScreen's BREAK_SECONDS. */
+const POMODORO_BREAK_MINUTES = 5;
 
 export function TaskDetailScreen() {
   const { user } = useSession();
@@ -365,17 +324,16 @@ export function TaskDetailScreen() {
    * A task that can't be loaded at all — deleted here, on another device, or reached from a
    * notification for something that no longer exists.
    *
-   * Distinguished from "still loading" deliberately: this screen used to render a spinner
-   * for any falsy task, so a 404 spun forever with no way forward but the OS back gesture.
-   * That became easy to hit once notifications could deep-link into a task.
+   * Distinguished from "still loading" deliberately: this screen used to render a spinner for
+   * any falsy task, so a 404 spun forever with no way forward but the OS back gesture.
    */
   if (!task && taskQuery.isError) {
     return (
-      <ScreenContainer>
-        <ScrollView contentContainerStyle={styles.content}>
+      <ScreenContainer wash="home">
+        <ScrollView contentContainerStyle={styles.missingContent}>
           <BackLink onPress={() => navigation.goBack()} />
           <Card style={styles.missingCard}>
-            <Text style={t(T.bodyLg, { color: color.text })}>This task is gone</Text>
+            <Text style={td(T.bodyLg, { color: detail.ink })}>This task is gone</Text>
             <Meta style={styles.missingText}>
               It was deleted, here or on another device. Nothing further to do with it.
             </Meta>
@@ -390,261 +348,169 @@ export function TaskDetailScreen() {
   // background and chrome appear instantly and only the data itself visibly loads in.
   if (!task) {
     return (
-      <ScreenContainer>
+      <ScreenContainer wash="home">
         <View style={styles.loading}>
-          <ActivityIndicator color={color.interactive} />
+          <ActivityIndicator color={detail.action} />
         </View>
       </ScreenContainer>
     );
   }
 
   const isFocus = task.taskType === "focus";
+  const finished = task.status === "completed";
+  const today = todayKey();
+
+  /**
+   * The whole schedule as one line. A repeating task leads with the time and lets the rule
+   * carry the day — "6:00 PM · every day" — because the rule already names which days it
+   * lands on. A one-off leads with its date, which is the fact that matters for it.
+   */
+  const notifyTime = formatClockTime(reminder?.reminderTime ?? null);
+  const repeatLabel = describeRecurrence(task.recurrenceRule);
+  const scheduleValue = task.recurrenceRule
+    ? [notifyTime, repeatLabel ? repeatLabel.charAt(0).toLowerCase() + repeatLabel.slice(1) : null]
+        .filter(Boolean)
+        .join(" · ")
+    : task.scheduledFor
+      ? [formatScheduleDate(task.scheduledFor), notifyTime].filter(Boolean).join(" · ")
+      : notifyTime
+        ? `${notifyTime} · every day until done`
+        : "No date";
+
+  /**
+   * The next buzz, as a countdown rather than a clock time — that's what makes it read as a
+   * nudge. Only today's notification qualifies: one that has already fired, or belongs to a
+   * later day, says nothing about now.
+   */
+  const nudgeValue = (() => {
+    const time = reminder?.reminderTime;
+    if (!time || task.scheduledFor !== today) return "Not set";
+    const [h, m] = time.split(":").map(Number);
+    const at = new Date();
+    at.setHours(h, m, 0, 0);
+    const minutes = Math.round((at.getTime() - Date.now()) / 60_000);
+    if (minutes < 0) return "Not set";
+    if (minutes < 1) return "Any moment now";
+    if (minutes < 60) return `In ${minutes} minute${minutes === 1 ? "" : "s"}`;
+    return `At ${formatClockTime(time)}`;
+  })();
+
+  const keepNudgingValue = nudge
+    ? `Every ${nudge.intervalMinutes} min · ${formatClockTime(nudge.startTime)}–${formatClockTime(nudge.endTime)}`
+    : "Off";
+
+  const footerLabel = isFocus
+    ? focusMode === "pomodoro"
+      ? `Start ${pomodoroCycles} round${pomodoroCycles === 1 ? "" : "s"}`
+      : `Start ${regularMinutes} min session`
+    : "Mark as done";
 
   return (
-    <ScreenContainer>
-      <ScrollView contentContainerStyle={styles.content}>
-        <BackLink onPress={() => navigation.goBack()} />
-        <Text style={t(T.h1, { fontSize: 27, color: color.text })}>{task.name}</Text>
+    <ScreenContainer wash="home">
+      {/* The dots carry Delete as well as the link at the foot of the page: one for someone
+          scanning the header, one for someone reading down. */}
+      <DetailHeader
+        onBack={() => navigation.goBack()}
+        onMenu={() => setDeleteConfirmOpen(true)}
+      />
 
-        <Segmented<TaskType>
-          value={task.taskType}
-          onChange={handleTaskTypeChange}
-          options={[
-            { value: "focus", label: "Focus", icon: <FocusIcon size={18} /> },
-            { value: "reminder", label: "Reminder", icon: <ReminderIcon size={18} /> },
-          ]}
-        />
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View>
+          <DetailTitle>{task.name}</DetailTitle>
+          {/* A finished task's type is history — switching it couldn't change what already
+              counted toward streak and progress. */}
+          {finished ? null : <TaskTypeSwitch value={task.taskType} onChange={handleTaskTypeChange} />}
+        </View>
 
-        {/* The action first, its configuration after.
-            Starting a session is what this screen gets opened for, and it used to sit below
-            four rows, a paragraph, a mode switch and a stepper — everything on the screen
-            carried the same weight whether it was tapped every time or never. */}
         {isFocus ? (
-          <Card>
-            <View style={styles.cardHeader}>
-              <Eyebrow>FOCUS SESSION</Eyebrow>
-            </View>
-            <Segmented<FocusMode>
-              value={focusMode}
-              onChange={setFocusMode}
-              options={[
-                /* Just "Regular": the design carried the length in this label because it had
-                   no stepper, and the Session length row below is the one that can change it.
-                   Both showing 25 min is one edit away from the two disagreeing. */
-                { value: "regular", label: "Regular" },
-                { value: "pomodoro", label: "Pomodoro" },
-              ]}
+          <DetailSection label="GOAL">
+            <GoalAttachmentCard
+              goalName={goal?.name ?? null}
+              daysDone={goal?.totalDaysActive ?? 0}
+              targetDays={goal?.targetDays ?? 0}
+              // Only when today hasn't already been counted — a goal moves once a day, however
+              // many focus tasks you finish against it.
+              todayCounts={!finished && !!goal && goal.lastActivityDate !== today}
+              onPress={() => setGoalSheetOpen(true)}
             />
-
-            {focusMode === "regular" ? (
-              <View style={styles.settingRow}>
-                <Body style={{ fontWeight: "700" }}>Session length</Body>
-                <Stepper
-                  value={regularMinutes}
-                  onChange={setRegularMinutes}
-                  min={5}
-                  max={90}
-                  step={5}
-                  suffix="min"
-                  label="session length"
-                />
-              </View>
-            ) : null}
-
-            {/* Pomodoro-only — absent in regular mode, not disabled (design §3). */}
-            {focusMode === "pomodoro" ? (
-              <>
-                <View style={styles.settingRow}>
-                  <Body style={{ fontWeight: "700" }}>Cycles</Body>
-                  <Stepper value={pomodoroCycles} onChange={setPomodoroCycles} min={1} max={10} label="cycles" />
-                </View>
-                <View style={styles.settingRow}>
-                  <Body style={{ fontWeight: "700" }}>Session length</Body>
-                  <Stepper
-                    value={pomodoroMinutes}
-                    onChange={setPomodoroMinutes}
-                    min={5}
-                    max={60}
-                    step={5}
-                    suffix="min"
-                    label="pomodoro session length"
-                  />
-                </View>
-                <Meta style={{ color: color.textFaint }}>
-                  {pomodoroCycles} × {pomodoroMinutes} min · {pomodoroCycles * pomodoroMinutes} minutes total
-                </Meta>
-              </>
-            ) : null}
-
-            <View style={styles.rowDivider} />
-
-            <View style={styles.dndRow}>
-              {/* 18, matching FocusSessionScreen's DND pill — the two screens show the
-                  same "Do Not Disturb" concept and should read at the same size. */}
-              <DoNotDisturbIcon size={18} />
-              <View style={styles.dndText}>
-                <Label>Do Not Disturb</Label>
-                <Meta style={{ marginTop: 2 }}>Silences your phone for this session · coming soon</Meta>
-              </View>
-              <Toggle
-                value={sessionDndEnabled}
-                onChange={setSessionDndEnabled}
-                label="Do Not Disturb for this session"
-              />
-            </View>
-
-            <Button
-              label="Start focus session"
-              loading={starting}
-              onPress={handleStartSession}
-              style={styles.startButton}
-            />
-          </Card>
+          </DetailSection>
         ) : null}
 
-        {/* Reminder and goal are one card of rows rather than two headed cards: they're the
-            same kind of thing — an optional attachment with a single action — and heading
-            each one separately made the screen read as four sections before the actual
-            controls. */}
-        <Card style={styles.rowCard}>
-          <DetailRow
-            icon={<ReminderIcon size={20} />}
-            /*
-               One row for the whole schedule: the day, whether it repeats, and whether it
-               notifies. These used to be two rows that could contradict each other; the
-               summary reads as one sentence because it now describes one setting.
-             */
-            title={
-              task.scheduledFor
-                ? [
-                    formatScheduleDate(task.scheduledFor),
-                    recurrenceShortLabel(task.recurrenceRule),
-                    formatClockTime(reminder?.reminderTime ?? null),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")
-                : reminder
-                  ? `${formatClockTime(reminder.reminderTime) ?? ""} · every day until done`.trim()
-                  : "Schedule"
-            }
-            badge={
-              // Only a dated task gets a tag — OVERDUE/SCHEDULED add a short-form status the
-              // sentence below doesn't. An undated task's badge would just repeat "Stays on
-              // Home" in fewer words.
-              task.scheduledFor ? (
-                isOverdue(task) ? <Badge label="OVERDUE" tone="danger" /> : <Badge label="SCHEDULED" />
-              ) : null
-            }
-            /* Saying where the task is sitting is what makes it vanishing from Home read as
-               a consequence of the date, not a bug — but only where that isn't already said.
-               An overdue task had the date in the title, "OVERDUE" in the badge, and then
-               "Was due Yesterday — waiting under Overdue" underneath: three elements, one
-               fact, and the only one carrying anything new was the badge. */
-            subtitle={
-              !task.scheduledFor && !reminder
-                ? "No date — stays on Home"
-                : !task.scheduledFor
-                  ? "Stays on Home until it's done"
-                  : isOverdue(task)
-                    ? undefined
-                    : "Waits under Scheduled until that day"
-            }
-            /* Read-only once the task is finished. Rescheduling something already done can't
-               change anything — a repeat set here could never fire (the server refuses it),
-               and a notification would be stopped on arrival. Showing the row keeps the
-               history readable; offering to edit it would promise something that isn't true. */
-            action={task.status === "completed" ? "" : task.scheduledFor || reminder ? "Change" : "Add"}
-            onPress={() => {
-              if (task.status !== "completed") setScheduleSheetOpen(true);
-            }}
-          />
-
-          <View style={styles.rowDivider} />
-
-          <DetailRow
-            icon={
-              goal ? (
-                <View style={[styles.goalSwatch, { backgroundColor: goal.color ?? color.goal }]} />
+        {isFocus && !finished ? (
+          <DetailSection label="SESSION">
+            <DetailCard style={styles.sessionCard}>
+              <SessionModeSwitch value={focusMode} onChange={setFocusMode} />
+              {focusMode === "regular" ? (
+                <SessionLength minutes={regularMinutes} onChange={setRegularMinutes} />
               ) : (
-                <View style={styles.goalSwatchEmpty} />
-              )
-            }
-            title={goal ? goal.name : "Goal"}
-            subtitle={
-              goal
-                ? `${goal.totalDaysActive} of ${goal.targetDays} days${isFocus ? " · today adds one" : ""}`
-                : "Not attached — optional"
-            }
-            action={goal ? "Change" : "Attach"}
-            onPress={() => setGoalSheetOpen(true)}
-          />
+                <PomodoroPlan
+                  minutes={pomodoroMinutes}
+                  rounds={pomodoroCycles}
+                  breakMinutes={POMODORO_BREAK_MINUTES}
+                  onMinutes={setPomodoroMinutes}
+                  onRounds={setPomodoroCycles}
+                />
+              )}
+            </DetailCard>
+          </DetailSection>
+        ) : null}
 
-          {/* Only for outstanding work: nudges are about chasing something today, which a
-              finished task doesn't need. */}
-          {task.status === "completed" ? null : (
-            <>
-              <View style={styles.rowDivider} />
-              <DetailRow
-                icon={<ReminderIcon size={20} />}
-                title="Nudge me in…"
-                subtitle="A one-off, counted from right now"
-                action="Pick"
-                onPress={() => setQuickSheetOpen(true)}
-              />
+        <DetailSection label="TIMING">
+          <DetailCard style={styles.timingCard}>
+            <TimingRow
+              first
+              icon={<TimingCalendarIcon />}
+              label="SCHEDULED"
+              value={scheduleValue}
+              /* Read-only once the task is finished: a repeat set here could never fire, and a
+                 notification would be stopped on arrival. */
+              action={finished ? undefined : task.scheduledFor || reminder ? "Change" : "Add"}
+              onPress={finished ? undefined : () => setScheduleSheetOpen(true)}
+            />
+            {finished ? null : (
+              <>
+                <TimingRow
+                  icon={<TimingAlarmIcon />}
+                  label="ONE NUDGE"
+                  value={nudgeValue}
+                  action={nudgeValue === "Not set" ? "Pick" : "Edit"}
+                  onPress={() => setQuickSheetOpen(true)}
+                />
+                <TimingRow
+                  icon={<TimingRepeatIcon />}
+                  label="KEEP NUDGING"
+                  value={keepNudgingValue}
+                  action={nudge ? "Edit" : "Add"}
+                  onPress={() => setNudgeSheetOpen(true)}
+                />
+              </>
+            )}
+          </DetailCard>
+        </DetailSection>
 
-              <View style={styles.rowDivider} />
-
-              <DetailRow
-                icon={<ReminderIcon size={20} />}
-                title={
-                  nudge
-                    ? `Every ${nudge.intervalMinutes} min · ${formatClockTime(nudge.startTime)}–${formatClockTime(nudge.endTime)}`
-                    : "Repeated nudges"
-                }
-                subtitle={
-                  nudge
-                    ? "Buzzes on a loop inside that window"
-                    : "Optional — for something that needs chasing today"
-                }
-                action={nudge ? "Change" : "Add"}
-                onPress={() => setNudgeSheetOpen(true)}
-              />
-            </>
-          )}
-
-        </Card>
-
-        {/* A plain line, not a card: this is a statement of fact about focus tasks, and
-            dressing it as a panel gave it the same weight as the controls around it.
-            "goal or not" only when unattached — it answers the question the empty goal row
-            above has just raised, so it stays below those rows even though the session card
-            it used to introduce now sits above them. */}
         {isFocus ? (
-          <View style={styles.trackingNote}>
-            <StreakIconInline size={14} />
-            <Meta style={styles.trackingText}>
-              Counts toward your streak and weekly progress{goal ? "" : ", goal or not"} — automatic for focus
-              tasks.
-            </Meta>
-          </View>
+          <StreakNote>
+            {`Finishing a session counts toward your streak and weekly progress${goal ? "" : " — goal or not"}.`}
+          </StreakNote>
         ) : (
-          <>
-            <View style={styles.dashedNote}>
-              <Meta style={{ lineHeight: 21 }}>
-                Reminder tasks don&rsquo;t count toward streak or weekly progress — those track focused work only.
-              </Meta>
-            </View>
-            <Button label="Mark as done ✓" onPress={handleMarkDone} />
-          </>
+          <WhyNoGoalCard />
         )}
 
-        <Button
-          label="Delete task"
-          variant="destructiveText"
-          onPress={() => setDeleteConfirmOpen(true)}
-          style={styles.deleteButton}
-        />
+        {/* The reminder screen has less to say, so the design lets the page breathe and drops
+            Delete to the bottom rather than leaving it floating under the last card. */}
+        {isFocus ? null : <View style={styles.spacer} />}
+
+        <DeleteTaskLink onPress={() => setDeleteConfirmOpen(true)} />
       </ScrollView>
+
+      {finished ? null : (
+        <DetailFooter
+          label={footerLabel}
+          tone={isFocus ? "start" : "done"}
+          onPress={isFocus ? handleStartSession : handleMarkDone}
+          disabled={starting}
+        />
+      )}
 
       <ScheduleSheet
         visible={scheduleSheetOpen}
@@ -705,6 +571,29 @@ export function TaskDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  content: {
+    paddingTop: 14,
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    gap: 13,
+    // So the reminder screen's spacer has somewhere to push Delete down to.
+    flexGrow: 1,
+  },
+  sessionCard: {
+    paddingBottom: 15,
+  },
+  // Rows carry their own padding so the dividers between them run edge to edge.
+  timingCard: {
+    paddingVertical: 2,
+  },
+  spacer: {
+    flex: 1,
+  },
+  missingContent: {
+    paddingHorizontal: space.gutter,
+    paddingTop: space.md,
+    paddingBottom: 24,
+  },
   missingCard: {
     alignItems: "center",
     paddingVertical: 24,
@@ -722,108 +611,5 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-  },
-  content: {
-    paddingHorizontal: space.gutter,
-    paddingTop: space.md,
-    paddingBottom: 24,
-    gap: space.base,
-  },
-  cardHeader: {
-    marginBottom: space.md,
-  },
-  // Rows carry their own padding so the divider between them can run edge to edge.
-  rowCard: {
-    paddingVertical: 0,
-    paddingHorizontal: 0,
-  },
-  detailRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.md,
-    paddingVertical: 14,
-    paddingHorizontal: space.card,
-    minHeight: size.minTouch,
-  },
-  detailIcon: {
-    width: 22,
-    alignItems: "center",
-  },
-  detailText: {
-    flex: 1,
-  },
-  detailTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.sm,
-  },
-  // Shrinks so a long goal name yields to the tag beside it rather than pushing it away.
-  detailTitle: {
-    flexShrink: 1,
-  },
-  rowDivider: {
-    height: 1,
-    backgroundColor: color.divider,
-  },
-  trackingNote: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.sm,
-    paddingHorizontal: 2,
-  },
-  trackingText: {
-    flex: 1,
-    lineHeight: 20,
-  },
-  goalSwatchEmpty: {
-    width: 12,
-    height: 12,
-    borderRadius: 3,
-    borderWidth: 1.5,
-    borderStyle: "dashed",
-    borderColor: color.textFaint,
-  },
-  goalSwatch: {
-    width: 12,
-    height: 12,
-    borderRadius: 3,
-  },
-  goalText: {
-    flex: 1,
-  },
-  settingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 13,
-  },
-  dndRow: {
-    borderWidth: 1,
-    borderColor: color.successBorder,
-    backgroundColor: color.successFill,
-    borderRadius: radius.control,
-    paddingVertical: 12,
-    paddingHorizontal: 13,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.md,
-    marginTop: 11,
-  },
-  dndText: {
-    flex: 1,
-  },
-  startButton: {
-    marginTop: space.base,
-  },
-  dashedNote: {
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: color.border,
-    borderRadius: radius.card,
-    paddingVertical: 14,
-    paddingHorizontal: space.card,
-  },
-  deleteButton: {
-    marginTop: space.gutter,
   },
 });

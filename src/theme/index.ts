@@ -100,8 +100,9 @@ export const color = {
  */
 const FAMILY_BY_WEIGHT: Record<string, string> = {
   // Regular exists for one line: the date under Home's greeting, which the Docked Ferne screens
-  // draw at 400. Nothing else in the app uses it — everything else is 600 and up.
+  // draw at 400. Medium carries the quiet body text on Task Detail.
   "400": "PlusJakartaSans_400Regular",
+  "500": "PlusJakartaSans_500Medium",
   "600": "PlusJakartaSans_600SemiBold",
   "700": "PlusJakartaSans_700Bold",
   "800": "PlusJakartaSans_800ExtraBold",
@@ -109,6 +110,7 @@ const FAMILY_BY_WEIGHT: Record<string, string> = {
 
 export const font = {
   regular: FAMILY_BY_WEIGHT["400"],
+  medium: FAMILY_BY_WEIGHT["500"],
   semiBold: FAMILY_BY_WEIGHT["600"],
   bold: FAMILY_BY_WEIGHT["700"],
   black: FAMILY_BY_WEIGHT["800"],
@@ -193,9 +195,13 @@ export const FONT_SCALE_CORRECTION = OS_FONT_CAP * TYPE_SCALE;
 export function text(token: TypeToken, extra?: TextStyle): TextStyle {
   const style: TextStyle = {
     ...token,
-    fontFamily: FAMILY_BY_WEIGHT[String(token.fontWeight)] ?? font.semiBold,
     ...extra,
   };
+  // Resolved from the *merged* weight, not the token's. A caller overriding fontWeight was
+  // otherwise given the token's family and a weight the platform couldn't apply to it: on
+  // Android the loaded family wins outright, and on web the browser synthesises a fake bold
+  // over the wrong file. Either way the text came out a weight nobody asked for.
+  style.fontFamily = FAMILY_BY_WEIGHT[String(style.fontWeight)] ?? font.semiBold;
 
   if (FONT_SCALE_CORRECTION !== 1) {
     if (typeof style.fontSize === "number") style.fontSize *= FONT_SCALE_CORRECTION;
@@ -221,9 +227,10 @@ export function text(token: TypeToken, extra?: TextStyle): TextStyle {
 export function textAtDesignSize(token: TypeToken, extra?: TextStyle): TextStyle {
   const style: TextStyle = {
     ...token,
-    fontFamily: FAMILY_BY_WEIGHT[String(token.fontWeight)] ?? font.semiBold,
     ...extra,
   };
+  // Same merged-weight resolution as text() above — see the note there.
+  style.fontFamily = FAMILY_BY_WEIGHT[String(style.fontWeight)] ?? font.semiBold;
 
   if (OS_FONT_CAP !== 1) {
     if (typeof style.fontSize === "number") style.fontSize *= OS_FONT_CAP;
@@ -411,6 +418,73 @@ export const home = {
   captureDiscShade: "#F8DCC8",
   captureRim: "rgba(223,109,65,.34)",
   captureShadow: "rgba(142,61,29,.24)",
+} as const;
+
+/**
+ * Task Detail's surface, transcribed from the Task Detail Elegant screens.
+ *
+ * A warmer, quieter register than the rest of the app: a deeper ink (#1C2422 rather than
+ * `text`), a terracotta that leans brown (#A2604A rather than `interactive`), soft white cards
+ * on big 22pt radii with a single hairline shadow instead of the lifted, gradient-filled
+ * surfaces Home uses. Grouped rather than inlined for the same reason `home` and
+ * `schedulePanel` are — a second screen showing one of these cards should reach for the same
+ * values rather than re-pick them by eye.
+ */
+export const detail = {
+  ink: "#1C2422",
+  /** Second lines, units, and anything deliberately quiet. */
+  muted: "#6A6250",
+  /** The small uppercase labels above a section and inside a row. */
+  label: "#6B6250",
+  cardShadow: "rgba(28,36,34,.07)",
+
+  /** Focus / Reminder switch. */
+  switchTrack: "#F1E9D9",
+  switchActive: "#FFFDF7",
+  switchActiveShadow: "rgba(28,36,34,.1)",
+
+  /** Regular / Pomodoro switch — the one control in the app with a dark active state. */
+  modeTrack: "#F5F0E5",
+  modeActive: "#1C2422",
+  modeActiveInk: "#FDF8EA",
+
+  /** The round − / + buttons. */
+  stepperBorder: "#E7DFCF",
+  stepperInk: "#5C6864",
+
+  /** Pomodoro's two inset tiles, and the round/break bar under them. */
+  tile: "#FAF7EF",
+  roundOn: "#A2604A",
+  roundOff: "#E4DCCB",
+
+  /** Timing rows. */
+  divider: "#F2EDE3",
+  rowIcon: "#5C6864",
+  /** Every "Change" / "Edit" / "Add" / "Attach" on this screen. */
+  action: "#A2604A",
+  chevron: "#C0B8A6",
+
+  /** The goal ring, and the dashed circle when there's no goal. */
+  goalTrack: "#EDF1E6",
+  goalArc: "#7FB04A",
+  goalInk: "#54762D",
+  emptyRing: "#D6CEBC",
+  emptyPlus: "#B3AA98",
+
+  /** The reminder screen's "why there is no goal here" panel. */
+  explainer: "#F7F2E6",
+  explainerInk: "#5E5645",
+
+  /** The two footer buttons: terracotta to start a session, ink to finish a reminder. */
+  primary: "#A2604A",
+  primaryInk: "#FFF8F3",
+  primaryShadow: "rgba(120,62,42,.75)",
+  dark: "#1C2422",
+  darkInk: "#FDF8EA",
+  darkShadow: "rgba(28,36,34,.8)",
+
+  /** The overflow dots in the header. */
+  dots: "#A8A090",
 } as const;
 
 /* ------------------------------------------------------------------- depth */

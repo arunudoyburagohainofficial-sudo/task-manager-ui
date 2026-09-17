@@ -4,6 +4,7 @@ import * as SplashScreen from "expo-splash-screen";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
   PlusJakartaSans_600SemiBold,
   PlusJakartaSans_700Bold,
   PlusJakartaSans_800ExtraBold,
@@ -54,9 +55,11 @@ function AppContent() {
 }
 
 export default function App() {
-  // 600/700/800 carry the UI; 400 exists for one line, the date under Home's greeting.
+  // 600/700/800 carry most of the UI; 400 is the date under Home's greeting and 500 the quiet
+  // body text on Task Detail.
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
     PlusJakartaSans_600SemiBold,
     PlusJakartaSans_700Bold,
     PlusJakartaSans_800ExtraBold,

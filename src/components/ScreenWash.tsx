@@ -174,7 +174,11 @@ export function ScreenWash({ variant = "ambient" }: { variant?: WashVariant }) {
   );
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    // Clipped, not just positioned. The drifting blooms are full-screen layers that translate
+    // and scale by up to ~30px, so without this they hang past the right edge — which on web
+    // makes the whole document wider than the screen and lets every screen scroll sideways.
+    // The symptom is everything looking shifted and cut off, nowhere near the wash itself.
+    <View style={[StyleSheet.absoluteFill, styles.clip]} pointerEvents="none">
       <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
         <Defs>
           <SvgLinearGradient id="wRamp" gradientUnits="userSpaceOnUse" {...ramp}>
@@ -338,3 +342,9 @@ export function GradientFill({
 export function InnerShading({ shadows, radius }: { shadows: BoxShadowValue[]; radius: number }) {
   return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, boxShadow: shadows }]} />;
 }
+
+const styles = StyleSheet.create({
+  clip: {
+    overflow: "hidden",
+  },
+});

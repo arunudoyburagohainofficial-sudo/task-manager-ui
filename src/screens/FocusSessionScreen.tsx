@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, type AppStateStatus, Modal, StyleSheet, Text, View } from "react-native";
+import { AppState, type AppStateStatus, StyleSheet, Text, View } from "react-native";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useQueryClient } from "@tanstack/react-query";
@@ -262,7 +262,12 @@ export function FocusSessionScreen() {
     const minutes = Math.round((completedSession.durationSeconds ?? 0) / 60);
     return (
       <ScreenContainer>
-        <Modal visible transparent animationType="fade">
+        {/* An overlay inside the screen, not a Modal. A Modal renders into its own layer above
+            everything, so when this screen went away — "Keep task open" navigating to Home, or
+            the replace() into Completion — the prompt stayed on screen over the new one,
+            swallowing every tap while the background changed behind it. An ordinary absolutely
+            positioned view can't outlive the screen that draws it. */}
+        <View style={styles.overlay}>
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
               <View style={styles.completeIcon}>
@@ -294,7 +299,7 @@ export function FocusSessionScreen() {
               </View>
             </View>
           </View>
-        </Modal>
+        </View>
       </ScreenContainer>
     );
   }
@@ -473,6 +478,9 @@ const styles = StyleSheet.create({
   bottomStack: {
     gap: space.md,
     paddingBottom: 18,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
   },
   modalBackdrop: {
     flex: 1,
