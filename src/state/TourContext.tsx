@@ -114,6 +114,15 @@ interface TourContextValue {
 
 const TourContext = createContext<TourContextValue | undefined>(undefined);
 
+/**
+ * The step to reopen at. The app always reopens on Home, and the two steps that live on the
+ * capture screens can't be picked up there — the half-written task wasn't saved — so they go
+ * back to "open capture", the last step Home can show.
+ */
+function resumeAt(step: TourStep): TourStep {
+  return step === "describe" || step === "attachGoal" ? "capture" : step;
+}
+
 export function TourProvider({ children }: { children: React.ReactNode }) {
   const [activeStep, setActiveStep] = useState<TourStep | null>(null);
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
@@ -133,11 +142,32 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
    */
   const activeStepRef = useRef<TourStep | null>(null);
   const finishedRef = useRef(true); // assume finished until storage says otherwise
+  /** Where a first-run tour left off, read from storage; null to start at the beginning. */
+  const resumeRef = useRef<{ step: TourStep; taskId: string | null } | null>(null);
+  /** A replay from Settings is this session only — see restart(). */
+  const replayRef = useRef(false);
+  const tourTaskIdRef = useRef<string | null>(null);
+
+  /**
+   * A first-run tour's place survives the app being closed. It used to live only in memory,
+   * so anyone who quit mid-way — to answer a message, say — came back to step one and was
+   * asked to create a goal they'd already made.
+   */
+  const persistStep = useCallback((step: TourStep) => {
+    if (replayRef.current) return;
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ finished: false, step, taskId: tourTaskIdRef.current })).catch(
+      () => {}
+    );
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
       .then((stored) => {
-        finishedRef.current = stored ? Boolean(JSON.parse(stored).finished) : false;
+        const parsed = stored ? JSON.parse(stored) : null;
+        finishedRef.current = parsed ? Boolean(parsed.finished) : false;
+        if (parsed && !parsed.finished && TOUR_STEPS.includes(parsed.step)) {
+          resumeRef.current = { step: resumeAt(parsed.step), taskId: parsed.taskId ?? null };
+        }
       })
       .catch(() => {
         // Unreadable storage shouldn't trap someone in a tour forever — treat it as done.
@@ -154,14 +184,34 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     setActiveStep(null);
     setTargetRect(null);
     setTourTaskId(null);
+    tourTaskIdRef.current = null;
+    // A replay leaves storage alone: it was already finished there.
+    if (replayRef.current) return;
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ finished: true })).catch(() => {});
   }, []);
 
   const startIfNeeded = useCallback(() => {
     if (!loaded || finishedRef.current || activeStepRef.current) return;
-    activeStepRef.current = TOUR_STEPS[0];
-    setActiveStep(TOUR_STEPS[0]);
-  }, [loaded]);
+    const resume = resumeRef.current;
+    resumeRef.current = null;
+    const step = resume?.step ?? TOUR_STEPS[0];
+    if (resume?.taskId) {
+      tourTaskIdRef.current = resume.taskId;
+      setTourTaskId(resume.taskId);
+    }
+    activeStepRef.current = step;
+    setActiveStep(step);
+    persistStep(step);
+  }, [loaded, persistStep]);
+
+  const setTourTaskIdPersisted = useCallback(
+    (taskId: string | null) => {
+      tourTaskIdRef.current = taskId;
+      setTourTaskId(taskId);
+      if (activeStepRef.current) persistStep(activeStepRef.current);
+    },
+    [persistStep]
+  );
 
   const advance = useCallback(
     (from: TourStep) => {
@@ -173,11 +223,12 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       }
       activeStepRef.current = next;
       setActiveStep(next);
+      persistStep(next);
       // The new step's element hasn't been measured yet; clearing avoids a frame where the
       // spotlight still sits on the previous step's position.
       setTargetRect(null);
     },
-    [finish]
+    [finish, persistStep]
   );
 
   const back = useCallback((options?: { navigate?: boolean }) => {
@@ -188,24 +239,28 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     activeStepRef.current = previous;
     setTargetRect(null);
     setActiveStep(previous);
+    persistStep(previous);
     // Steps mostly live on different screens, so going back a step usually means going
     // back a screen too (step 3 sits on Capture, step 2 on Home). A no-op when there's
     // nothing to pop, which is exactly right for two steps on the same screen.
     if (options?.navigate !== false) goBackIfPossible();
-  }, []);
+  }, [persistStep]);
 
   const getActiveStep = useCallback(() => activeStepRef.current, []);
 
   const restart = useCallback(() => {
-    // Clears the finished flag too, so quitting halfway through a replay doesn't leave the
-    // tour armed to reappear on the next launch.
+    // Runs for this session only: the finished flag is cleared in memory, never on disk, so
+    // quitting halfway through a replay doesn't leave the tour armed to reappear on the next
+    // launch. (It used to write `finished: false` — the opposite of what this comment always
+    // said — and an abandoned replay came back at step one the next time the app opened.)
     finishedRef.current = false;
+    replayRef.current = true;
     activeStepRef.current = TOUR_STEPS[0];
     setTargetRect(null);
     // A replay creates its own task; last run's would otherwise be pointed at again.
+    tourTaskIdRef.current = null;
     setTourTaskId(null);
     setActiveStep(TOUR_STEPS[0]);
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ finished: false })).catch(() => {});
   }, []);
 
   const reportTarget = useCallback(
@@ -242,7 +297,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       getActiveStep,
       startIfNeeded,
       tourTaskId,
-      setTourTaskId,
+      setTourTaskId: setTourTaskIdPersisted,
       remeasure,
       measureNonce,
       advance,
@@ -262,6 +317,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       getActiveStep,
       startIfNeeded,
       tourTaskId,
+      setTourTaskIdPersisted,
       remeasure,
       measureNonce,
       advance,

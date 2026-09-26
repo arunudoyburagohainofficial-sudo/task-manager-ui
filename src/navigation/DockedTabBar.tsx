@@ -16,7 +16,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { Ferne, useReduceMotion } from "../components/Ferne";
 import { HomeTabIcon, ProgressTabIcon, ScheduledTabIcon, SettingsTabIcon } from "../components/icons";
-import { color, home, textAtDesignSize as td, type as T } from "../theme";
+import { textAtDesignSize as td, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { TourTarget } from "../state/TourContext";
 import type { MainTabParamList } from "./types";
 
@@ -53,6 +54,8 @@ function useKeyframeLoop(durationMs: number, enabled: boolean, easing = Easing.o
 }
 
 function CaptureButton({ onPress }: { onPress: () => void }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const reduceMotion = useReduceMotion();
   const moving = !reduceMotion;
   const pulse = useKeyframeLoop(4600, moving);
@@ -73,8 +76,8 @@ function CaptureButton({ onPress }: { onPress: () => void }) {
             <Svg width="100%" height="100%">
               <Defs>
                 <RadialGradient id="captureDisc" cx="44%" cy="34%" r="81%">
-                  <Stop offset="0" stopColor={home.captureDiscLit} />
-                  <Stop offset="1" stopColor={home.captureDiscShade} />
+                  <Stop offset="0" stopColor={theme.home.captureDiscLit} />
+                  <Stop offset="1" stopColor={theme.home.captureDiscShade} />
                 </RadialGradient>
               </Defs>
               <Rect width="100%" height="100%" fill="url(#captureDisc)" />
@@ -100,12 +103,14 @@ function CaptureButton({ onPress }: { onPress: () => void }) {
           </Animated.View>
         </Pressable>
       </TourTarget>
-      <Text style={td(T.badge, { fontSize: 11, letterSpacing: 0, color: color.success })}>Capture</Text>
+      <Text style={td(T.badge, { fontSize: 11, letterSpacing: 0, color: theme.color.success })}>Capture</Text>
     </View>
   );
 }
 
 export function DockedTabBar({ state, descriptors, navigation, onCapture }: BottomTabBarProps & { onCapture: () => void }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
 
   const items = state.routes.map((route, index) => {
@@ -117,8 +122,12 @@ export function DockedTabBar({ state, descriptors, navigation, onCapture }: Bott
     return (
       <Pressable
         key={route.key}
-        accessibilityRole="button"
+        // A tab, not a button: the selected state is only announced for a tab role — as a
+        // button, react-native-web dropped it and a screen reader couldn't tell which screen
+        // you were on. Capture, beside these, stays a button because it opens a sheet.
+        accessibilityRole="tab"
         accessibilityState={{ selected: focused }}
+        aria-selected={focused}
         accessibilityLabel={options.tabBarAccessibilityLabel ?? route.name}
         onPress={() => {
           const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
@@ -137,7 +146,7 @@ export function DockedTabBar({ state, descriptors, navigation, onCapture }: Bott
           {/* Overdue work is the one thing a tab has to say without being opened. */}
           {badge != null ? (
             <View style={styles.badge}>
-              <Text style={td(T.badge, { fontSize: 9, letterSpacing: 0, color: color.onInteractive })}>{badge}</Text>
+              <Text style={td(T.badge, { fontSize: 9, letterSpacing: 0, color: theme.color.onInteractive })}>{badge}</Text>
             </View>
           ) : null}
         </View>
@@ -148,7 +157,7 @@ export function DockedTabBar({ state, descriptors, navigation, onCapture }: Bott
             letterSpacing: 0,
             lineHeight: 14,
             fontWeight: focused ? "700" : "600",
-            color: focused ? color.interactive : color.textFaint,
+            color: focused ? theme.color.interactive : theme.color.textFaint,
           })}
         >
           {route.name}
@@ -168,63 +177,64 @@ export function DockedTabBar({ state, descriptors, navigation, onCapture }: Bott
   );
 }
 
-const styles = StyleSheet.create({
-  bar: {
-    borderTopWidth: 1,
-    borderTopColor: color.border,
-    backgroundColor: color.card,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    paddingTop: 9,
-    // Nothing clips the capture button, which sits above this box.
-    overflow: "visible",
-  },
-  tab: {
-    flex: 1,
-    alignItems: "center",
-    gap: 3,
-  },
-  badge: {
-    position: "absolute",
-    top: -4,
-    right: -10,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    paddingHorizontal: 4,
-    backgroundColor: color.danger,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  captureColumn: {
-    width: 84,
-    flexShrink: 0,
-    alignItems: "center",
-    gap: 2,
-  },
-  captureButton: {
-    width: CAPTURE_SIZE,
-    height: CAPTURE_SIZE,
-    marginTop: -CAPTURE_LIFT,
-    alignItems: "center",
-    justifyContent: "flex-end",
-  },
-  captureDisc: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: CAPTURE_SIZE / 2,
-    borderWidth: 2,
-    borderColor: color.screen,
-    overflow: "hidden",
-    boxShadow: [{ offsetX: 0, offsetY: 5, blurRadius: 16, color: home.captureShadow }],
-  },
-  captureRim: {
-    position: "absolute",
-    top: -5,
-    left: -5,
-    width: CAPTURE_SIZE + 10,
-    height: CAPTURE_SIZE + 10,
-    borderRadius: (CAPTURE_SIZE + 10) / 2,
-    borderWidth: 1.5,
-    borderColor: home.captureRim,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    bar: {
+      borderTopWidth: 1,
+      borderTopColor: t.color.border,
+      backgroundColor: t.color.card,
+      flexDirection: "row",
+      alignItems: "flex-end",
+      paddingTop: 9,
+      // Nothing clips the capture button, which sits above this box.
+      overflow: "visible",
+    },
+    tab: {
+      flex: 1,
+      alignItems: "center",
+      gap: 3,
+    },
+    badge: {
+      position: "absolute",
+      top: -4,
+      right: -10,
+      minWidth: 16,
+      height: 16,
+      borderRadius: 8,
+      paddingHorizontal: 4,
+      backgroundColor: t.color.danger,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    captureColumn: {
+      width: 84,
+      flexShrink: 0,
+      alignItems: "center",
+      gap: 2,
+    },
+    captureButton: {
+      width: CAPTURE_SIZE,
+      height: CAPTURE_SIZE,
+      marginTop: -CAPTURE_LIFT,
+      alignItems: "center",
+      justifyContent: "flex-end",
+    },
+    captureDisc: {
+      ...StyleSheet.absoluteFillObject,
+      borderRadius: CAPTURE_SIZE / 2,
+      borderWidth: 2,
+      borderColor: t.color.screen,
+      overflow: "hidden",
+      boxShadow: [{ offsetX: 0, offsetY: 5, blurRadius: 16, color: t.home.captureShadow }],
+    },
+    captureRim: {
+      position: "absolute",
+      top: -5,
+      left: -5,
+      width: CAPTURE_SIZE + 10,
+      height: CAPTURE_SIZE + 10,
+      borderRadius: (CAPTURE_SIZE + 10) / 2,
+      borderWidth: 1.5,
+      borderColor: t.home.captureRim,
+    },
+  });

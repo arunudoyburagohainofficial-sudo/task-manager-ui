@@ -10,6 +10,7 @@ import type { RecurrenceRule, TaskDto } from "../api/types";
  *   FREQ=DAILY   [;INTERVAL=n]                    [;COUNT=n | ;UNTIL=yyyymmdd]
  *   FREQ=WEEKLY  [;INTERVAL=n] [;BYDAY=MO,WE,FR]  [;COUNT=n | ;UNTIL=yyyymmdd]
  *   FREQ=MONTHLY [;INTERVAL=n] [;BYMONTHDAY=n | ;BYDAY=3TU]  [;COUNT=n | ;UNTIL=yyyymmdd]
+ *   FREQ=YEARLY  [;INTERVAL=n] [;BYMONTHDAY=29]   [;COUNT=n | ;UNTIL=yyyymmdd]
  */
 
 export type Frequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
@@ -129,8 +130,9 @@ export function parseRecurrence(rule: string | null | undefined): RecurrencePatt
   if (pattern.freq !== "MONTHLY" && pattern.nth) return null;
   if (pattern.freq === "MONTHLY" && pattern.byDay.length > 0) return null;
   // Yearly takes its month and day from the task's own date — a day-set or day-of-month would
-  // be a second, competing answer to the same question.
-  if (pattern.freq === "YEARLY" && (pattern.byDay.length > 0 || pattern.byMonthDay != null)) return null;
+  // be a second, competing answer to the same question. The exception is 29: a series begun on
+  // 29 February remembers it, or the first short year's 28th would become its day for good.
+  if (pattern.freq === "YEARLY" && (pattern.byDay.length > 0 || (pattern.byMonthDay != null && pattern.byMonthDay !== 29))) return null;
   if (pattern.byMonthDay != null && pattern.nth) return null;
 
   return pattern;
@@ -146,7 +148,7 @@ export function buildRecurrence(pattern: RecurrencePattern): RecurrenceRule {
   if (pattern.freq === "MONTHLY" && pattern.nth) {
     rule += `;BYDAY=${pattern.nth.week}${pattern.nth.day}`;
   }
-  if (pattern.freq === "MONTHLY" && pattern.byMonthDay != null && !pattern.nth) {
+  if ((pattern.freq === "MONTHLY" || pattern.freq === "YEARLY") && pattern.byMonthDay != null && !pattern.nth) {
     rule += `;BYMONTHDAY=${pattern.byMonthDay}`;
   }
   if (pattern.count != null) rule += `;COUNT=${pattern.count}`;

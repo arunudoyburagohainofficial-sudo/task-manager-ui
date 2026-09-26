@@ -1,6 +1,7 @@
 import React from "react";
 import { Image, StyleSheet, View } from "react-native";
-import { color } from "../theme";
+
+import { useThemedStyles, type Tokens } from "../state/ThemeContext";
 
 /**
  * Fills the same visual role as the native splash screen (see app.json's expo-splash-
@@ -13,6 +14,7 @@ import { color } from "../theme";
  * reads as one continuous screen rather than a flash of something else in between.
  */
 export function LoadingScreen() {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.container}>
       <Image source={require("../../assets/splash.png")} style={styles.logo} resizeMode="contain" />
@@ -20,15 +22,16 @@ export function LoadingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: color.ferne,
-  },
-  logo: {
-    width: 240,
-    height: 180,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: t.color.ferne,
+    },
+    logo: {
+      width: 240,
+      height: 180,
+    },
+  });

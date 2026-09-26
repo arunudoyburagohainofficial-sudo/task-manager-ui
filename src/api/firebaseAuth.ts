@@ -1,4 +1,5 @@
 import Constants, { ExecutionEnvironment } from "expo-constants";
+import { Platform } from "react-native";
 
 /**
  * Thin wrapper around @react-native-firebase/auth's modular API — kept isolated here so
@@ -26,7 +27,14 @@ import Constants, { ExecutionEnvironment } from "expo-constants";
  * importing and treating the resulting crash as the signal.
  */
 export const isPhoneAuthAvailable =
-  Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;
+  Platform.OS !== "web" && Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;
+
+/** Why the phone button is off, in the user's terms; null when it's on. */
+export const phoneAuthUnavailableReason: string | null = isPhoneAuthAvailable
+  ? null
+  : Platform.OS === "web"
+    ? "Phone sign-in works in the app, not in a browser."
+    : "Phone sign-in needs a development build — it isn’t part of Expo Go.";
 
 /** Opaque to callers — structurally @react-native-firebase's ConfirmationResult. */
 export interface PhoneConfirmation {

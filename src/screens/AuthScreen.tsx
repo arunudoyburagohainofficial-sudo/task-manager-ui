@@ -6,12 +6,13 @@ import * as WebBrowser from "expo-web-browser";
 import { authApi } from "../api";
 import { ApiError } from "../api/client";
 import { SHOW_TEST_LOGIN } from "../api/config";
-import { isPhoneAuthAvailable } from "../api/firebaseAuth";
+import { isPhoneAuthAvailable, phoneAuthUnavailableReason } from "../api/firebaseAuth";
 import { signInAsTestUser, signInWithGoogleIdToken } from "../api/firebaseWebAuth";
 import { useGoogleSignIn } from "../auth/googleSignIn";
 import { Body, Button, Ferne, GoogleIcon, H1, Meta, ScreenContainer } from "../components";
 import { useSession } from "../state/SessionContext";
-import { color, radius, size, space } from "../theme";
+import { radius, size, space } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -20,6 +21,8 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 WebBrowser.maybeCompleteAuthSession();
 
 export function AuthScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { signIn } = useSession();
   const navigation = useNavigation<Nav>();
 
@@ -96,7 +99,7 @@ export function AuthScreen() {
           <Meta style={styles.centered}>Capture tasks fast. Focus without friction.</Meta>
         </View>
 
-        {error ? <Body style={{ color: color.danger }}>{error}</Body> : null}
+        {error ? <Body style={{ color: theme.color.danger }}>{error}</Body> : null}
 
         <View style={styles.actions}>
           <Button
@@ -104,10 +107,8 @@ export function AuthScreen() {
             disabled={!isPhoneAuthAvailable || submitting || testUserLoading}
             onPress={() => navigation.navigate("PhoneSignIn")}
           />
-          {!isPhoneAuthAvailable ? (
-            <Meta style={[styles.centered, { color: color.textFaint }]}>
-              Phone sign-in needs a development build — it isn&rsquo;t part of Expo Go.
-            </Meta>
+          {phoneAuthUnavailableReason ? (
+            <Meta style={[styles.centered, { color: theme.color.textFaint }]}>{phoneAuthUnavailableReason}</Meta>
           ) : null}
 
           <Pressable
@@ -119,17 +120,17 @@ export function AuthScreen() {
             style={({ pressed }) => [styles.googleButton, { opacity: googleDisabled ? 0.5 : pressed ? 0.85 : 1 }]}
           >
             {submitting ? (
-              <ActivityIndicator color={color.text} />
+              <ActivityIndicator color={theme.color.text} />
             ) : (
               <>
                 <GoogleIcon size={20} />
-                <Body style={{ fontWeight: "800", color: color.text }}>Continue with Google</Body>
+                <Body style={{ fontWeight: "800", color: theme.color.text }}>Continue with Google</Body>
               </>
             )}
           </Pressable>
 
           {google.unavailableReason ? (
-            <Meta style={[styles.centered, { color: color.textFaint }]}>{google.unavailableReason}</Meta>
+            <Meta style={[styles.centered, { color: theme.color.textFaint }]}>{google.unavailableReason}</Meta>
           ) : null}
 
           {SHOW_TEST_LOGIN ? (
@@ -142,9 +143,9 @@ export function AuthScreen() {
               style={styles.testUser}
             >
               {testUserLoading ? (
-                <ActivityIndicator size="small" color={color.textFaint} />
+                <ActivityIndicator size="small" color={theme.color.textFaint} />
               ) : (
-                <Meta style={[styles.centered, { color: color.textFaint, opacity: submitting ? 0.5 : 1 }]}>
+                <Meta style={[styles.centered, { color: theme.color.textFaint, opacity: submitting ? 0.5 : 1 }]}>
                   Continue as test user
                 </Meta>
               )}
@@ -156,39 +157,40 @@ export function AuthScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  content: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: space.gutter,
-    paddingVertical: space.lg,
-    gap: space.base,
-  },
-  hero: {
-    alignItems: "center",
-    gap: space.md,
-    marginBottom: space.sm,
-  },
-  centered: {
-    textAlign: "center",
-  },
-  actions: {
-    gap: space.base,
-  },
-  googleButton: {
-    minHeight: size.button,
-    borderRadius: radius.control,
-    backgroundColor: color.card,
-    borderWidth: 1.5,
-    borderColor: color.border,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: space.md,
-  },
-  testUser: {
-    minHeight: size.minTouch,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    content: {
+      flexGrow: 1,
+      justifyContent: "center",
+      paddingHorizontal: space.gutter,
+      paddingVertical: space.lg,
+      gap: space.base,
+    },
+    hero: {
+      alignItems: "center",
+      gap: space.md,
+      marginBottom: space.sm,
+    },
+    centered: {
+      textAlign: "center",
+    },
+    actions: {
+      gap: space.base,
+    },
+    googleButton: {
+      minHeight: size.button,
+      borderRadius: radius.control,
+      backgroundColor: t.color.card,
+      borderWidth: 1.5,
+      borderColor: t.color.border,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: space.md,
+    },
+    testUser: {
+      minHeight: size.minTouch,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+  });

@@ -82,6 +82,16 @@ export function useTaskQuery(taskId: string) {
     queryKey: queryKeys.task(taskId),
     queryFn: () => tasksApi.getTask(taskId),
     enabled: !!user && !!taskId,
+    /**
+     * Re-checked every time a task's screen opens, while the cached copy paints instantly.
+     *
+     * Everything else in the app is `staleTime: Infinity`, and on the lists that's safe because
+     * launch re-fetches them. Nothing re-fetched this one. Its entry is persisted, so once a task
+     * had been opened, a change made on another device never reached this screen — not even after
+     * a restart — while the list beside it showed the new date. Worse than stale: the schedule
+     * sheet seeds from this copy, so saving wrote the old schedule back over the other device's.
+     */
+    staleTime: 0,
     initialData: () => {
       for (const status of ALL_TASK_STATUSES) {
         const match = queryClient.getQueryData<TaskDto[]>(queryKeys.tasks(status))?.find((t) => t.id === taskId);

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Pressable, Text } from "react-native";
-import { color as palette, text as t, type as T } from "../theme";
+import { text as t, type as T } from "../theme";
+import { useTheme } from "../state/ThemeContext";
 import { infoCopy, type InfoTopic } from "../theme/infoCopy";
 import { BottomSheet } from "./BottomSheet";
 import { Body, H2 } from "./Text";
@@ -18,6 +19,7 @@ interface InfoTooltipProps {
  * describing it slightly differently.
  */
 export function InfoTooltip({ topic, color }: InfoTooltipProps) {
+  const theme = useTheme();
   const [visible, setVisible] = useState(false);
   const { title, body } = infoCopy[topic];
 
@@ -35,7 +37,7 @@ export function InfoTooltip({ topic, color }: InfoTooltipProps) {
         }}
         hitSlop={10}
       >
-        <Text style={t(T.meta, { color: color ?? palette.textFaint })}>ⓘ</Text>
+        <Text style={t(T.meta, { color: color ?? theme.surface.infoStroke })}>ⓘ</Text>
       </Pressable>
       <BottomSheet visible={visible} onClose={() => setVisible(false)}>
         <H2>{title}</H2>

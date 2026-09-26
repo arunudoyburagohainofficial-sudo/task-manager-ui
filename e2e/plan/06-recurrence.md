@@ -78,3 +78,55 @@ what the person sees.
   - **Does:** remove the repeat from a recurring task, then complete it.
   - **Proves:** the task finishes normally and no successor appears.
   - **Why:** "stop this habit" must not also mean "delete what I was doing today".
+
+## Added 2026-09-18
+
+The twelve above cover the shapes the design draws. These cover the ones a user can build that
+nobody has watched complete — and the two places where a successor inherits something that has to
+be re-anchored rather than copied.
+
+- [ ] **RECUR-13 — An interval repeat advances by its interval**
+  - **Does:** "every 3 days", completed.
+  - **Proves:** the successor is three days out, not one.
+  - **Why:** `INTERVAL` is the token most easily dropped on the way through the client, and the
+    result — a task that arrives every day instead of twice a week — is annoying enough to make
+    someone delete the routine rather than report it.
+
+- [ ] **RECUR-14 — A yearly routine lands next year, same month and day**
+  - **Does:** a yearly task on 29 February, completed.
+  - **Proves:** the successor is a real date in a year that may not have a 29 February, and the
+    anchor isn't lost.
+  - **Why:** yearly takes its month and day from the task's own date, with no `BYMONTHDAY` to fall
+    back on, so the leap day is the one case where "same date next year" doesn't exist. The same
+    arithmetic produced the February month-end drift.
+
+- [ ] **RECUR-15 — A rule this build can't name still completes and still mints a successor**
+  - **Does:** seed a task whose `recurrenceRule` this client can't parse, then complete it from
+    Home.
+  - **Proves:** the row shows "Repeats", completing works, and the successor appears.
+  - **Why:** `recurrenceRule` is a plain string so a row written by a newer app version renders.
+    The dangerous version of this bug isn't a bad label — it's a client that treats an unparseable
+    rule as "no repeat" and takes a path that loses the routine.
+
+- [ ] **RECUR-16 — A repeat added to an existing task starts from that task's date**
+  - **Does:** a task dated next Friday; add a weekly repeat.
+  - **Proves:** the live occurrence stays on Friday and the rule is anchored there, not to today.
+  - **Why:** the task's own date always wins over one embedded in the request — a server-side rule
+    the client has to not fight. Re-anchoring to today silently moves the task the user just
+    scheduled.
+
+- [ ] **RECUR-17 — Changing the rule on a live occurrence neither creates nor loses one**
+  - **Does:** daily → weekly on a pending recurring task.
+  - **Proves:** exactly one live occurrence before and after, on the same date, with the new rule.
+  - **Why:** "one live occurrence" is the invariant the whole model rests on. An update path that
+    spawned or retracted while editing would break it without any completion involved.
+
+- [ ] **RECUR-18 — A successor's notifications are re-anchored to the successor's day**
+  - **Does:** a daily task with a day-of notification and a "1 day before" notification; complete
+    it.
+  - **Proves:** both notifications are attached to the new occurrence and describe *its* day —
+    the lead-time one fires today for tomorrow's copy, not on the old date.
+  - **Why:** RECUR-02 proves the configuration survives. This proves it survives *as an offset*
+    rather than as a date left behind — which is the whole reason lead times are stored as
+    `daysBefore`, and the difference between a routine that keeps warning you and one that warned
+    you once.

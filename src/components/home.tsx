@@ -9,7 +9,8 @@ import React, { useEffect, useRef } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import type { GoalDto } from "../api/types";
-import { color, goalRing, home, textAtDesignSize as td, type as T } from "../theme";
+import { textAtDesignSize as td, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { useReduceMotion } from "./Ferne";
 import {
   DoneCheckIcon,
@@ -59,6 +60,8 @@ export function HomeStatStrip({
   points: number;
   focusMinutes: number;
 }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const reduceMotion = useReduceMotion();
   const bob = useEaseLoop(2200, !reduceMotion);
   const flame = {
@@ -75,35 +78,35 @@ export function HomeStatStrip({
           <Animated.View style={flame}>
             <StreakFlameMark size={15} />
           </Animated.View>
-          <Text style={td(T.h2, { fontSize: 19, letterSpacing: -0.57, lineHeight: 19, color: home.streakInk })}>
+          <Text style={td(T.h2, { fontSize: 19, letterSpacing: -0.57, lineHeight: 19, color: theme.home.streakInk })}>
             {streak}
           </Text>
         </View>
-        <Text style={td(T.badge, { fontSize: 10, letterSpacing: 0.8, color: home.subtle })}>DAY STREAK</Text>
+        <Text style={td(T.badge, { fontSize: 10, letterSpacing: 0.8, color: theme.home.subtle })}>DAY STREAK</Text>
       </View>
 
       <View style={styles.statDivider} />
 
-      <View style={[styles.statCell, styles.statCellInset]}>
+      <View style={styles.statCell}>
         <View style={styles.statValueRow}>
-          <XpIcon size={14} stroke={home.statBoltStroke} strokeWidth={1.6} />
-          <Text style={td(T.h2, { fontSize: 19, letterSpacing: -0.57, lineHeight: 19, color: home.pointsInk })}>
+          <XpIcon size={14} stroke={theme.home.statBoltStroke} strokeWidth={1.6} />
+          <Text style={td(T.h2, { fontSize: 19, letterSpacing: -0.57, lineHeight: 19, color: theme.home.pointsInk })}>
             {points}
           </Text>
         </View>
-        <Text style={td(T.badge, { fontSize: 10, letterSpacing: 0.8, color: home.subtle })}>POINTS TODAY</Text>
+        <Text style={td(T.badge, { fontSize: 10, letterSpacing: 0.8, color: theme.home.subtle })}>POINTS TODAY</Text>
       </View>
 
       <View style={styles.statDivider} />
 
-      <View style={[styles.statCell, styles.statCellInset]}>
+      <View style={styles.statCell}>
         <View style={styles.statMinutesRow}>
-          <Text style={td(T.h2, { fontSize: 19, letterSpacing: -0.57, lineHeight: 19, color: home.focusedInk })}>
+          <Text style={td(T.h2, { fontSize: 19, letterSpacing: -0.57, lineHeight: 19, color: theme.home.focusedInk })}>
             {focusMinutes}
           </Text>
-          <Text style={td(T.badge, { fontSize: 12, letterSpacing: 0, color: home.focusedInk })}>min</Text>
+          <Text style={td(T.badge, { fontSize: 12, letterSpacing: 0, color: theme.home.focusedInk })}>min</Text>
         </View>
-        <Text style={td(T.badge, { fontSize: 10, letterSpacing: 0.8, color: home.subtle })}>FOCUSED</Text>
+        <Text style={td(T.badge, { fontSize: 10, letterSpacing: 0.8, color: theme.home.subtle })}>FOCUSED</Text>
       </View>
     </View>
   );
@@ -127,6 +130,7 @@ export function HomeRuleHeader({
   leading?: React.ReactNode;
   trailing?: React.ReactNode;
 }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={[styles.ruleHeader, { gap }, style]}>
       <Text numberOfLines={1} style={td(T.eyebrow, { fontSize: 11, letterSpacing: 1.32, color: ink })}>
@@ -144,6 +148,7 @@ export function HomeRuleHeader({
  * walkthrough points at this button specifically and has to be able to wrap it.
  */
 export function GoalsAddButton({ onPress }: { onPress: () => void }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable accessibilityRole="button" accessibilityLabel="New goal" onPress={onPress} style={styles.plusButton}>
       <PlusMark size={15} />
@@ -152,7 +157,9 @@ export function GoalsAddButton({ onPress }: { onPress: () => void }) {
 }
 
 export function RightNowHeader() {
-  return <HomeRuleHeader label="RIGHT NOW" ink={color.textLabel} gap={10} style={styles.rightNowHeader} />;
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  return <HomeRuleHeader label="RIGHT NOW" ink={theme.color.textLabel} gap={10} style={styles.rightNowHeader} />;
 }
 
 /** TO DO / DONE: the label, how many, and the control that folds the section away. */
@@ -185,6 +192,8 @@ export function HomeListHeader({
   caret: "up" | "down";
   onToggle?: () => void;
 }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <HomeRuleHeader
       label={label}
@@ -199,15 +208,17 @@ export function HomeListHeader({
         onToggle ? (
           <Pressable
             accessibilityRole="button"
+            // A 25px pill; this brings its tap area to about the 44px a finger needs.
+            hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
             accessibilityState={{ expanded: !collapsed }}
             accessibilityLabel={`${label}, ${count} items, ${collapsed ? "collapsed" : "expanded"}`}
             onPress={onToggle}
             style={styles.togglePill}
           >
-            <Text style={td(T.meta, { fontSize: 11, fontWeight: "700", letterSpacing: 0.66, color: color.textMuted })}>
+            <Text style={td(T.meta, { fontSize: 11, fontWeight: "700", letterSpacing: 0.66, color: theme.color.textMuted })}>
               {collapsed ? collapsedLabel : expandedLabel}
             </Text>
-            <Text style={td(T.badge, { fontSize: 9, letterSpacing: 0, lineHeight: 9, color: home.caret })}>
+            <Text style={td(T.badge, { fontSize: 9, letterSpacing: 0, lineHeight: 9, color: theme.home.caret })}>
               {(caret === "down") !== collapsed ? "▾" : "▴"}
             </Text>
           </Pressable>
@@ -224,8 +235,10 @@ const GOAL_RING_C = 2 * Math.PI * GOAL_RING_R;
 
 /** Goal tile — a ring of the goal's own colour, its name, and the days behind the percentage. */
 export function GoalRingCard({ goal, width, onPress }: { goal: GoalDto; width?: number; onPress?: () => void }) {
-  const accent = goal.color ?? color.goal;
-  const ring = goalRing(accent);
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const accent = goal.color ?? theme.color.goal;
+  const ring = theme.goalRing(accent);
   const pct = goal.targetDays ? Math.min(100, (goal.totalDaysActive / goal.targetDays) * 100) : 0;
 
   return (
@@ -253,13 +266,17 @@ export function GoalRingCard({ goal, width, onPress }: { goal: GoalDto; width?: 
             transform="rotate(-90 23 23)"
           />
         </Svg>
-        <Text style={td(T.badge, { fontSize: 12, letterSpacing: 0, color: ring.ink })}>{Math.round(pct)}%</Text>
+        {/* "100%" is a digit wider than the ring's inside at 12px and was clipped to "l00%" — the only
+            three-digit value, so it alone steps down. */}
+        <Text style={td(T.badge, { fontSize: Math.round(pct) >= 100 ? 10 : 12, letterSpacing: 0, color: ring.ink })}>
+          {Math.round(pct)}%
+        </Text>
       </View>
       <View style={styles.goalText}>
-        <Text style={td(T.body, { fontSize: 15, fontWeight: "800", color: color.text })} numberOfLines={2}>
+        <Text style={td(T.body, { fontSize: 15, fontWeight: "800", color: theme.color.text })} numberOfLines={2}>
           {goal.name}
         </Text>
-        <Text style={td(T.meta, { fontSize: 12, fontWeight: "700", color: home.subtle, marginTop: 2 })}>
+        <Text style={td(T.meta, { fontSize: 12, fontWeight: "700", color: theme.home.subtle, marginTop: 2 })}>
           {goal.totalDaysActive} of {goal.targetDays} days
         </Text>
       </View>
@@ -294,6 +311,8 @@ export function RightNowCard({
   fractionLeft: number | null;
   onResume: () => void;
 }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const finished = minutesLeft === 0;
   const subtitle =
     minutesLeft == null
@@ -306,14 +325,14 @@ export function RightNowCard({
     <View style={styles.sessionCard}>
       <View style={styles.sessionRing}>
         <Svg width={48} height={48} viewBox="0 0 52 52" style={StyleSheet.absoluteFill}>
-          <Circle cx={26} cy={26} r={SESSION_RING_R} fill="none" stroke={home.sessionTrack} strokeWidth={5} />
+          <Circle cx={26} cy={26} r={SESSION_RING_R} fill="none" stroke={theme.home.sessionTrack} strokeWidth={5} />
           {fractionLeft != null && fractionLeft > 0 ? (
             <Circle
               cx={26}
               cy={26}
               r={SESSION_RING_R}
               fill="none"
-              stroke={home.sessionRing}
+              stroke={theme.home.sessionRing}
               strokeWidth={5}
               strokeLinecap="round"
               strokeDasharray={SESSION_RING_C}
@@ -323,15 +342,15 @@ export function RightNowCard({
             />
           ) : null}
         </Svg>
-        <Text style={td(T.badge, { fontSize: 13, letterSpacing: 0, color: home.sessionInk })}>
+        <Text style={td(T.badge, { fontSize: 13, letterSpacing: 0, color: theme.home.sessionInk })}>
           {minutesLeft ?? minutesElapsed}
         </Text>
       </View>
       <View style={styles.sessionText}>
-        <Text style={td(T.bodyLg, { fontWeight: "800", letterSpacing: -0.16, color: color.text })} numberOfLines={1}>
+        <Text style={td(T.bodyLg, { fontWeight: "800", letterSpacing: -0.16, color: theme.color.text })} numberOfLines={1}>
           {title}
         </Text>
-        <Text style={td(T.meta, { fontSize: 12, fontWeight: "700", color: home.subtle, marginTop: 2 })}>
+        <Text style={td(T.meta, { fontSize: 12, fontWeight: "700", color: theme.home.subtle, marginTop: 2 })}>
           {subtitle}
         </Text>
       </View>
@@ -341,7 +360,7 @@ export function RightNowCard({
         onPress={onResume}
         style={styles.sessionAction}
       >
-        <Text style={td(T.label, { fontSize: 14, fontWeight: "700", color: home.actionInk })}>
+        <Text style={td(T.label, { fontSize: 14, fontWeight: "700", color: theme.home.actionInk })}>
           {finished ? "Finish" : "Resume"}
         </Text>
       </Pressable>
@@ -359,32 +378,32 @@ export function RightNowCard({
  */
 export type HomeRowKind = "focus" | "reminder" | "task" | "goal";
 
-const KIND: Record<HomeRowKind, { label: string; ink: string; tile: string; mark: React.ReactNode }> = {
+const kindsFor = (t: Tokens): Record<HomeRowKind, { label: string; ink: string; tile: string; mark: React.ReactNode }> => ({
   focus: {
     label: "Focus",
-    ink: color.taskTypeFocusFg,
-    tile: color.taskTypeFocusBg,
+    ink: t.color.taskTypeFocusFg,
+    tile: t.color.taskTypeFocusBg,
     mark: <GoalTargetIcon size={19} />,
   },
   reminder: {
     label: "Reminder",
-    ink: color.taskTypeReminderFg,
-    tile: color.taskTypeReminderBg,
+    ink: t.color.taskTypeReminderFg,
+    tile: t.color.taskTypeReminderBg,
     mark: <ReminderBellMark size={19} />,
   },
   task: {
     label: "Task",
-    ink: color.taskTypeReminderFg,
-    tile: color.taskTypeReminderBg,
+    ink: t.color.taskTypeReminderFg,
+    tile: t.color.taskTypeReminderBg,
     mark: <EnvelopeMark size={19} />,
   },
   goal: {
     label: "Goal",
-    ink: home.goalKindInk,
-    tile: home.goalKindBg,
+    ink: t.home.goalKindInk,
+    tile: t.home.goalKindBg,
     mark: <DoneCheckIcon size={19} />,
   },
-};
+});
 
 /** An open row: what it is, what it's worth, and the one thing to do with it. */
 export function HomeTaskRow({
@@ -406,12 +425,14 @@ export function HomeTaskRow({
   onPress: () => void;
   onAction: () => void;
 }) {
-  const k = KIND[kind];
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const k = kindsFor(theme)[kind];
   return (
     <Pressable onPress={onPress} accessibilityRole="button" style={styles.row}>
       <View style={[styles.rowTile, { backgroundColor: k.tile }]}>{k.mark}</View>
       <View style={styles.rowText}>
-        <Text style={td(T.bodyLg, { color: color.text })}>{title}</Text>
+        <Text style={td(T.bodyLg, { color: theme.color.text })}>{title}</Text>
         <View style={styles.rowMeta}>
           <Text style={td(T.meta, { fontSize: 12, fontWeight: "700", color: k.ink })}>
             {k.label}
@@ -419,7 +440,7 @@ export function HomeTaskRow({
           </Text>
           <View style={styles.xpTag}>
             <XpIcon size={11} />
-            <Text style={td(T.badge, { fontSize: 11, letterSpacing: 0, color: home.xpInk })}>+{points}</Text>
+            <Text style={td(T.badge, { fontSize: 11, letterSpacing: 0, color: theme.home.xpInk })}>+{points}</Text>
           </View>
         </View>
       </View>
@@ -429,7 +450,7 @@ export function HomeTaskRow({
         accessibilityLabel={`${actionLabel}: ${title}`}
         style={styles.rowAction}
       >
-        <Text style={td(T.label, { fontSize: 14, fontWeight: "700", color: home.actionInk })}>{actionLabel}</Text>
+        <Text style={td(T.label, { fontSize: 14, fontWeight: "700", color: theme.home.actionInk })}>{actionLabel}</Text>
       </Pressable>
     </Pressable>
   );
@@ -453,7 +474,9 @@ export function HomeDoneRow({
   points: number | null;
   onPress?: () => void;
 }) {
-  const meta = [KIND[kind].label, detail, finishedAt].filter(Boolean).join(" · ");
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const meta = [kindsFor(theme)[kind].label, detail, finishedAt].filter(Boolean).join(" · ");
   return (
     <Pressable
       onPress={onPress}
@@ -462,14 +485,14 @@ export function HomeDoneRow({
       style={styles.doneRow}
     >
       <View style={styles.doneTile}>
-        <DoneTickMark size={19} color={home.doneTick} />
+        <DoneTickMark size={19} color={theme.home.doneTick} />
       </View>
       <View style={styles.rowText}>
         <Text
           style={td(T.bodyLg, {
-            color: home.doneTitle,
+            color: theme.home.doneTitle,
             textDecorationLine: "line-through",
-            textDecorationColor: home.doneStrike,
+            textDecorationColor: theme.home.doneStrike,
           })}
         >
           {title}
@@ -479,7 +502,7 @@ export function HomeDoneRow({
             fontSize: 12,
             fontWeight: "700",
             marginTop: 3,
-            color: kind === "goal" ? home.doneMetaGoal : home.doneMeta,
+            color: kind === "goal" ? theme.home.doneMetaGoal : theme.home.doneMeta,
           })}
         >
           {meta}
@@ -488,7 +511,7 @@ export function HomeDoneRow({
       {points != null && points > 0 ? (
         <View style={styles.donePill}>
           <XpIcon size={11} strokeWidth={1.6} />
-          <Text style={td(T.badge, { fontSize: 11, letterSpacing: 0, color: home.donePillInk })}>+{points}</Text>
+          <Text style={td(T.badge, { fontSize: 11, letterSpacing: 0, color: theme.home.donePillInk })}>+{points}</Text>
         </View>
       ) : null}
     </Pressable>
@@ -497,11 +520,13 @@ export function HomeDoneRow({
 
 /** Nothing open — the same card shape as a row, so the list doesn't lose its rhythm. */
 export function HomeEmptyRow({ title, body }: { title: string; body: string }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={[styles.row, styles.emptyRow]}>
       <View style={styles.rowText}>
-        <Text style={td(T.bodyLg, { color: color.text })}>{title}</Text>
-        <Text style={td(T.meta, { fontSize: 12, fontWeight: "700", color: home.subtle, marginTop: 3 })}>{body}</Text>
+        <Text style={td(T.bodyLg, { color: theme.color.text })}>{title}</Text>
+        <Text style={td(T.meta, { fontSize: 12, fontWeight: "700", color: theme.home.subtle, marginTop: 3 })}>{body}</Text>
       </View>
     </View>
   );
@@ -509,219 +534,225 @@ export function HomeEmptyRow({ title, body }: { title: string; body: string }) {
 
 /** Closes the list, so the screen reads finished rather than cut off. */
 export function HomeClosingLine({ children }: { children: string }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
-    <Text style={[styles.closingLine, td(T.meta, { fontSize: 12, color: home.closingLine })]}>{children}</Text>
+    <Text style={[styles.closingLine, td(T.meta, { fontSize: 12, color: theme.home.closingLine })]}>{children}</Text>
   );
 }
 
-const styles = StyleSheet.create({
-  statStrip: {
-    marginTop: 14,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  statCell: {
-    flex: 1,
-    gap: 3,
-  },
-  statCellInset: {
-    paddingLeft: 14,
-  },
-  statValueRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  statMinutesRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 3,
-  },
-  statDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: home.statDivider,
-  },
-  ruleHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  rule: {
-    flex: 1,
-    height: 1,
-    backgroundColor: color.border,
-  },
-  rightNowHeader: {
-    marginTop: 16,
-    paddingHorizontal: 2,
-  },
-  listHeader: {
-    marginTop: 18,
-    marginBottom: 9,
-    minHeight: 28,
-  },
-  plusButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
-    backgroundColor: color.card,
-    borderWidth: 1,
-    borderColor: color.border,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  countPill: {
-    borderRadius: 7,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  togglePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingTop: 5,
-    paddingBottom: 5,
-    paddingLeft: 10,
-    paddingRight: 6,
-    borderRadius: 9,
-    backgroundColor: color.card,
-    borderWidth: 1,
-    borderColor: color.border,
-    // The rule beside it is flex:1 and would otherwise squeeze "Collapse all" onto two lines.
-    flexShrink: 0,
-  },
-  goalCard: {
-    minWidth: 0,
-    backgroundColor: color.card,
-    borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: 14,
-    padding: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 11,
-  },
-  goalRing: {
-    width: 46,
-    height: 46,
-    flexShrink: 0,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  goalText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  sessionCard: {
-    marginTop: 7,
-    backgroundColor: color.card,
-    borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: 16,
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 11,
-    boxShadow: [{ offsetX: 0, offsetY: 2, blurRadius: 12, color: home.cardShadow }],
-  },
-  sessionRing: {
-    width: 48,
-    height: 48,
-    flexShrink: 0,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sessionText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  sessionAction: {
-    backgroundColor: home.actionBg,
-    borderRadius: 10,
-    paddingVertical: 11,
-    paddingHorizontal: 16,
-  },
-  row: {
-    backgroundColor: color.card,
-    borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: 12,
-    padding: 11,
-    minHeight: 64,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 11,
-  },
-  emptyRow: {
-    minHeight: 0,
-  },
-  rowTile: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  rowText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  rowMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 7,
-    marginTop: 3,
-  },
-  xpTag: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-  },
-  rowAction: {
-    backgroundColor: home.actionBg,
-    borderRadius: 10,
-    paddingVertical: 11,
-    paddingHorizontal: 15,
-  },
-  doneRow: {
-    backgroundColor: home.doneBg,
-    borderWidth: 1,
-    borderColor: home.doneBorder,
-    borderRadius: 12,
-    padding: 11,
-    minHeight: 64,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 11,
-  },
-  doneTile: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: home.doneTileBg,
-    borderWidth: 1,
-    borderColor: home.doneTileBorder,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  donePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    flexShrink: 0,
-    backgroundColor: home.donePillBg,
-    borderRadius: 9,
-    paddingVertical: 6,
-    paddingHorizontal: 9,
-  },
-  closingLine: {
-    textAlign: "center",
-    paddingTop: 14,
-    paddingBottom: 2,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    statStrip: {
+      marginTop: 14,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    statCell: {
+      flex: 1,
+      gap: 3,
+      // Each figure sits over the middle of its own label rather than ragged-left against the
+      // divider, so the three read as one evenly-spaced strip.
+      alignItems: "center",
+    },
+    statValueRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+    },
+    statMinutesRow: {
+      flexDirection: "row",
+      alignItems: "baseline",
+      gap: 3,
+    },
+    statDivider: {
+      width: 1,
+      height: 32,
+      backgroundColor: t.home.statDivider,
+    },
+    ruleHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    rule: {
+      flex: 1,
+      height: 1,
+      backgroundColor: t.color.border,
+    },
+    rightNowHeader: {
+      marginTop: 16,
+      paddingHorizontal: 2,
+    },
+    listHeader: {
+      marginTop: 18,
+      marginBottom: 9,
+      // The design's header row is exactly as tall as its pill — 25px. This was 28, three pixels a
+      // header that pushed everything below TO DO and DONE out of step with the drawing (VIS-01).
+      // The pill's tap area comes from hitSlop instead, which is what it needed anyway.
+      minHeight: 25,
+    },
+    plusButton: {
+      width: 28,
+      height: 28,
+      borderRadius: 9,
+      backgroundColor: t.color.card,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      alignItems: "center",
+      justifyContent: "center",
+      flexShrink: 0,
+    },
+    countPill: {
+      borderRadius: 7,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+    },
+    togglePill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingTop: 5,
+      paddingBottom: 5,
+      paddingLeft: 10,
+      paddingRight: 6,
+      borderRadius: 9,
+      backgroundColor: t.color.card,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      // The rule beside it is flex:1 and would otherwise squeeze "Collapse all" onto two lines.
+      flexShrink: 0,
+    },
+    goalCard: {
+      minWidth: 0,
+      backgroundColor: t.color.card,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      borderRadius: 14,
+      padding: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 11,
+    },
+    goalRing: {
+      width: 46,
+      height: 46,
+      flexShrink: 0,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    goalText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    sessionCard: {
+      marginTop: 7,
+      backgroundColor: t.color.card,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      borderRadius: 16,
+      paddingVertical: 9,
+      paddingHorizontal: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 11,
+      boxShadow: [{ offsetX: 0, offsetY: 2, blurRadius: 12, color: t.home.cardShadow }],
+    },
+    sessionRing: {
+      width: 48,
+      height: 48,
+      flexShrink: 0,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    sessionText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    sessionAction: {
+      backgroundColor: t.home.actionBg,
+      borderRadius: 10,
+      paddingVertical: 11,
+      paddingHorizontal: 16,
+    },
+    row: {
+      backgroundColor: t.color.card,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      borderRadius: 12,
+      padding: 11,
+      minHeight: 64,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 11,
+    },
+    emptyRow: {
+      minHeight: 0,
+    },
+    rowTile: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: "center",
+      justifyContent: "center",
+      flexShrink: 0,
+    },
+    rowText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    rowMeta: {
+      flexDirection: "row",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: 7,
+      marginTop: 3,
+    },
+    xpTag: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 2,
+    },
+    rowAction: {
+      backgroundColor: t.home.actionBg,
+      borderRadius: 10,
+      paddingVertical: 11,
+      paddingHorizontal: 15,
+    },
+    doneRow: {
+      backgroundColor: t.home.doneBg,
+      borderWidth: 1,
+      borderColor: t.home.doneBorder,
+      borderRadius: 12,
+      padding: 11,
+      minHeight: 64,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 11,
+    },
+    doneTile: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      backgroundColor: t.home.doneTileBg,
+      borderWidth: 1,
+      borderColor: t.home.doneTileBorder,
+      alignItems: "center",
+      justifyContent: "center",
+      flexShrink: 0,
+    },
+    donePill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 3,
+      flexShrink: 0,
+      backgroundColor: t.home.donePillBg,
+      borderRadius: 9,
+      paddingVertical: 6,
+      paddingHorizontal: 9,
+    },
+    closingLine: {
+      textAlign: "center",
+      paddingTop: 14,
+      paddingBottom: 2,
+    },
+  });

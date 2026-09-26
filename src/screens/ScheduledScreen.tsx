@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { failureHint } from "../api/client";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -13,6 +14,7 @@ import {
   H1,
   Meta,
   MoveAllToTodayButton,
+  NotificationBlockBanner,
   OverdueRow,
   RecurringRow,
   SchedulePanel,
@@ -20,7 +22,8 @@ import {
   ShowMoreButton,
   UpcomingRow,
 } from "../components";
-import { color, schedulePanel, space, text as t, type as T } from "../theme";
+import { space, text as t, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { syncReminders } from "../notifications/useReminderSync";
 import { useToast } from "../state/ToastContext";
 import { formatClockTime } from "../utils/format";
@@ -49,6 +52,8 @@ const OVERDUE_PREVIEW = 5;
  * both at once.
  */
 export function ScheduledScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const navigation = useNavigation<Nav>();
   const [refreshing, setRefreshing] = useState(false);
   const [overdueExpanded, setOverdueExpanded] = useState(false);
@@ -77,14 +82,14 @@ export function ScheduledScreen() {
             try {
               await reopenTaskMutation.mutateAsync(taskId);
               showToast({ message: `“${taskName}” put back` });
-            } catch {
-              showToast({ tone: "error", message: "Couldn't undo — check your connection." });
+            } catch (err) {
+              showToast({ tone: "error", message: `Couldn't undo — ${failureHint(err)}` });
             }
           },
         },
       });
-    } catch {
-      showToast({ tone: "error", message: `Couldn't complete “${taskName}” — check your connection.` });
+    } catch (err) {
+      showToast({ tone: "error", message: `Couldn't complete “${taskName}” — ${failureHint(err)}` });
     }
   }
 
@@ -216,8 +221,8 @@ export function ScheduledScreen() {
               } to pick a new time`
             : ""),
       });
-    } catch {
-      showToast({ tone: "error", message: "Couldn't move everything — check your connection." });
+    } catch (err) {
+      showToast({ tone: "error", message: `Couldn't move everything — ${failureHint(err)}` });
     } finally {
       setMovingAll(false);
     }
@@ -257,9 +262,15 @@ export function ScheduledScreen() {
       >
         <H1 style={styles.title}>Scheduled</H1>
 
+        {/*
+          Above everything, because it invalidates everything below it: every date and repeat on
+          this screen implies a notification that isn't going to arrive.
+        */}
+        <NotificationBlockBanner />
+
         {isEmpty ? (
           <Card style={styles.emptyCard}>
-            <Text style={t(T.bodyLg, { color: color.text })}>Nothing scheduled</Text>
+            <Text style={t(T.bodyLg, { color: theme.color.text })}>Nothing scheduled</Text>
             <Meta style={styles.emptyText}>
               Open a task and set a date to plan it for a later day, or set it to repeat.
             </Meta>
@@ -330,7 +341,7 @@ export function ScheduledScreen() {
                     key={task.id}
                     title={task.name}
                     subtitle={[recurrenceLabel(task.recurrenceRule), next].filter(Boolean).join(" · ")}
-                    subtitleColor={late ? color.danger : undefined}
+                    subtitleColor={late ? theme.color.danger : undefined}
                     onPress={() => openTask(task.id)}
                   />
                 );
@@ -345,10 +356,10 @@ export function ScheduledScreen() {
                 would leave the whole screen as three competing containers with nothing
                 sitting at rest between them. */}
             <View style={styles.upcomingHeader}>
-              <Text style={t(T.eyebrow, { fontSize: 11, letterSpacing: 1.32, color: color.textMuted })}>UPCOMING</Text>
+              <Text style={t(T.eyebrow, { fontSize: 11, letterSpacing: 1.32, color: theme.color.textMuted })}>UPCOMING</Text>
               <View style={styles.upcomingBadge}>
                 <Text
-                  style={t(T.badge, { fontSize: 11, letterSpacing: 0, color: schedulePanel.neutral.badgeFg })}
+                  style={t(T.badge, { fontSize: 11, letterSpacing: 0, color: theme.schedulePanel.neutral.badgeFg })}
                 >
                   {upcomingCount}
                 </Text>
@@ -388,50 +399,51 @@ export function ScheduledScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: space.gutter,
-    paddingTop: space.sm,
-    paddingBottom: 24,
-    flexGrow: 1,
-  },
-  title: {
-    marginBottom: 12,
-  },
-  panelSpacing: {
-    marginTop: 14,
-  },
-  upcomingHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-    marginTop: 22,
-    marginBottom: 12,
-  },
-  upcomingBadge: {
-    borderRadius: 7,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    backgroundColor: schedulePanel.neutral.badgeBg,
-  },
-  upcomingRule: {
-    flex: 1,
-    height: 1,
-    backgroundColor: color.border,
-  },
-  dateGroup: {
-    marginBottom: 16,
-  },
-  dateGroupRows: {
-    gap: 8,
-  },
-  emptyCard: {
-    alignItems: "center",
-    paddingVertical: 24,
-    marginTop: 20,
-  },
-  emptyText: {
-    marginTop: 4,
-    textAlign: "center",
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    content: {
+      paddingHorizontal: space.gutter,
+      paddingTop: space.sm,
+      paddingBottom: 24,
+      flexGrow: 1,
+    },
+    title: {
+      marginBottom: 12,
+    },
+    panelSpacing: {
+      marginTop: 14,
+    },
+    upcomingHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 9,
+      marginTop: 22,
+      marginBottom: 12,
+    },
+    upcomingBadge: {
+      borderRadius: 7,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      backgroundColor: t.schedulePanel.neutral.badgeBg,
+    },
+    upcomingRule: {
+      flex: 1,
+      height: 1,
+      backgroundColor: t.color.border,
+    },
+    dateGroup: {
+      marginBottom: 16,
+    },
+    dateGroupRows: {
+      gap: 8,
+    },
+    emptyCard: {
+      alignItems: "center",
+      paddingVertical: 24,
+      marginTop: 20,
+    },
+    emptyText: {
+      marginTop: 4,
+      textAlign: "center",
+    },
+  });

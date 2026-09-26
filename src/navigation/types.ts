@@ -6,6 +6,7 @@ export type RootStackParamList = {
   Main: NavigatorScreenParams<MainTabParamList>;
   TaskDetail: { taskId: string };
   ScheduledNotifications: undefined;
+  BlockedApps: undefined;
   FocusSession: {
     sessionId: string;
     taskId: string;
@@ -56,11 +57,13 @@ export interface CapturedTaskDraft {
    */
   scheduledFor: string | null;
   /**
-   * Time of day to be notified, or null for silent. "HH:mm:ss".
+   * Every notification the task will have — empty for silent. The same list the schedule sheet
+   * edits, so what's chosen here is exactly what gets saved.
    *
    * Held on the draft rather than sent separately: all three settings go out with the task
-   * itself in one request now, so there's no longer a second call that can fail on its own
-   * and leave a saved task whose schedule silently didn't apply.
+   * itself in one request, so there's no second call that can fail on its own and leave a saved
+   * task whose schedule silently didn't apply. It used to be a single time, which the sheet's
+   * lead-time options didn't fit — only the first entry was kept, as a plain on-the-day time.
    */
-  notifyTime: string | null;
+  notifications: import("../api/types").NotificationSpec[];
 }

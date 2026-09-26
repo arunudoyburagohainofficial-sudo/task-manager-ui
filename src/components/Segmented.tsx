@@ -1,6 +1,7 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { color, radius, shadow, size, space, text as t, type as T } from "../theme";
+import { radius, shadow, size, space, text as t, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 
 interface SegmentedOption<V extends string> {
   value: V;
@@ -20,6 +21,8 @@ interface SegmentedProps<V extends string> {
  * the system.
  */
 export function Segmented<V extends string>({ value, options, onChange }: SegmentedProps<V>) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.track}>
       {options.map((option) => {
@@ -29,11 +32,14 @@ export function Segmented<V extends string>({ value, options, onChange }: Segmen
             key={option.value}
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
+            aria-selected={active}
             onPress={() => onChange(option.value)}
             style={[styles.tab, active && styles.tabActive]}
           >
             {option.icon}
-            <Text style={t(T.label, { color: active ? color.onInteractive : color.textBody })}>{option.label}</Text>
+            <Text style={t(T.label, { color: active ? theme.surface.segActiveInk : theme.surface.segIdleInk })}>
+              {option.label}
+            </Text>
           </Pressable>
         );
       })}
@@ -41,25 +47,31 @@ export function Segmented<V extends string>({ value, options, onChange }: Segmen
   );
 }
 
-const styles = StyleSheet.create({
-  track: {
-    backgroundColor: color.track,
-    borderRadius: radius.track,
-    padding: 4,
-    flexDirection: "row",
-  },
-  tab: {
-    flex: 1,
-    minHeight: size.minTouch,
-    borderRadius: radius.tab,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingHorizontal: space.xs,
-  },
-  tabActive: {
-    backgroundColor: color.interactive,
-    ...shadow.thumb,
-  },
-});
+/**
+ * A pale thumb on a cream track, per the final screens — the active segment is lifted paper, not
+ * a filled button. Terracotta stays with the one pressable action on the screen.
+ */
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    track: {
+      backgroundColor: t.surface.segTrack,
+      borderRadius: radius.track,
+      padding: 4,
+      flexDirection: "row",
+    },
+    tab: {
+      flex: 1,
+      minHeight: size.minTouch,
+      borderRadius: radius.tab,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      paddingHorizontal: space.xs,
+    },
+    tabActive: {
+      backgroundColor: t.surface.segActive,
+      ...shadow.thumb,
+      shadowColor: t.isDark ? "#000" : shadow.thumb.shadowColor,
+    },
+  });

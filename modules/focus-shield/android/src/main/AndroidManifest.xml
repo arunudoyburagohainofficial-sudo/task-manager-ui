@@ -1,0 +1,79 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!--
+    Declared here rather than in app.json so the shield's requirements travel with the module
+    that needs them. Manifest merging folds these into the app.
+
+    ACCESS_NOTIFICATION_POLICY and the two special access permissions below are not granted by a
+    runtime prompt — each one sends the user to its own Settings screen. That's Android's design,
+    not a shortcut, and it's why the setup flow asks for them one at a time with a reason.
+  -->
+  <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <!-- So a shield survives the phone restarting mid-session long enough to be cleared. -->
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <!--
+    Special access, granted in Settings → Special app access → Usage access. It is what lets the
+    service see which app is in front; without it the block silently does nothing, which is why
+    the UI checks for it rather than assuming.
+  -->
+  <uses-permission
+      android:name="android.permission.PACKAGE_USAGE_STATS"
+      tools:ignore="ProtectedPermissions"
+      xmlns:tools="http://schemas.android.com/tools" />
+
+  <!--
+    Android 11+ hides other installed packages unless you say what you're looking for.
+
+    This asks for exactly what a launcher asks for — apps with a launchable main activity — which
+    is also exactly the list a person would recognise and want to block. Deliberately NOT
+    QUERY_ALL_PACKAGES: that's classed as sensitive, needs a written justification on the Play
+    Console, and buys nothing here.
+  -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+  </queries>
+
+  <application>
+    <!--
+      specialUse because none of Android's stock foreground-service types describe "watch what's
+      in front and interrupt it". The type string is declared below for Play's review.
+    -->
+    <service
+        android:name=".ShieldService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+      <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Blocking distracting apps for the duration of a user-started focus session" />
+    </service>
+
+    <!--
+      The screen shown over a blocked app. Its own task and excluded from recents so it never
+      becomes something the user has to back out of twice, and singleInstance so rapid
+      re-detections reuse it instead of stacking.
+    -->
+    <activity
+        android:name=".ShieldActivity"
+        android:exported="false"
+        android:launchMode="singleInstance"
+        android:excludeFromRecents="true"
+        android:noHistory="true"
+        android:taskAffinity=".shield"
+        android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" />
+
+    <!-- The deadline. Fired by AlarmManager whether or not the app is alive. -->
+    <receiver android:name=".ShieldExpiryReceiver" android:exported="false" />
+
+    <receiver android:name=".ShieldBootReceiver" android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>

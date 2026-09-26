@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import type { IntervalReminderDto } from "../api/types";
-import { color, radius, size, space, text as t, type as T } from "../theme";
+import { radius, size, space, text as t, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { BottomSheet } from "./BottomSheet";
 import { Button } from "./Button";
 import { Stepper } from "./primitives";
@@ -56,6 +57,8 @@ interface NudgeSheetProps {
 }
 
 export function NudgeSheet({ visible, onClose, onSubmit, onRemove, submitting = false, existing }: NudgeSheetProps) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [start, setStart] = useState(() => timeToDate("18:00:00"));
   const [end, setEnd] = useState(() => timeToDate("20:00:00"));
   const [minutes, setMinutes] = useState(30);
@@ -97,7 +100,7 @@ export function NudgeSheet({ visible, onClose, onSubmit, onRemove, submitting = 
   return (
     <BottomSheet visible={visible} onClose={onClose}>
       <H2>{existing ? "Edit nudges" : "Nudge me repeatedly"}</H2>
-      <Meta style={{ color: color.textFaint }}>
+      <Meta style={{ color: theme.color.textFaint }}>
         Buzzes on a loop inside a window today — for something you need chasing about, not
         something with a due date.
       </Meta>
@@ -114,8 +117,8 @@ export function NudgeSheet({ visible, onClose, onSubmit, onRemove, submitting = 
                 Platform.OS === "android" ? openAndroidPicker(which) : setEditing(editing === which ? null : which)
               }
             >
-              <Meta style={{ color: color.textFaint }}>{which === "start" ? "From" : "Until"}</Meta>
-              <Text style={t(T.h2, { color: color.text })}>{formatTime(which === "start" ? start : end)}</Text>
+              <Meta style={{ color: theme.color.textFaint }}>{which === "start" ? "From" : "Until"}</Meta>
+              <Text style={t(T.h2, { color: theme.color.text })}>{formatTime(which === "start" ? start : end)}</Text>
             </Pressable>
           ))}
         </View>
@@ -134,7 +137,7 @@ export function NudgeSheet({ visible, onClose, onSubmit, onRemove, submitting = 
         ) : null}
 
         {inverted ? (
-          <Meta style={{ color: color.danger }}>
+          <Meta style={{ color: theme.color.danger }}>
             The end time needs to be after the start — a window that closes before it opens
             can't nudge you at all.
           </Meta>
@@ -149,13 +152,14 @@ export function NudgeSheet({ visible, onClose, onSubmit, onRemove, submitting = 
               key={preset}
               accessibilityRole="radio"
               accessibilityState={{ selected: minutes === preset }}
+              aria-checked={minutes === preset}
               onPress={() => setMinutes(preset)}
               style={[styles.chip, minutes === preset && styles.chipActive]}
             >
               <Text
                 style={t(T.label, {
                   fontWeight: minutes === preset ? "800" : "600",
-                  color: minutes === preset ? color.selectedText : color.textBody,
+                  color: minutes === preset ? theme.color.selectedText : theme.color.textBody,
                 })}
               >
                 {preset} min
@@ -164,7 +168,7 @@ export function NudgeSheet({ visible, onClose, onSubmit, onRemove, submitting = 
           ))}
         </View>
         <View style={styles.inlineRow}>
-          <Meta style={{ color: color.textBody }}>Every</Meta>
+          <Meta style={{ color: theme.color.textBody }}>Every</Meta>
           <Stepper value={minutes} onChange={setMinutes} min={5} max={240} step={5} suffix="min" label="nudge interval" />
         </View>
 
@@ -172,7 +176,7 @@ export function NudgeSheet({ visible, onClose, onSubmit, onRemove, submitting = 
             minutes across an 8-hour window is 97 notifications, and nothing else on screen
             would have hinted at that before saving. */}
         {!inverted ? (
-          <Body style={{ color: nudgeCount > 20 ? color.danger : color.textBody }}>
+          <Body style={{ color: nudgeCount > 20 ? theme.color.danger : theme.color.textBody }}>
             About {nudgeCount} {nudgeCount === 1 ? "nudge" : "nudges"} between {formatTime(start)} and{" "}
             {formatTime(end)}
             {nudgeCount > 20 ? " — that's a lot of buzzing." : ""}
@@ -191,48 +195,49 @@ export function NudgeSheet({ visible, onClose, onSubmit, onRemove, submitting = 
   );
 }
 
-const styles = StyleSheet.create({
-  section: {
-    gap: space.sm,
-  },
-  row: {
-    flexDirection: "row",
-    gap: space.sm,
-    flexWrap: "wrap",
-  },
-  inlineRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.sm,
-  },
-  timeButton: {
-    flex: 1,
-    minHeight: size.button + 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    justifyContent: "center",
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: color.border,
-    backgroundColor: color.card,
-  },
-  timeButtonActive: {
-    borderWidth: 1.5,
-    borderColor: color.interactive,
-    backgroundColor: color.selectedTint,
-  },
-  chip: {
-    minHeight: size.minTouch,
-    paddingHorizontal: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 9,
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  chipActive: {
-    borderWidth: 1.5,
-    borderColor: color.interactive,
-    backgroundColor: color.selectedTint,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    section: {
+      gap: space.sm,
+    },
+    row: {
+      flexDirection: "row",
+      gap: space.sm,
+      flexWrap: "wrap",
+    },
+    inlineRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space.sm,
+    },
+    timeButton: {
+      flex: 1,
+      minHeight: size.button + 8,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      justifyContent: "center",
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      backgroundColor: t.color.card,
+    },
+    timeButtonActive: {
+      borderWidth: 1.5,
+      borderColor: t.color.interactive,
+      backgroundColor: t.color.selectedTint,
+    },
+    chip: {
+      minHeight: size.minTouch,
+      paddingHorizontal: 16,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 9,
+      borderWidth: 1,
+      borderColor: t.color.border,
+    },
+    chipActive: {
+      borderWidth: 1.5,
+      borderColor: t.color.interactive,
+      backgroundColor: t.color.selectedTint,
+    },
+  });

@@ -48,10 +48,21 @@ export async function readScheduledNotifications(): Promise<ScheduledNotificatio
   return raw
     .map((request) => {
       const data = (request.content.data ?? {}) as { taskId?: string; reminderId?: string };
-      const trigger = request.trigger as { date?: number | string } | null;
-      // Everything this app schedules uses a DATE trigger (see localNotifications.scheduleAll),
-      // so anything without a resolvable date isn't ours to display.
-      const at = trigger?.date != null ? new Date(trigger.date) : null;
+      /*
+       * Everything this app schedules uses a DATE trigger (see localNotifications.scheduleAll),
+       * so anything without a resolvable instant isn't ours to display.
+       *
+       * Both spellings, because expo-notifications reports the instant as `value` on Android
+       * (`{type: "date", value: 1790425800000, repeats: false}` — observed on an emulator running
+       * 0.32.17) while `date` is the older/documented name. Reading only `date` meant every entry
+       * was dropped and this screen said "Nothing queued" while the OS was holding seven alarms —
+       * on the one screen whose whole promise is that it reads the device rather than the
+       * configuration. Found 2026-09-26; invisible to the e2e suite, which runs on web where the
+       * scheduler is a stub that legitimately returns nothing.
+       */
+      const trigger = request.trigger as { date?: number | string; value?: number | string } | null;
+      const instant = trigger?.date ?? trigger?.value;
+      const at = instant != null ? new Date(instant) : null;
       if (!at || Number.isNaN(at.getTime())) return null;
 
       return {

@@ -7,77 +7,18 @@
  * isn't in the design.
  */
 import { PixelRatio, type BoxShadowValue, type TextStyle } from "react-native";
+import { light } from "./palette";
 
-export const color = {
-  // surfaces
-  screen: "#FDF8EA",
-  card: "#FFFFFF",
-  fill: "#F1E7D3", // secondary button, inert control
-  track: "#F5EBD6", // segmented track, progress track bg
-  border: "#EDE0C6",
-  divider: "#F2E8D5",
-  toggleOff: "#D8D8D2", // ⚠ NOT MEASURED — see note below
+export type { Palette, ThemeMode } from "./palette";
+export { dark, light, palettes } from "./palette";
 
-  // text
-  text: "#1F2927",
-  textBody: "#3A4642",
-  textMuted: "#68736F",
-  textFaint: "#97A19D",
-  textLabel: "#7E8985", // uppercase eyebrows
+/**
+ * The light palette's colours, for code that hasn't been converted to the theme hook yet and for
+ * the handful of module-scope constants that genuinely can't read context (see palette.ts for
+ * why colour lives there now). Anything that renders should read `useTheme()` instead — a static
+ * import of this object is a value that cannot follow the theme.
+ */
 
-  // the one interaction colour
-  interactive: "#BE816E",
-  interactivePress: "#9C6252",
-  onInteractive: "#FFFFFF", // see A11Y note below
-  selectedTint: "#FBEEE9",
-  selectedText: "#8A4A22",
-
-  // progress (never interactive)
-  progress: "#167C72",
-
-  // completion / positive
-  success: "#2E6B3F",
-  successFill: "#E6F0C3",
-  successBorder: "#CFE7DC",
-  doneFill: "#F5F6E2",
-  doneBorder: "#E2E7BE",
-  doneText: "#7E9433",
-  doneCheck: "#A4BF43",
-
-  // reminder / soon
-  amberFill: "#FFF4DC",
-  amberText: "#9A6B14",
-  amberLabel: "#C08A1E",
-
-  // goal accent
-  goal: "#8DA6CC",
-
-  // task-type tile (Home's To do / Completed rows) — completed reuses doneCheck as its icon
-  // colour rather than a seventh token, since it's the same olive already defined above.
-  taskTypeReminderBg: "#E8EEF6",
-  taskTypeReminderFg: "#4C7BB5",
-  taskTypeFocusBg: "#FBEADF",
-  taskTypeFocusFg: "#B4562C",
-  taskTypeCompletedBg: "#EAEFD3",
-
-  // destructive
-  danger: "#9D131B",
-  dangerBorder: "#D95C5C",
-  /** Tint behind danger-coloured text (the overdue count pill) — same role fill plays for neutral. */
-  dangerFill: "#F7E4E4",
-
-  // companion (character only — never a surface or button)
-  ferne: "#DF6D41",
-  /**
-   * Ferne's shading range. Only the character may use these — they're deliberately outside
-   * the UI palette so a shade of the mascot can never end up as a button or a card.
-   * The rest of her colours are existing tokens: buttercream is `screen`, ink is `text`,
-   * slate is `textMuted`, and the blue accent is `goal`.
-   */
-  ferneLight: "#F0A382",
-  fernePale: "#F2CDB8",
-  ferneDeep: "#8E3D1D",
-} as const;
 
 /**
  * A11Y NOTE — carried over from the handoff, still unresolved.
@@ -98,14 +39,29 @@ export const color = {
  * family. `text()` below resolves a type token into the family that actually renders it,
  * so screens keep using the design's vocabulary while the platform gets what it needs.
  */
+/*
+ * Inter rather than the handoff's Plus Jakarta Sans — a deliberate departure from the design
+ * source of truth, made 2026-09-22 for legibility on a phone.
+ *
+ * Plus Jakarta is a display-leaning geometric sans: at the small sizes this app actually uses
+ * (13–15pt for almost all body text) its shorter x-height and tighter apertures cost real
+ * readability. Inter was drawn for UI at exactly these sizes — taller x-height, more open
+ * counters — so the same fontSize reads noticeably larger and cleaner without any number
+ * changing. It's also what apps people compare this to use, which is why theirs "looks more
+ * readable" at a glance.
+ *
+ * Changed here and in App.tsx's useFonts call, and nowhere else: every screen resolves its
+ * family through `text()` below, so those two lists are the whole switch. Swapping back is the
+ * same two edits.
+ */
 const FAMILY_BY_WEIGHT: Record<string, string> = {
   // Regular exists for one line: the date under Home's greeting, which the Docked Ferne screens
   // draw at 400. Medium carries the quiet body text on Task Detail.
-  "400": "PlusJakartaSans_400Regular",
-  "500": "PlusJakartaSans_500Medium",
-  "600": "PlusJakartaSans_600SemiBold",
-  "700": "PlusJakartaSans_700Bold",
-  "800": "PlusJakartaSans_800ExtraBold",
+  "400": "Inter_400Regular",
+  "500": "Inter_500Medium",
+  "600": "Inter_600SemiBold",
+  "700": "Inter_700Bold",
+  "800": "Inter_800ExtraBold",
 };
 
 export const font = {
@@ -116,17 +72,83 @@ export const font = {
   black: FAMILY_BY_WEIGHT["800"],
 } as const;
 
+/**
+ * One step lighter, everywhere. The single knob for how bold this app is.
+ *
+ * The type scale below is not the whole story: screens override `fontWeight` inline 106 times,
+ * 38 of them at 800. So retuning `type` alone leaves the heaviest text on every screen exactly
+ * as it was — which is why the first pass at this changed almost nothing visible.
+ *
+ * Both resolvers run every weight through this table, whether it came from a token or from a
+ * component's own `extra`, so this is genuinely the one place. The design's vocabulary is
+ * untouched: a screen still asks for 800 where the handoff says 800, and the relationships
+ * between elements are preserved because every step moves together — only the absolute weight
+ * drops.
+ *
+ * Why lighter reads as more breathable: at 600–800 the quiet text weighs the same as the loud
+ * text, so nothing recedes, and a screen with no light text has no rest in it. Dropping a step
+ * puts body copy at true Regular and leaves Bold meaning something. It matters most in dark
+ * mode, where light-on-dark type already gains apparent weight from halation — the old 700 body
+ * on charcoal was closer to 800 optically.
+ *
+ * To go back to the handoff's weights, make this an empty object; every lookup falls through.
+ */
+const WEIGHT_RELIEF: Record<string, TextStyle["fontWeight"]> = {
+  // The top three collapse into one. The handoff spent 800, 700 and 600 on things that sit
+  // side by side — a row title, its button, the section header above it — so nothing led.
+  "800": "600",
+  "700": "600",
+  // Body copy drops to Medium and everything quieter to Regular. This is the half that makes
+  // the difference: a screen needs light text in it or there is nothing for the bold to be
+  // louder *than*.
+  "600": "500",
+  "500": "400",
+  "400": "400",
+};
+
+/** The weight actually rendered for a requested one. */
+function relieved(weight: TextStyle["fontWeight"]): TextStyle["fontWeight"] {
+  return WEIGHT_RELIEF[String(weight)] ?? weight;
+}
+
+/**
+ * The type scale — sizes, weights and line heights, for every screen.
+ *
+ * Retuned 2026-09-22 for legibility, away from the handoff's values. The handoff drew almost
+ * everything at 600–800 and 13–15pt, which on a phone reads as small, dense and shouty: the
+ * quiet text is the same weight as the loud text, so nothing recedes and the eye has nowhere to
+ * rest. The apps this gets compared to do the reverse — larger body text at a *lighter* weight,
+ * with real space between lines, and heavy weights saved for the few things that are genuinely
+ * headings.
+ *
+ * Three changes, applied together because any one alone does nothing:
+ *   - every weight drops a step (600 → 500 for body, 800 → 700 for headings), so bold means
+ *     something again
+ *   - body and meta go up a point, since a lighter weight needs a little more size to hold
+ *   - explicit lineHeight everywhere it matters — this is most of what "breathable" actually
+ *     is, and the old scale left it to the platform default of roughly 1.2×
+ *
+ * `timer` keeps its 800: it's the one number meant to dominate its screen.
+ *
+ * This object is the single place the whole app's type is set — both `text()` and
+ * `textAtDesignSize()` resolve through it, and every screen goes through one of those.
+ */
 export const type = {
-  timer: { fontSize: 72, fontWeight: "800", letterSpacing: -2.8 },
-  h1: { fontSize: 26, fontWeight: "800", letterSpacing: -0.5 },
-  h2: { fontSize: 22, fontWeight: "800" },
-  button: { fontSize: 16, fontWeight: "800" },
-  bodyLg: { fontSize: 16, fontWeight: "700" },
-  body: { fontSize: 15, fontWeight: "600" },
-  label: { fontSize: 14, fontWeight: "800" },
-  meta: { fontSize: 13, fontWeight: "600" },
-  eyebrow: { fontSize: 11, fontWeight: "800", letterSpacing: 1.3, textTransform: "uppercase" as const },
-  badge: { fontSize: 10, fontWeight: "800", letterSpacing: 0.8 },
+  timer: { fontSize: 72, fontWeight: "800", letterSpacing: -2.5 },
+  h1: { fontSize: 26, fontWeight: "700", letterSpacing: -0.4, lineHeight: 33 },
+  h2: { fontSize: 21, fontWeight: "700", lineHeight: 28 },
+  button: { fontSize: 16, fontWeight: "700" },
+  bodyLg: { fontSize: 17, fontWeight: "700", lineHeight: 24 },
+  body: { fontSize: 16, fontWeight: "600", lineHeight: 24 },
+  label: { fontSize: 15, fontWeight: "600", lineHeight: 22 },
+  meta: { fontSize: 14, fontWeight: "500", lineHeight: 20 },
+  /*
+   * Uppercase tracking down from 1.3 to 0.7. Wide-tracked caps are the loudest thing a UI can
+   * do at 11pt — they read as a raised voice, and this app uses them for every section header.
+   * Enough tracking to keep the caps legible, not enough to shout.
+   */
+  eyebrow: { fontSize: 11, fontWeight: "700", letterSpacing: 0.7, textTransform: "uppercase" as const },
+  badge: { fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
 } as const;
 
 export type TypeToken = {
@@ -135,6 +157,9 @@ export type TypeToken = {
   // literal type means a typo in a token is a compile error rather than a silent fallback.
   fontWeight: TextStyle["fontWeight"];
   letterSpacing?: number;
+  // Carried on the token so line spacing is part of the scale rather than something each screen
+  // re-decides. Both resolvers scale it alongside fontSize.
+  lineHeight?: number;
   textTransform?: TextStyle["textTransform"];
 };
 
@@ -192,15 +217,51 @@ export const FONT_SCALE_CORRECTION = OS_FONT_CAP * TYPE_SCALE;
  * overrides fontSize is capped too — otherwise every `t(T.body, { fontSize: 15 })` would
  * quietly opt itself back out.
  */
+/**
+ * A caller's own `fontSize`, carried forward against a token whose `lineHeight` was tuned for
+ * its *own* size — found 2026-09-25 chasing an oversized gap in the session-length card.
+ *
+ * `type` gained explicit `lineHeight` on every token in the breathability pass, each one sized
+ * for that token's own `fontSize`. A component overriding `fontSize` without also overriding
+ * `lineHeight` — 100+ call sites across the app, mostly places drawing a token a size smaller
+ * than its default — was fine before (no token carried a lineHeight to inherit) and silently
+ * wrong after: `T.body`'s 16/24 pair, asked for at `fontSize: 13`, hands 13pt text a 24px line
+ * box built for 16pt — about 5-6px of invisible padding above and below the glyphs, on both
+ * Task Detail's segmented switches and anywhere else this pattern appears.
+ *
+ * Scaled by the same ratio rather than dropped outright, so the token's *leading* — how loose
+ * the line is relative to the glyphs — survives a caller asking for it smaller or larger,
+ * rather than falling back to the platform's own default and landing on a different rhythm at
+ * every such call site.
+ */
+function scaledLineHeight(token: TypeToken, extra: TextStyle | undefined): number | undefined {
+  const requestedSize = extra?.fontSize;
+  if (
+    typeof requestedSize !== "number" ||
+    requestedSize === token.fontSize ||
+    extra?.lineHeight !== undefined ||
+    typeof token.lineHeight !== "number"
+  ) {
+    return extra?.lineHeight ?? token.lineHeight;
+  }
+  return Math.round(token.lineHeight * (requestedSize / token.fontSize));
+}
+
 export function text(token: TypeToken, extra?: TextStyle): TextStyle {
   const style: TextStyle = {
     ...token,
     ...extra,
+    lineHeight: scaledLineHeight(token, extra),
   };
   // Resolved from the *merged* weight, not the token's. A caller overriding fontWeight was
   // otherwise given the token's family and a weight the platform couldn't apply to it: on
   // Android the loaded family wins outright, and on web the browser synthesises a fake bold
   // over the wrong file. Either way the text came out a weight nobody asked for.
+  //
+  // Relieved first, so a component's inline `fontWeight: "800"` is lightened along with the
+  // tokens — see WEIGHT_RELIEF. Both the weight and the family have to move together, or the
+  // browser synthesises the difference and the text comes out smeared.
+  style.fontWeight = relieved(style.fontWeight);
   style.fontFamily = FAMILY_BY_WEIGHT[String(style.fontWeight)] ?? font.semiBold;
 
   if (FONT_SCALE_CORRECTION !== 1) {
@@ -228,8 +289,11 @@ export function textAtDesignSize(token: TypeToken, extra?: TextStyle): TextStyle
   const style: TextStyle = {
     ...token,
     ...extra,
+    // Same lineHeight/fontSize mismatch text() guards against — see scaledLineHeight.
+    lineHeight: scaledLineHeight(token, extra),
   };
-  // Same merged-weight resolution as text() above — see the note there.
+  // Same merged-weight resolution and same relief as text() above — see the notes there.
+  style.fontWeight = relieved(style.fontWeight);
   style.fontFamily = FAMILY_BY_WEIGHT[String(style.fontWeight)] ?? font.semiBold;
 
   if (OS_FONT_CAP !== 1) {
@@ -248,6 +312,10 @@ export function textAtDesignSize(token: TypeToken, extra?: TextStyle): TextStyle
 export const space = { xs: 3, sm: 7, md: 9, base: 10, card: 13, gutter: 20, lg: 20 } as const;
 
 export const radius = {
+  /** The final screens' card and sheet corners — 16, where the older surfaces use 12. */
+  panel: 16,
+  /** Their chips, pinned buttons and inset pills. */
+  chip: 14,
   card: 12,
   control: 10,
   track: 11,
@@ -270,6 +338,12 @@ export const radius = {
  */
 export const size = {
   minTouch: 44,
+  /**
+   * How far the docked capture disc rises above the tab bar (DockedTabBar's CAPTURE_LIFT of 40,
+   * plus the 5px glow ring around it, plus a hair). Anything pinned to the bottom of a *tab*
+   * screen has to clear this or the disc sits on top of it.
+   */
+  dockRise: 46,
   button: 46,
   toggleW: 44,
   toggleH: 26,
@@ -302,13 +376,7 @@ export const shadow = {
  * Kept this low in saturation on purpose: it should register as light in the room rather
  * than as a coloured background.
  */
-export const homeWash = {
-  base: color.screen,
-  violet: "#EFE4F5",
-  blush: "#F8DFD4",
-  mint: "#E4F0E2",
-  sand: "#FBF1DE",
-} as const;
+
 
 /**
  * The Scheduled screen's three panels.
@@ -323,37 +391,7 @@ export const homeWash = {
  * other — a second screen showing an overdue panel should reach for the same field, not
  * re-pick a similar one by eye.
  */
-export const schedulePanel = {
-  overdue: {
-    bg: "#FCF0EA",
-    border: "#F0D5C8",
-    label: "#8A4E39",
-    rule: "#EEC9B8",
-    rowBorder: "#EFDCCE",
-    /** The count badge inverts here — solid terracotta with cream text, unlike the neutral panels. */
-    badgeBg: color.interactive,
-    badgeFg: color.screen,
-    moreBorder: "#E7C6B6",
-    moreText: "#A66B58",
-  },
-  neutral: {
-    /** Translucent, so the screen's gradient wash still reads through the panel. */
-    bg: "rgba(255,255,255,.5)",
-    border: color.border,
-    label: color.textMuted,
-    rule: color.border,
-    badgeBg: "#EFE6D4",
-    badgeFg: "#4A5551",
-  },
-  /** Neutral tile behind the repeat mark on a recurring row. */
-  repeatTileBg: "#F4EEE1",
-  repeatTileFg: "#7E8A85",
-  /** Per-date rules inside Upcoming — lighter than a panel rule so days read as sub-groups. */
-  dateRule: "rgba(237,224,198,.75)",
-  /** Task-type dots on a schedule row: terracotta for focus, blue for reminder. */
-  focusDot: color.ferne,
-  reminderDot: "#7B96C0",
-} as const;
+
 
 /**
  * Home's own surface, transcribed from the Docked Ferne screens (9a / 9b).
@@ -362,63 +400,7 @@ export const schedulePanel = {
  * these are tokens like any other, and a second screen showing a finished row should reach for
  * the same cream rather than re-pick a similar one by eye.
  */
-export const home = {
-  /** Greeting block. */
-  avatarBg: "#F7F1E6",
-  avatarInk: "#6A4F6A",
-  /** The date, the stat labels, and every quiet second line on this screen. */
-  subtle: "#5F6A66",
 
-  /** Stat strip. */
-  statDivider: "#E8DCC4",
-  streakInk: "#9E3F16",
-  pointsInk: "#7A5408",
-  focusedInk: color.success,
-  /** The strip's bolt is outlined a shade deeper than the one on a row. */
-  statBoltStroke: "#8A6112",
-
-  /** Section headers: the count pill for each, and the collapse caret. */
-  countAmberBg: color.amberFill,
-  countAmberInk: "#8A6112",
-  countDoneBg: "#EAF0DA",
-  countDoneInk: "#6F8429",
-  caret: "#A0A79F",
-
-  /** Open rows. */
-  actionBg: "#EBC294",
-  actionInk: "#4A3608",
-  /** A row counting toward a goal — the olive pair, not the goal's own colour. */
-  goalKindBg: "#EFF4E2",
-  goalKindInk: "#5F7226",
-  xpInk: "#A9760B",
-
-  /** Finished rows. */
-  doneBg: "#FBF7EC",
-  doneBorder: "#EFE6D2",
-  doneTileBg: "#EAF0DA",
-  doneTileBorder: "#D4E0B4",
-  doneTick: "#6F8429",
-  doneTitle: "#67716D",
-  doneStrike: "#AEB6B1",
-  /** Two metas: one for a row that counted toward a goal, one for everything else. */
-  doneMetaGoal: "#4C5A76",
-  doneMeta: "#5C564B",
-  donePillBg: color.amberFill,
-  donePillInk: "#8A6112",
-  closingLine: "#6B7571",
-
-  /** "Right now" — the countdown ring and the card it sits in. */
-  sessionTrack: "#F4E3D4",
-  sessionRing: color.ferne,
-  sessionInk: color.taskTypeFocusFg,
-  cardShadow: "rgba(139,109,74,.07)",
-
-  /** The docked capture button. */
-  captureDiscLit: "#FFF3E8",
-  captureDiscShade: "#F8DCC8",
-  captureRim: "rgba(223,109,65,.34)",
-  captureShadow: "rgba(142,61,29,.24)",
-} as const;
 
 /**
  * Task Detail's surface, transcribed from the Task Detail Elegant screens.
@@ -430,62 +412,7 @@ export const home = {
  * `schedulePanel` are — a second screen showing one of these cards should reach for the same
  * values rather than re-pick them by eye.
  */
-export const detail = {
-  ink: "#1C2422",
-  /** Second lines, units, and anything deliberately quiet. */
-  muted: "#6A6250",
-  /** The small uppercase labels above a section and inside a row. */
-  label: "#6B6250",
-  cardShadow: "rgba(28,36,34,.07)",
 
-  /** Focus / Reminder switch. */
-  switchTrack: "#F1E9D9",
-  switchActive: "#FFFDF7",
-  switchActiveShadow: "rgba(28,36,34,.1)",
-
-  /** Regular / Pomodoro switch — the one control in the app with a dark active state. */
-  modeTrack: "#F5F0E5",
-  modeActive: "#1C2422",
-  modeActiveInk: "#FDF8EA",
-
-  /** The round − / + buttons. */
-  stepperBorder: "#E7DFCF",
-  stepperInk: "#5C6864",
-
-  /** Pomodoro's two inset tiles, and the round/break bar under them. */
-  tile: "#FAF7EF",
-  roundOn: "#A2604A",
-  roundOff: "#E4DCCB",
-
-  /** Timing rows. */
-  divider: "#F2EDE3",
-  rowIcon: "#5C6864",
-  /** Every "Change" / "Edit" / "Add" / "Attach" on this screen. */
-  action: "#A2604A",
-  chevron: "#C0B8A6",
-
-  /** The goal ring, and the dashed circle when there's no goal. */
-  goalTrack: "#EDF1E6",
-  goalArc: "#7FB04A",
-  goalInk: "#54762D",
-  emptyRing: "#D6CEBC",
-  emptyPlus: "#B3AA98",
-
-  /** The reminder screen's "why there is no goal here" panel. */
-  explainer: "#F7F2E6",
-  explainerInk: "#5E5645",
-
-  /** The two footer buttons: terracotta to start a session, ink to finish a reminder. */
-  primary: "#A2604A",
-  primaryInk: "#FFF8F3",
-  primaryShadow: "rgba(120,62,42,.75)",
-  dark: "#1C2422",
-  darkInk: "#FDF8EA",
-  darkShadow: "rgba(28,36,34,.8)",
-
-  /** The overflow dots in the header. */
-  dots: "#A8A090",
-} as const;
 
 /* ------------------------------------------------------------------- depth */
 
@@ -582,6 +509,12 @@ function fromHsl(h: number, s: number, lightness: number): string {
   );
 }
 
+/** The same colour at a given alpha — for a fade that has to end in the screen's own ground. */
+export function withAlpha(hex: string, alpha: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 /**
  * Shifts a colour's HSL lightness by `delta` (in points, so 8 means +8%), leaving hue and
  * saturation alone. A straight blend toward white/black desaturates as it goes and turns
@@ -612,7 +545,10 @@ export function atLightness(hex: string, lightness: number): string {
  * since the colour is the user's to pick.
  */
 export function goalRing(hex: string): { track: string; ink: string } {
-  return { track: atLightness(hex, 94), ink: shade(hex, -22) };
+  return {
+    track: atLightness(hex, light.goalRing.trackLightness),
+    ink: shade(hex, light.goalRing.inkShift),
+  };
 }
 
 /**

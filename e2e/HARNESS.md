@@ -4,7 +4,33 @@ This is the design the test files assume. It exists before the tests do because 
 flakiness in a suite like this comes from the fixture, not the assertions: shared accounts,
 uncontrolled clocks, and data seeded through the UI are what make tests slow and unreliable.
 
-Nothing here is built yet. It's the contract to build against.
+**Built so far (2026-09-18):** the config's two projects, the stack guard
+(`harness/stack.setup.ts`), sign-in and API seeding (`harness/app.ts`, `api.ts`, `fixtures.ts`),
+all 36 `LOGIC` tests (`logic/`, green, each seen to fail against a deliberate break of the source),
+and 16 app tests in `tests/`. Clock mocking, SQL back-dating and failure injection are still
+contract only.
+
+## The `logic` project
+
+Calls the scheduling functions directly — no browser, no server. It computes in
+`America/Los_Angeles`, set in `playwright.config.ts`: behind UTC, where the date-parsing bugs
+bite, and with real DST transitions. `logic/zone.ts` asserts the zone took effect and freezes the
+process clock per call (`atMoment`), because `reminderOccurrences` and `intervalOccurrences`
+read `Date.now()` rather than taking a `now`.
+
+Anything that imports `expo-notifications` or `react-native` cannot load here — that's the line
+between this project and the `app` one.
+
+## If the browser won't launch
+
+On the development Mac in September 2026, *every* Chromium (Edge and Chrome, launched by
+Playwright, by `open`, or directly) began aborting at startup with SIGABRT and no output, and
+`open` reported `kLSNoExecutableErr` for an app whose executable was present. Not caused by
+`MallocNanoZone`, file-descriptor limits or disk space — all ruled out. It's the machine, not the
+suite; a reboot is the first thing to try. `E2E_CDP_URL` (see `harness/fixtures.ts`) attaches to
+an already-running browser instead of launching one, once any browser will start.
+
+The rest of this file is the contract the `app` project is built against.
 
 ## The stack
 

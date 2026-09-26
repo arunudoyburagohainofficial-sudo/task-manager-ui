@@ -69,6 +69,14 @@ export function celebrationLine(tone: CompanionTone, streakDays: number, pointsE
       deadpan: `${streakDays}-day streak maintained. Acceptable.`,
     }[tone];
   }
+  // A zero isn't a reward — "+0 XP — nice work." dressed one up as one.
+  if (pointsEarned <= 0) {
+    return {
+      gentle: "Done — that one's off your list.",
+      hype: "DONE! Off the list 🔥",
+      deadpan: "Task closed.",
+    }[tone];
+  }
   return {
     gentle: `+${pointsEarned} XP — nice work.`,
     hype: `+${pointsEarned} XP! Let's keep this going 🔥`,

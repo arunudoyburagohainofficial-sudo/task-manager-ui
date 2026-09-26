@@ -4,6 +4,7 @@ import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useQueryClient } from "@tanstack/react-query";
 import { focusSessionsApi } from "../api";
+import { ApiError, failureHint } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { useCompleteTaskMutation, useTaskQuery } from "../api/queries/useTasks";
 import { useToast } from "../state/ToastContext";
@@ -22,9 +23,12 @@ import {
   Timer,
 } from "../components";
 import { useCompanion } from "../state/CompanionContext";
-import { color, FONT_SCALE_CORRECTION, radius, space, text as t, type as T } from "../theme";
+import { FONT_SCALE_CORRECTION, radius, space, text as t, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { restingLine } from "../theme/companionCopy";
 import { formatMMSS, formatMinutes } from "../utils/format";
+import { lowerShield, raiseShield } from "../utils/focusShield";
+import { usePreferences } from "../state/PreferencesContext";
 import type { RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -35,6 +39,8 @@ const BREAK_SECONDS = 5 * 60;
 type Phase = "working" | "break" | "completePrompt";
 
 export function FocusSessionScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { name } = useCompanion();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Route>();
@@ -76,9 +82,47 @@ export function FocusSessionScreen() {
   );
   const paused = pausedAt !== null;
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const [completedSession, setCompletedSession] = useState<FocusSessionDto | null>(null);
   const [finishing, setFinishing] = useState(false);
   const { showToast } = useToast();
+
+  const { blockedAppIds } = usePreferences();
+
+  /*
+   * The shield goes up for the current block's deadline and is re-raised whenever that deadline
+   * moves — resuming from a pause pushes it out, and each Pomodoro cycle sets a new one. Raising
+   * again simply overwrites the native shield and re-arms its alarm, so extending needs no
+   * separate path, and a session that ends unexpectedly is left with a deadline that has already
+   * passed rather than one that never arrives.
+   *
+   * Paused deliberately keeps the shield up: a break is not an escape. If a pause runs past the
+   * deadline the shield lapses on its own, which is the right way round for a failure.
+   */
+  useEffect(() => {
+    if (phase === "completePrompt") return;
+    void raiseShield({
+      endsAt: new Date(deadline),
+      wantsDnd: params.dndEnabled,
+      blockedAppIds,
+    });
+  }, [deadline, phase, params.dndEnabled, blockedAppIds]);
+
+  /*
+   * Down the moment the session stops being a session, by any route — finished, ended early,
+   * discarded — plus on unmount as the catch-all for leaving this screen any other way.
+   *
+   * None of this is what actually guarantees the shield lifts. The native side holds an
+   * AlarmManager alarm for the deadline and treats an expired shield as no shield on every read,
+   * so even if every line here failed the phone would come back on time. This is the tidy path,
+   * not the safety net.
+   */
+  useEffect(() => {
+    if (phase === "completePrompt") void lowerShield();
+  }, [phase]);
+
+  useEffect(() => () => void lowerShield(), []);
 
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
@@ -91,8 +135,17 @@ export function FocusSessionScreen() {
       try {
         const completed = await focusSessionsApi.completeFocusSession(sessionId, {
           wasInterrupted,
+          // Cycles actually finished. Interrupted mid-work, the current cycle doesn't count; during a
+          // break it does — the break only exists because that cycle was completed. Counting
+          // `current - 1` in both cases reported a finished first round as zero.
           numPomodoroCycles:
-            focusMode === "pomodoro" ? (wasInterrupted ? cycleRef.current - 1 : totalCycles) : undefined,
+            focusMode === "pomodoro"
+              ? wasInterrupted
+                ? phaseRef.current === "break"
+                  ? cycleRef.current
+                  : cycleRef.current - 1
+                : totalCycles
+              : undefined,
         });
         setCompletedSession(completed);
         setPhase("completePrompt");
@@ -100,7 +153,7 @@ export function FocusSessionScreen() {
         // part of today's totals.
         queryClient.invalidateQueries({ queryKey: queryKeys.currentFocusSession() });
         queryClient.invalidateQueries({ queryKey: ["todayProgress"] });
-      } catch {
+      } catch (err) {
         /*
          * Previously a bare try/finally: if saving the session failed, the error escaped, the
          * screen never advanced past the timer, and nothing was said. That's the worst place
@@ -111,7 +164,10 @@ export function FocusSessionScreen() {
          */
         showToast({
           tone: "error",
-          message: "Couldn't save this session — check your connection and end it again.",
+          message:
+            err instanceof ApiError && err.status === 429
+              ? "Couldn't save this session — too many requests right now. End it again in a minute."
+              : "Couldn't save this session — check your connection and end it again.",
         });
       } finally {
         setFinishing(false);
@@ -175,6 +231,33 @@ export function FocusSessionScreen() {
     finishSession(true);
   }
 
+  /**
+   * Throws the session away, crediting nothing. Ending always credits the time, so a session
+   * started by mistake — or left running — could only be got rid of by claiming work that
+   * never happened. The server has always supported this; the screen never offered it.
+   */
+  async function handleDiscardConfirm() {
+    setDiscardConfirmOpen(false);
+    setDiscarding(true);
+    firedFor.current = deadline; // the timer mustn't finish (and credit) it while this runs
+    // Before the network call, not after: a discard whose request fails still ends the session
+    // as far as the user is concerned, and leaving their apps blocked over a failed request
+    // would be the worst possible reading of "nothing was counted".
+    void lowerShield();
+    try {
+      await focusSessionsApi.abandonFocusSession(sessionId);
+      queryClient.invalidateQueries({ queryKey: queryKeys.currentFocusSession() });
+      queryClient.invalidateQueries({ queryKey: ["todayProgress"] });
+      showToast({ message: "Session discarded — nothing was counted" });
+      navigation.navigate("Main", { screen: "Home" });
+    } catch (err) {
+      firedFor.current = null;
+      showToast({ tone: "error", message: `Couldn't discard this session — ${failureHint(err)}` });
+    } finally {
+      setDiscarding(false);
+    }
+  }
+
   async function handleMarkTaskComplete() {
     if (!task || !completedSession) return;
     // The session itself is already saved and its points credited by this point — only the
@@ -210,8 +293,8 @@ export function FocusSessionScreen() {
           style={[
             styles.dot,
             filled(i)
-              ? { backgroundColor: color.interactive }
-              : { backgroundColor: color.fill, borderWidth: 1, borderColor: color.border },
+              ? { backgroundColor: theme.color.interactive }
+              : { backgroundColor: theme.color.fill, borderWidth: 1, borderColor: theme.color.border },
           ]}
         />
       ))}
@@ -230,11 +313,11 @@ export function FocusSessionScreen() {
             </View>
             <H2>Cycle {currentCycle} complete</H2>
             <Meta style={styles.centerText}>Break time — stretch, breathe, hydrate.</Meta>
-            <Text style={t(T.timer, { fontSize: 56, color: color.textMuted, textAlign: "center" })}>
+            <Text style={t(T.timer, { fontSize: 56, color: theme.color.textMuted, textAlign: "center" })}>
               {formatMMSS(secondsLeft)}
             </Text>
             {cycleDots((i) => i === currentCycle - 1)}
-            <Meta style={[styles.centerText, { color: color.textFaint }]}>
+            <Meta style={[styles.centerText, { color: theme.color.textFaint }]}>
               Break countdown · cycle {currentCycle + 1} will not start on its own
             </Meta>
           </View>
@@ -277,17 +360,28 @@ export function FocusSessionScreen() {
 
               <View style={styles.statsRow}>
                 <View style={styles.statItem}>
-                  <Body style={{ fontWeight: "800", color: color.text }}>{formatMinutes(minutes)}</Body>
-                  <Meta style={{ color: color.textFaint }}>focused</Meta>
+                  <Body style={{ fontWeight: "800", color: theme.color.text }}>{formatMinutes(minutes)}</Body>
+                  <Meta style={{ color: theme.color.textFaint }}>focused</Meta>
                 </View>
                 <View style={styles.statItem}>
-                  <View style={styles.xpRow}>
-                    <Body style={{ fontWeight: "800", color: color.success }}>
-                      +{completedSession.pointsEarned ?? 0} XP
-                    </Body>
-                    <InfoTooltip topic="xp" color={color.success} />
-                  </View>
-                  <Meta style={{ color: color.textFaint }}>earned</Meta>
+                  {/* Credited minutes are whole minutes, so under one earns nothing — said
+                      plainly rather than as a "+0" reward. */}
+                  {(completedSession.pointsEarned ?? 0) > 0 ? (
+                    <>
+                      <View style={styles.xpRow}>
+                        <Body style={{ fontWeight: "800", color: theme.color.success }}>
+                          +{completedSession.pointsEarned} XP
+                        </Body>
+                        <InfoTooltip topic="xp" color={theme.color.success} />
+                      </View>
+                      <Meta style={{ color: theme.color.textFaint }}>earned</Meta>
+                    </>
+                  ) : (
+                    <>
+                      <Body style={{ fontWeight: "800", color: theme.color.textMuted }}>No XP</Body>
+                      <Meta style={{ color: theme.color.textFaint }}>under a minute</Meta>
+                    </>
+                  )}
                 </View>
               </View>
 
@@ -310,13 +404,13 @@ export function FocusSessionScreen() {
   return (
     <ScreenContainer>
       <View style={styles.sessionContainer}>
-        <Meta style={[styles.centerText, { fontWeight: "800", color: color.text }]}>{task.name}</Meta>
+        <Meta style={[styles.centerText, { fontWeight: "800", color: theme.color.text }]}>{task.name}</Meta>
 
         {params.dndEnabled ? (
           <View style={styles.dndPillWrap}>
             <View style={styles.dndPill}>
               <DoNotDisturbIcon size={18} />
-              <Meta style={{ fontWeight: "800", color: color.success }}>Do Not Disturb · preview</Meta>
+              <Meta style={{ fontWeight: "800", color: theme.color.success }}>Do Not Disturb · preview</Meta>
             </View>
           </View>
         ) : null}
@@ -371,6 +465,24 @@ export function FocusSessionScreen() {
           style={styles.bottomButton}
         />
       </View>
+      <View style={styles.discardRow}>
+        <Button
+          label="Discard session"
+          variant="destructiveText"
+          loading={discarding}
+          onPress={() => setDiscardConfirmOpen(true)}
+        />
+      </View>
+
+      <ConfirmModal
+        visible={discardConfirmOpen}
+        title="Discard this session?"
+        message="None of this time will count — no minutes, no XP."
+        confirmLabel="Discard"
+        cancelLabel="Keep going"
+        onConfirm={handleDiscardConfirm}
+        onCancel={() => setDiscardConfirmOpen(false)}
+      />
 
       <ConfirmModal
         visible={endConfirmOpen}
@@ -385,143 +497,149 @@ export function FocusSessionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  sessionContainer: {
-    flex: 1,
-    paddingHorizontal: space.gutter,
-    paddingTop: space.md,
-  },
-  centerText: {
-    textAlign: "center",
-  },
-  dndPillWrap: {
-    alignItems: "center",
-    marginTop: space.sm,
-  },
-  dndPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.sm,
-    borderWidth: 1,
-    borderColor: color.successBorder,
-    backgroundColor: color.successFill,
-    borderRadius: radius.pill,
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-  },
-  timerBlock: {
-    flex: 1,
-    justifyContent: "center",
-  },
-  timerText: {
-    textAlign: "center",
-    // Set on this style prop rather than merged into Timer's own t(T.timer, ...) call —
-    // the Timer component only accepts a style override, not an `extra` to merge into the
-    // token — so it never saw TYPE_SCALE's correction on its own. Multiplying by the same
-    // factor t() applies internally keeps it in sync with the digits beside it.
-    lineHeight: 76 * FONT_SCALE_CORRECTION,
-    fontVariant: ["tabular-nums"],
-  },
-  progressSection: {
-    marginTop: 26,
-  },
-  progressFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: space.sm,
-  },
-  restingSection: {
-    alignItems: "center",
-    gap: 9,
-    marginTop: 26,
-  },
-  dotsRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: space.sm,
-    marginTop: 16,
-  },
-  dot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-  },
-  bottomRow: {
-    flexDirection: "row",
-    gap: space.md,
-    paddingHorizontal: space.gutter,
-    paddingTop: space.base,
-    paddingBottom: 18,
-  },
-  bottomButton: {
-    flex: 1,
-  },
-  breakContainer: {
-    flex: 1,
-    paddingHorizontal: space.gutter,
-    paddingTop: space.md,
-  },
-  breakContent: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: space.base,
-  },
-  breakIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: color.successFill,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  bottomStack: {
-    gap: space.md,
-    paddingBottom: 18,
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(26,26,26,.42)",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: space.gutter,
-  },
-  modalCard: {
-    width: "100%",
-    maxWidth: 340,
-    backgroundColor: color.card,
-    borderRadius: 16,
-    padding: 22,
-    alignItems: "center",
-    gap: space.base,
-  },
-  completeIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: color.successFill,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  statsRow: {
-    flexDirection: "row",
-    gap: space.lg,
-  },
-  statItem: {
-    alignItems: "center",
-    gap: 2,
-  },
-  xpRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  modalActions: {
-    width: "100%",
-    gap: space.md,
-    marginTop: space.xs,
-  },
-});
+const makeStyles = (th: Tokens) =>
+  StyleSheet.create({
+    sessionContainer: {
+      flex: 1,
+      paddingHorizontal: space.gutter,
+      paddingTop: space.md,
+    },
+    centerText: {
+      textAlign: "center",
+    },
+    dndPillWrap: {
+      alignItems: "center",
+      marginTop: space.sm,
+    },
+    dndPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space.sm,
+      borderWidth: 1,
+      borderColor: th.color.successBorder,
+      backgroundColor: th.color.successFill,
+      borderRadius: radius.pill,
+      paddingVertical: 7,
+      paddingHorizontal: 14,
+    },
+    timerBlock: {
+      flex: 1,
+      justifyContent: "center",
+    },
+    timerText: {
+      textAlign: "center",
+      // Set on this style prop rather than merged into Timer's own t(T.timer, ...) call —
+      // the Timer component only accepts a style override, not an `extra` to merge into the
+      // token — so it never saw TYPE_SCALE's correction on its own. Multiplying by the same
+      // factor t() applies internally keeps it in sync with the digits beside it.
+      lineHeight: 76 * FONT_SCALE_CORRECTION,
+      fontVariant: ["tabular-nums"],
+    },
+    progressSection: {
+      marginTop: 26,
+    },
+    progressFooter: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginTop: space.sm,
+    },
+    restingSection: {
+      alignItems: "center",
+      gap: 9,
+      marginTop: 26,
+    },
+    dotsRow: {
+      flexDirection: "row",
+      justifyContent: "center",
+      gap: space.sm,
+      marginTop: 16,
+    },
+    dot: {
+      width: 9,
+      height: 9,
+      borderRadius: 5,
+    },
+    bottomRow: {
+      flexDirection: "row",
+      gap: space.md,
+      paddingHorizontal: space.gutter,
+      paddingTop: space.base,
+      paddingBottom: 18,
+    },
+    discardRow: {
+      alignItems: "center",
+      paddingBottom: 18,
+      marginTop: -8,
+    },
+    bottomButton: {
+      flex: 1,
+    },
+    breakContainer: {
+      flex: 1,
+      paddingHorizontal: space.gutter,
+      paddingTop: space.md,
+    },
+    breakContent: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: space.base,
+    },
+    breakIcon: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      backgroundColor: th.color.successFill,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    bottomStack: {
+      gap: space.md,
+      paddingBottom: 18,
+    },
+    overlay: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: "rgba(26,26,26,.42)",
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: space.gutter,
+    },
+    modalCard: {
+      width: "100%",
+      maxWidth: 340,
+      backgroundColor: th.color.card,
+      borderRadius: 16,
+      padding: 22,
+      alignItems: "center",
+      gap: space.base,
+    },
+    completeIcon: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: th.color.successFill,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    statsRow: {
+      flexDirection: "row",
+      gap: space.lg,
+    },
+    statItem: {
+      alignItems: "center",
+      gap: 2,
+    },
+    xpRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+    },
+    modalActions: {
+      width: "100%",
+      gap: space.md,
+      marginTop: space.xs,
+    },
+  });

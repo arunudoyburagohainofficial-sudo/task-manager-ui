@@ -73,3 +73,69 @@ are pure and dependency-free — they deserve unit tests rather than browser tes
     no caller is the kind of thing this repo explicitly doesn't keep.
   - **When wired, the tests are:** Done completes the task and stops all its nudges; Snooze moves
     the next firing by 15 minutes and leaves the task pending; Stop keeps the task and silences it.
+
+## Added 2026-09-18 — the device queue, and what the app tells you about it
+
+NOTIF-01 to NOTIF-09 cover the *configuration*. These cover the other end: the queue
+`scheduledInspector` reads, its budget, and the two races that can leave it disagreeing with the
+server. On web the queue is empty, so several of these are assertions about what the screen says
+when it has nothing to show — which is exactly the case NOTIF-02 exists for, and the reason the
+screen was built to name which end it's reporting.
+
+- [ ] **NOTIF-11 — One daily reminder appears as several queued firings, and the screen says why**
+  - **Does:** an undated task with a reminder time.
+  - **Proves:** the queue carries a week of entries for one configured reminder, and the screen
+    explains that rather than appearing to have created seven reminders.
+  - **Why:** the horizon (LOGIC-06) is invisible in the configuration and very visible in the
+    queue. A user who sees seven identical rows and can't find seven reminders to delete has no
+    way to understand the screen.
+
+- [ ] **NOTIF-12 — A full queue reports the budget rather than under-reporting silently**
+  - **Does:** enough reminders and nudges to exceed `NOTIFICATION_BUDGET` (50).
+  - **Proves:** the screen shows how full the queue is and says the tail isn't scheduled — it does
+    not simply list 50 things as though that were everything configured.
+  - **Why:** the whole justification for this screen is that the app must not push things into the
+    OS the user can neither see nor stop. A silently truncated list is that failure wearing the
+    screen's own clothes.
+
+- [ ] **NOTIF-13 — A lead-time firing's text says when the task is due**
+  - **Proves:** the queued entry for a "1 day before" notification reads "… — due tomorrow", and
+    the day-of entry for the same task doesn't.
+  - **Why:** `leadIn` exists because the two were word-for-word identical, so the early warning
+    read as "this is due now". LOGIC-21/22 prove the wording; this proves the wording is what
+    actually reaches the queue, with the right offset attached.
+
+- [ ] **NOTIF-14 — A focus task's reminder and a plain reminder announce themselves differently**
+  - **Proves:** "Time to focus" for a focus task, "Reminder" for the other.
+  - **Why:** every reminder used to say "Time to focus", which is the wrong sentence entirely for
+    "Call the dentist" — and the kind of thing that makes an app feel like it isn't listening.
+
+- [ ] **NOTIF-15 — A snoozed reminder shows its snoozed time and loses its original slot**
+  - **Proves:** one entry, at the snoozed instant; the original time is absent.
+  - **Why:** the device ignored `snoozedUntil` entirely once, so the reminder came back at its
+    original time. LOGIC-09 pins the arithmetic; this pins that the queue the user is shown agrees
+    with it.
+
+- [ ] **NOTIF-16 — A task finished on another device leaves the queue on the next sync**
+  - **Does:** complete the task through the API, then foreground the app.
+  - **Proves:** its entries are gone.
+  - **Why:** the server stops the reminder, but the device's queue is cancel-and-reschedule on
+    foreground. Until that runs, a finished task keeps its alarm — the most annoying possible bug,
+    and one a second device makes reachable without the user doing anything wrong.
+
+- [ ] **NOTIF-17 — Two reminder changes in quick succession leave the queue matching the second**
+  - **Does:** save a reminder, then immediately save a different one, without waiting.
+  - **Proves:** the queue matches the later save — no duplicates, and nothing from the first save
+    left behind.
+  - **Why:** `scheduleAll` is fired unawaited from a dozen places and two overlapping runs used to
+    interleave destructively: the second run's cancel wiped the first's writes, and the first then
+    finished scheduling on top. The fix is a serialising promise chain; nothing else tests it.
+
+- [ ] **NOTIF-18 — A background sync racing a completion doesn't resurrect the finished task**
+  - **Does:** complete two tasks in quick succession.
+  - **Proves:** both stay in DONE — neither reappears in TO DO — and the counts settle correctly.
+  - **Why:** `syncReminders` writes whole lists into the query cache and is fired unawaited from
+    every completion. The first sync's response landing after the second's optimistic update put
+    the second task back into the pending list, where it sat until something else refetched. The
+    guard is a single `isMutating() === 0` check, and its symptom — a task you just finished
+    quietly reappearing — is indistinguishable from the app losing the write.

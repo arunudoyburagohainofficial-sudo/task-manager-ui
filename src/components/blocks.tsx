@@ -1,7 +1,8 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View, type BoxShadowValue } from "react-native";
 import type { GoalDto } from "../api/types";
-import { accentRamp, color, lift, shade, space, text as t, type as T } from "../theme";
+import { accentRamp, lift, shade, space, text as t, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { Card } from "./Card";
 import { GradientFill, InnerShading } from "./ScreenWash";
 
@@ -29,7 +30,9 @@ const TRACK_FILL_RIM: BoxShadowValue[] = [
 
 /** Goal tile — name, progress bar tinted with the goal's own colour, day count. */
 export function GoalCard({ goal, onPress, width }: { goal: GoalDto; onPress?: () => void; width?: number }) {
-  const accent = goal.color ?? color.goal;
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const accent = goal.color ?? theme.color.goal;
   const pct = goal.targetDays ? Math.min(100, (goal.totalDaysActive / goal.targetDays) * 100) : 0;
   // Lit top, shaded bottom — the design never paints a goal accent flat. The same pair
   // does the swatch and the bar fill, which is what ties them together as one colour.
@@ -75,7 +78,7 @@ export function GoalCard({ goal, onPress, width }: { goal: GoalDto; onPress?: ()
               />
             </View>
             <Text
-              style={[t(T.label, { fontSize: 13, fontWeight: "800", color: color.text, flex: 1 }), styles.goalName]}
+              style={[t(T.label, { fontSize: 13, fontWeight: "800", color: theme.color.text, flex: 1 }), styles.goalName]}
               numberOfLines={2}
             >
               {goal.name}
@@ -109,7 +112,7 @@ export function GoalCard({ goal, onPress, width }: { goal: GoalDto; onPress?: ()
                 <InnerShading shadows={TRACK_FILL_RIM} radius={GOAL_TRACK_H / 2} />
               </View>
             </View>
-            <Text style={t(T.badge, { fontSize: 10, letterSpacing: 0, color: color.textFaint })} numberOfLines={1}>
+            <Text style={t(T.badge, { fontSize: 10, letterSpacing: 0, color: theme.color.textFaint })} numberOfLines={1}>
               {goal.totalDaysActive}/{goal.targetDays}
               {goal.status === "completed" ? " ✓" : ""}
             </Text>
@@ -132,84 +135,87 @@ export function StatCard({
   accent?: boolean;
   trailing?: React.ReactNode;
 }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Card style={styles.statCard}>
       <View style={styles.statValueRow}>
-        <Text style={t(T.h2, { color: accent ? color.success : color.text })}>{value}</Text>
+        <Text style={t(T.h2, { color: accent ? theme.color.success : theme.color.text })}>{value}</Text>
         {trailing}
       </View>
-      <Text style={t(T.meta, { color: color.textMuted, marginTop: 2 })}>{label}</Text>
+      <Text style={t(T.meta, { color: theme.color.textMuted, marginTop: 2 })}>{label}</Text>
     </Card>
   );
 }
 
-const styles = StyleSheet.create({
-  /** Drop-shadow-only outer layer — see `lift()` for why it can't share the clipped box. */
-  // Matches goalCard's radius so the shadow follows the card's real silhouette.
-  goalCardShadowWrap: {
-    borderRadius: 14,
-  },
-  goalCard: {
-    backgroundColor: color.card,
-    borderWidth: 1,
-    borderColor: "rgba(237,224,198,.9)",
-    borderRadius: 14,
-    overflow: "hidden",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  goalHeader: {
-    flexDirection: "row",
-    // Top-aligned rather than centred: the name below occupies two lines whether or not it
-    // needs them, and centring against that block would float the swatch into the gap
-    // beside a one-line name.
-    alignItems: "flex-start",
-    gap: space.sm,
-  },
-  goalSwatch: {
-    width: 9,
-    height: 9,
-    borderRadius: 3,
-    // Optically centres the swatch on the name's first line ((lineHeight - size) / 2).
-    marginTop: (GOAL_NAME_LINE_HEIGHT - 9) / 2,
-  },
-  /**
-   * Always two lines tall, even for a name that fits on one. Goal tiles sit side by side in
-   * a horizontal strip, and letting each size itself to its own name gave the row cards of
-   * two different heights. lineHeight is set explicitly because RN's default varies by
-   * platform and font, which is exactly the kind of thing that makes a reserved height
-   * drift out of sync with the text it's reserving space for.
-   */
-  goalName: {
-    lineHeight: GOAL_NAME_LINE_HEIGHT,
-    height: GOAL_NAME_LINE_HEIGHT * 2,
-  },
-  goalFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 6,
-  },
-  goalTrack: {
-    flex: 1,
-    height: GOAL_TRACK_H,
-    borderRadius: GOAL_TRACK_H / 2,
-    justifyContent: "center",
-  },
-  goalTrackFill: {
-    height: GOAL_TRACK_H,
-    borderRadius: GOAL_TRACK_H / 2,
-  },
-  statCard: {
-    flex: 1,
-    // Deliberately tighter than Card's own default (space.card=13), rather than that
-    // literal 14 it used to override to — this sits in a dense 2×2 grid of its own, unlike
-    // Card's general-purpose use elsewhere.
-    padding: 11,
-  },
-  statValueRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    /** Drop-shadow-only outer layer — see `lift()` for why it can't share the clipped box. */
+    // Matches goalCard's radius so the shadow follows the card's real silhouette.
+    goalCardShadowWrap: {
+      borderRadius: 14,
+    },
+    goalCard: {
+      backgroundColor: t.color.card,
+      borderWidth: 1,
+      borderColor: "rgba(237,224,198,.9)",
+      borderRadius: 14,
+      overflow: "hidden",
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+    },
+    goalHeader: {
+      flexDirection: "row",
+      // Top-aligned rather than centred: the name below occupies two lines whether or not it
+      // needs them, and centring against that block would float the swatch into the gap
+      // beside a one-line name.
+      alignItems: "flex-start",
+      gap: space.sm,
+    },
+    goalSwatch: {
+      width: 9,
+      height: 9,
+      borderRadius: 3,
+      // Optically centres the swatch on the name's first line ((lineHeight - size) / 2).
+      marginTop: (GOAL_NAME_LINE_HEIGHT - 9) / 2,
+    },
+    /**
+     * Always two lines tall, even for a name that fits on one. Goal tiles sit side by side in
+     * a horizontal strip, and letting each size itself to its own name gave the row cards of
+     * two different heights. lineHeight is set explicitly because RN's default varies by
+     * platform and font, which is exactly the kind of thing that makes a reserved height
+     * drift out of sync with the text it's reserving space for.
+     */
+    goalName: {
+      lineHeight: GOAL_NAME_LINE_HEIGHT,
+      height: GOAL_NAME_LINE_HEIGHT * 2,
+    },
+    goalFooter: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginTop: 6,
+    },
+    goalTrack: {
+      flex: 1,
+      height: GOAL_TRACK_H,
+      borderRadius: GOAL_TRACK_H / 2,
+      justifyContent: "center",
+    },
+    goalTrackFill: {
+      height: GOAL_TRACK_H,
+      borderRadius: GOAL_TRACK_H / 2,
+    },
+    statCard: {
+      flex: 1,
+      // Deliberately tighter than Card's own default (space.card=13), rather than that
+      // literal 14 it used to override to — this sits in a dense 2×2 grid of its own, unlike
+      // Card's general-purpose use elsewhere.
+      padding: 11,
+    },
+    statValueRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+  });

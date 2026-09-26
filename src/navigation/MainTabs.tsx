@@ -8,7 +8,8 @@ import { ScheduledScreen } from "../screens/ScheduledScreen";
 import { ProgressScreen } from "../screens/ProgressScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { useTour } from "../state/TourContext";
-import { isOverdue, todayKey } from "../utils/schedule";
+import { isOverdue } from "../utils/schedule";
+import { useTodayKey } from "../utils/useTodayKey";
 import { DockedTabBar } from "./DockedTabBar";
 import type { MainTabParamList, RootStackParamList } from "./types";
 
@@ -28,10 +29,19 @@ export function MainTabs() {
    * use, so it costs a cache read rather than a request.
    */
   const tasksQuery = useTasksQuery("pending");
-  const overdueCount = useMemo(() => {
-    const today = todayKey();
-    return (tasksQuery.data ?? []).filter((task) => isOverdue(task, today)).length;
-  }, [tasksQuery.data]);
+  /**
+   * Counts exactly what the Overdue panel lists: one-off tasks only. A late *routine* is shown in
+   * the Recurring panel instead (see ScheduledScreen), so counting it here put a number on the
+   * tab the panel it points at couldn't account for — "1 overdue" over an empty Overdue panel.
+   *
+   * Keyed on the day as well as the data, so the badge appears at midnight with the app open
+   * rather than at the next refetch.
+   */
+  const today = useTodayKey();
+  const overdueCount = useMemo(
+    () => (tasksQuery.data ?? []).filter((task) => task.recurrenceRule == null && isOverdue(task, today)).length,
+    [tasksQuery.data, today]
+  );
 
   return (
     <Tab.Navigator

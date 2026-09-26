@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { color, radius, shadow, space, text as t, type as T } from "../theme";
+import { radius, shadow, space, text as t, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "./ThemeContext";
 
 /**
  * The app's one shared "something happened" surface.
@@ -40,6 +41,8 @@ const ToastContext = createContext<ToastContextValue | undefined>(undefined);
 const VISIBLE_MS = 5000;
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [toast, setToast] = useState<ToastRequest | null>(null);
   const opacity = useRef(new Animated.Value(0)).current;
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,8 +50,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const dismiss = useCallback(() => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    Animated.timing(opacity, { toValue: 0, duration: 160, useNativeDriver: true }).start(() => {
-      setToast(null);
+    // Only clear once the fade genuinely finished. A toast shown *during* the fade interrupts it,
+    // and an interrupted animation still calls back — which used to wipe the new toast the
+    // moment it appeared. Undo is exactly that sequence: its button dismisses the "done" toast
+    // and the reply usually lands inside 160ms, so "put back" (or, offline, "Couldn't undo")
+    // was never seen.
+    Animated.timing(opacity, { toValue: 0, duration: 160, useNativeDriver: true }).start(({ finished }) => {
+      if (finished) setToast(null);
     });
   }, [opacity]);
 
@@ -81,7 +89,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           style={[styles.wrap, { opacity, bottom: insets.bottom + 76 }]}
         >
           <View style={[styles.toast, toast.tone === "error" && styles.toastError]}>
-            <Text style={t(T.meta, { color: color.card, flex: 1 })} numberOfLines={2}>
+            <Text style={t(T.meta, { color: theme.color.card, flex: 1 })} numberOfLines={2}>
               {toast.message}
             </Text>
             {toast.action ? (
@@ -111,23 +119,24 @@ export function useToast(): ToastContextValue {
   return ctx;
 }
 
-const styles = StyleSheet.create({
-  wrap: {
-    position: "absolute",
-    left: space.gutter,
-    right: space.gutter,
-  },
-  toast: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.md,
-    backgroundColor: color.text,
-    borderRadius: radius.card,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    ...shadow.thumb,
-  },
-  toastError: {
-    backgroundColor: color.danger,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    wrap: {
+      position: "absolute",
+      left: space.gutter,
+      right: space.gutter,
+    },
+    toast: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space.md,
+      backgroundColor: t.color.text,
+      borderRadius: radius.card,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      ...shadow.thumb,
+    },
+    toastError: {
+      backgroundColor: t.color.danger,
+    },
+  });

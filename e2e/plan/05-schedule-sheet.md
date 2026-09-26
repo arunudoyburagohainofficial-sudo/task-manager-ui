@@ -140,3 +140,91 @@ can't: that the sheet builds the right thing, says the right thing, and saves it
   - **Why:** the harnesses prove the *server* honours the matrix. This proves the sheet can
     actually express it — the gap where "a user can construct something that doesn't do what they
     expect" lives.
+
+## What the sheet says about a notification — added 2026-09-18
+
+The four verdicts in `notificationVerdict` are the sheet's entire vocabulary for "will this
+fire?", and they were written in response to a specific failure: the first version painted every
+non-firing occurrence red, including the ones that fix themselves. A warning users learn to ignore
+is worse than no warning, so three of these four tests are about *not* crying wolf.
+
+`LOGIC-*` in [18-scheduling-logic](18-scheduling-logic.md) proves the verdicts are computed
+correctly. These prove the sheet says the right sentence for each, which is a separate thing and
+the one the user actually meets.
+
+- [ ] **SHEET-21 — The self-correcting case is stated quietly, not as a problem**
+  - **Does:** a weekly repeating task whose notification time has already passed today.
+  - **Proves:** the line reads "Too late for this one — starts from the next." and is *not* styled
+    as an error — no warning colour, no icon.
+  - **Why:** nothing is lost: the next occurrence fires normally. This is the exact case that was
+    previously alarmed about, and the reason the `not-this-time` verdict exists at all.
+
+- [ ] **SHEET-22 — A notification that works once and then never is warned about**
+  - **Does:** a daily task, dated today, with a "3 days before" notification set to a time still
+    ahead.
+  - **Proves:** "Fires this time, but not on the copies after it — this repeats sooner than the
+    warning.", styled as a problem.
+  - **Why:** the `only-this-time` verdict. Every existing check would call this healthy — the
+    occurrence in front of you genuinely fires — while the routine goes silent from tomorrow
+    onwards, permanently.
+
+- [ ] **SHEET-23 — Each "never" names the cause that actually applies**
+  - **Does:** three configurations that all reach the `never` verdict by different routes — a
+    daily task with a week's warning; a day-of notification whose time passed today; a lead time
+    landing before today on a one-off.
+  - **Proves:** three different sentences — the repeat one, "That time has already passed today",
+    and "That lands on <date>, already past" — each naming the fix that would work.
+  - **Why:** all three are the same verdict and would be equally satisfied by one generic message.
+    The cause is the only part the user can act on, and the date in the third is computed from the
+    shared `fireDayOf` rather than a second local copy — which is what let the sheet and the rest
+    of the app disagree before.
+
+- [ ] **SHEET-24 — An undated task's notification says what it really does**
+  - **Proves:** the line reads "Every day until you finish it." and no lead-time control is
+    offered.
+  - **Why:** the same claim as SHEET-16 from the copy side. An offset is meaningless without a
+    date, so the sheet must describe the daily behaviour rather than leave the user assuming a
+    one-off.
+
+## Building the rule — added 2026-09-18
+
+- [ ] **SHEET-25 — Changing one notification's time leaves the others alone**
+  - **Does:** three notifications; edit the middle one's time.
+  - **Proves:** only that one moves, and the list re-sorts earliest-warning-first afterwards.
+  - **Why:** `updateNotificationTime` rewrites by index into a list that is also re-ordered for
+    display. An index taken from the sorted view and applied to the stored order edits the wrong
+    row — and the API replaces the set wholesale, so the user's other two reminders are gone.
+
+- [ ] **SHEET-26 — Turning the date off drops the repeat in the same write**
+  - **Proves:** one request, carrying a null date *and* a null rule — the client doesn't send a
+    dateless repeat and rely on the server's refusal.
+  - **Why:** `handleSave` makes this structural (`hasDate && repeat ? … : null`) rather than
+    something each caller remembers. The server refuses the combination, so getting it wrong turns
+    an ordinary "clear the date" into an error the user can do nothing about.
+
+- [ ] **SHEET-27 — The saved rule is the canonical string, not an equivalent one**
+  - **Proves:** "every week on Mon, Wed" saves as `FREQ=WEEKLY;BYDAY=MO,WE` — no `INTERVAL=1`, and
+    the days in week order however they were tapped.
+  - **Why:** the sheet's dirty-checking compares rule strings. Two spellings of the same rule make
+    the Save button appear when nothing changed, and — worse — make a genuine change look like a
+    no-op.
+
+- [ ] **SHEET-28 — Yearly offers no day controls, because the task's date is the answer**
+  - **Proves:** choosing Yearly hides the weekday set and the day-of-month control, and the saved
+    rule is a bare `FREQ=YEARLY`.
+  - **Why:** the month and day come from the task's own date; a second control answering the same
+    question is how a rule ends up with two different anchors, which the parser then refuses.
+
+- [ ] **SHEET-29 — Reopening the sheet shows what was stored, not what was last typed**
+  - **Does:** change the date and the repeat, cancel, reopen.
+  - **Proves:** the controls show the task's saved values.
+  - **Why:** the sheet re-seeds from its props in an effect keyed on the task's stored schedule. A
+    key that misses — or state that outlives the close — shows the user an unsaved edit as though
+    it were saved, and the next save writes it.
+
+- [ ] **SHEET-30 — The monthly anchor reads off the stored anchor, not the picked date**
+  - **Does:** a monthly task anchored to the 10th; open the sheet and move the date picker to the
+    26th without saving.
+  - **Proves:** the two anchor options still describe the *stored* anchor until the save lands.
+  - **Why:** labels that follow the picker live tell the user the rule has already changed. Pair
+    with SHEET-10, which proves that on save it genuinely does re-anchor.

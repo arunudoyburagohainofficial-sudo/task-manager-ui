@@ -1,6 +1,20 @@
 import { API_BASE_URL } from "./config";
 
 /**
+ * What to do when the server rejects our credentials outright. SessionContext registers the
+ * sign-out here — this module can't import it without a cycle, and shouldn't know about screens.
+ */
+let credentialsRejected: () => void = () => {};
+
+export function onCredentialsRejectedDo(handler: () => void): void {
+  credentialsRejected = handler;
+}
+
+function onCredentialsRejected(): void {
+  credentialsRejected();
+}
+
+/**
  * task-svc is Bearer-only now (no shared Basic-auth fallback) — every request needs a
  * live Firebase ID token from whichever SDK this device actually signed in with:
  * @react-native-firebase (phone, native-only — see firebaseAuth.ts) or the Web SDK
@@ -30,17 +44,21 @@ async function getCurrentFirebaseIdToken(): Promise<string | null> {
  * IANA zone (e.g. "Asia/Kolkata"), sent as X-Timezone on every request so the backend can
  * resolve "today" as the device's own calendar day instead of the server's — task-svc runs
  * in UTC, which would otherwise misattribute a streak day for anyone acting near midnight
- * local time. Resolved once at module load: a device's timezone doesn't change mid-session,
- * and Intl is unavailable in environments this old is not worth handling beyond "omit the
- * header" — the backend already defaults to UTC when it's missing.
+ * local time.
+ *
+ * Read fresh per request rather than cached at module load: a single process can genuinely
+ * change zone mid-session (a test harness re-emulating one for the next test; a real device
+ * after travel), and a value frozen at import kept using whatever zone was active when the
+ * module first loaded. Falls back to omitting the header if Intl throws — the backend already
+ * defaults to UTC when it's missing.
  */
-const DEVICE_TIMEZONE = (() => {
+function deviceTimezone(): string | undefined {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone;
   } catch {
     return undefined;
   }
-})();
+}
 
 export class ApiError extends Error {
   constructor(
@@ -51,6 +69,16 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/**
+ * The tail of a "Couldn't …" message: what the person can actually do about it. A refusal for
+ * sending too much is the server asking them to wait, and "check your connection" sent people
+ * to their Wi-Fi settings for it. Everything else keeps the connection advice.
+ */
+export function failureHint(error: unknown): string {
+  if (error instanceof ApiError && error.status === 429) return "too many requests right now. Try again in a minute.";
+  return "check your connection.";
 }
 
 interface RequestOptions {
@@ -92,7 +120,8 @@ export async function apiRequest<T>(
   { method = "GET", body, query, skipAuth = false }: RequestOptions = {}
 ): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (DEVICE_TIMEZONE) headers["X-Timezone"] = DEVICE_TIMEZONE;
+  const zone = deviceTimezone();
+  if (zone) headers["X-Timezone"] = zone;
   if (!skipAuth) {
     // No fallback anymore — a request with no live Firebase session just goes out with
     // no Authorization header at all, and task-svc correctly 401s it. That's expected
@@ -131,6 +160,21 @@ export async function apiRequest<T>(
 
   const text = await response.text();
   const data = text ? JSON.parse(text) : undefined;
+
+  /*
+   * A 401 with no live Firebase session means the credentials themselves are gone — the phone
+   * is holding a session the server will never accept again. Left alone the app sat there
+   * serving its cached copy of the data and 401ing every request behind the scenes, so a user
+   * saw their tasks, couldn't change anything, and was never told why (observed on a device,
+   * 2026-09-21: every call 401ing, including the one that reported "couldn't delete account").
+   *
+   * Only when the token is genuinely unavailable: a 401 from one endpoint while the session is
+   * still good is an ordinary refusal, and the screen that asked reports it (see AUTH-05).
+   */
+  if (response.status === 401 && !skipAuth) {
+    const stillSignedIn = await getCurrentFirebaseIdToken().catch(() => null);
+    if (!stillSignedIn) onCredentialsRejected();
+  }
 
   if (!response.ok) {
     const message =

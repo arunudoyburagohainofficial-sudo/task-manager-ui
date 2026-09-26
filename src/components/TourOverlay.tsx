@@ -4,7 +4,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { useIsFocused } from "@react-navigation/native";
 import { TOUR_STEPS, useTour, type TargetRect, type TourStep } from "../state/TourContext";
-import { color, radius, space, text as t, type as T } from "../theme";
+import { radius, space, text as t, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 
 /** Breathing room between the highlighted control and the ring drawn around it. */
 const HALO = 8;
@@ -82,6 +83,7 @@ function canStepBack(step: TourStep): boolean {
  * pressing "Next".
  */
 export function TourOverlay() {
+  const styles = useThemedStyles(makeStyles);
   const { activeStep, targetRect, targetVariant, targetBody, skip, back, hasInlineSlot } = useTour();
   const { width, height } = useWindowDimensions();
   // This overlay covers the whole window, system bars included, so the card has to carry
@@ -183,6 +185,7 @@ export function TourOverlay() {
 
 /** Transparent, blocks touches. */
 function Blocker({ style }: { style: object }) {
+  const styles = useThemedStyles(makeStyles);
   return <View style={[styles.blocker, style]} />;
 }
 
@@ -234,6 +237,7 @@ export function TourInlineSlot({
    */
   always?: boolean;
 }) {
+  const styles = useThemedStyles(makeStyles);
   const { activeStep, isWaiting, skip, back, registerInlineSlot } = useTour();
   // Same reasoning as TourTarget's focus guard: a screen left mounted underneath would
   // otherwise keep its slot registered and suppress the card on the screen in front.
@@ -279,11 +283,12 @@ function CardBody({
    */
   onFinish?: () => void;
 }) {
+  const theme = useTheme();
   return (
     <>
-      <Text style={t(T.meta, { fontWeight: "800", color: color.interactive })}>{stepLabel(step)}</Text>
-      <Text style={t(T.h2, { fontSize: 20, color: color.text, marginTop: 2 })}>{copy.title}</Text>
-      <Text style={t(T.body, { color: color.textBody, marginTop: 6, lineHeight: 21 })}>{copy.body}</Text>
+      <Text style={t(T.meta, { fontWeight: "800", color: theme.color.interactive })}>{stepLabel(step)}</Text>
+      <Text style={t(T.h2, { fontSize: 20, color: theme.color.text, marginTop: 2 })}>{copy.title}</Text>
+      <Text style={t(T.body, { color: theme.color.textBody, marginTop: 6, lineHeight: 21 })}>{copy.body}</Text>
       <Footer onSkip={onSkip} onBack={onBack} onFinish={onFinish} />
     </>
   );
@@ -298,11 +303,13 @@ function Footer({
   onBack?: () => void;
   onFinish?: () => void;
 }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.footer}>
       {onBack ? (
         <Pressable accessibilityRole="button" onPress={onBack} hitSlop={10}>
-          <Text style={t(T.meta, { fontWeight: "800", color: color.selectedText })}>← Back</Text>
+          <Text style={t(T.meta, { fontWeight: "800", color: theme.color.selectedText })}>← Back</Text>
         </Pressable>
       ) : (
         // Keeps the right-hand action hard right on step one too, rather than jumping sides.
@@ -318,7 +325,7 @@ function Footer({
         </Pressable>
       ) : (
         <Pressable accessibilityRole="button" onPress={onSkip} hitSlop={10}>
-          <Text style={t(T.meta, { fontWeight: "800", color: color.textFaint })}>Skip tour</Text>
+          <Text style={t(T.meta, { fontWeight: "800", color: theme.color.textFaint })}>Skip tour</Text>
         </Pressable>
       )}
     </View>
@@ -337,60 +344,61 @@ function inflate(rect: TargetRect, pad: number, width: number, height: number): 
   };
 }
 
-const styles = StyleSheet.create({
-  ring: {
-    position: "absolute",
-    borderRadius: radius.card,
-    // Thicker than it would need to be over a dimmed backdrop: with the rest of the screen
-    // at full brightness, the ring is the only thing marking the target.
-    borderWidth: 3,
-    borderColor: color.interactive,
-  },
-  card: {
-    position: "absolute",
-    left: space.gutter,
-    right: space.gutter,
-    backgroundColor: color.card,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: color.border,
-    paddingVertical: 14,
-    paddingHorizontal: space.card,
-    // Lifts the card off the undimmed screen behind it.
-    shadowColor: "#000",
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
-  },
-  // Same surface as the floating card, minus the absolute positioning — it sits in the
-  // screen's normal flow.
-  inlineCard: {
-    backgroundColor: color.card,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: color.border,
-    paddingVertical: 14,
-    paddingHorizontal: space.card,
-  },
-  blocker: {
-    position: "absolute",
-    // No background: the SVG scrim above draws the dimming as one seamless shape. These
-    // exist only to swallow touches.
-  },
-  finish: {
-    backgroundColor: color.interactive,
-    borderRadius: radius.control,
-    paddingVertical: 8,
-    paddingHorizontal: 18,
-    minHeight: 36,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  footer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 14,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    ring: {
+      position: "absolute",
+      borderRadius: radius.card,
+      // Thicker than it would need to be over a dimmed backdrop: with the rest of the screen
+      // at full brightness, the ring is the only thing marking the target.
+      borderWidth: 3,
+      borderColor: t.color.interactive,
+    },
+    card: {
+      position: "absolute",
+      left: space.gutter,
+      right: space.gutter,
+      backgroundColor: t.color.card,
+      borderRadius: radius.card,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      paddingVertical: 14,
+      paddingHorizontal: space.card,
+      // Lifts the card off the undimmed screen behind it.
+      shadowColor: "#000",
+      shadowOpacity: 0.16,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 8,
+    },
+    // Same surface as the floating card, minus the absolute positioning — it sits in the
+    // screen's normal flow.
+    inlineCard: {
+      backgroundColor: t.color.card,
+      borderRadius: radius.card,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      paddingVertical: 14,
+      paddingHorizontal: space.card,
+    },
+    blocker: {
+      position: "absolute",
+      // No background: the SVG scrim above draws the dimming as one seamless shape. These
+      // exist only to swallow touches.
+    },
+    finish: {
+      backgroundColor: t.color.interactive,
+      borderRadius: radius.control,
+      paddingVertical: 8,
+      paddingHorizontal: 18,
+      minHeight: 36,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    footer: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginTop: 14,
+    },
+  });

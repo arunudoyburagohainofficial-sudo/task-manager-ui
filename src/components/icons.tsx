@@ -5,7 +5,10 @@
  */
 import React from "react";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
-import { color, detail, size } from "../theme";
+import { shade } from "../theme";
+import { light } from "../theme/palette";
+import { useTheme } from "../state/ThemeContext";
+import { size } from "../theme";
 
 type IconProps = { size?: number };
 
@@ -61,9 +64,9 @@ export const StreakIconInline = ({ size: s = size.iconInline }: IconProps) => <S
  */
 export const GoalTargetIcon = ({ size: s = size.iconLg }: IconProps) => (
   <Svg width={s} height={s} viewBox="0 0 24 24">
-    <Circle cx={12} cy={12} r={9} fill={color.fernePale} />
-    <Circle cx={12} cy={12} r={5.6} fill={color.ferne} />
-    <Circle cx={12} cy={12} r={2} fill={color.ferneDeep} />
+    <Circle cx={12} cy={12} r={9} fill={light.color.fernePale} />
+    <Circle cx={12} cy={12} r={5.6} fill={light.color.ferne} />
+    <Circle cx={12} cy={12} r={2} fill={light.color.ferneDeep} />
   </Svg>
 );
 
@@ -116,11 +119,15 @@ export const RepeatIcon = ({ size: s = size.iconInline, color: c = "#7E8A85" }: 
 );
 
 /** Right chevron — "open this" on a row whose whole surface is the tap target. */
-export const ChevronRightIcon = ({ size: s = 16, color: c = color.interactive }: IconProps & { color?: string }) => (
-  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-    <Path d="M9.5 6l6 6-6 6" stroke={c} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
+export const ChevronRightIcon = ({ size: s = 16, color }: IconProps & { color?: string }) => {
+  const theme = useTheme();
+  const c = color ?? theme.color.interactive;
+  return (
+    <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <Path d="M9.5 6l6 6-6 6" stroke={c} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+};
 
 /** Down chevron — the "N more" expander on the Overdue panel. */
 export const ChevronDownIcon = ({ size: s = 13, color: c = "#A66B58" }: IconProps & { color?: string }) => (
@@ -166,39 +173,61 @@ export const StreakFlameMark = ({ size: s = 15 }: IconProps) => (
 );
 
 /** The + beside the GOALS rule on Home. */
-export const PlusMark = ({ size: s = 15, color: c = color.success }: IconProps & { color?: string }) => (
-  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-    <Path d="M12 5.5v13M5.5 12h13" stroke={c} strokeWidth={2.6} strokeLinecap="round" />
-  </Svg>
-);
+/** The small outlined "i" the final screens put beside a hint or a section label. */
+export const InfoCircleIcon = ({ size: s = 14, color }: IconProps & { color?: string }) => {
+  const theme = useTheme();
+  const c = color ?? theme.color.textFaint;
+  return (
+    <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <Circle cx={12} cy={12} r={9} stroke={c} strokeWidth={1.9} />
+      <Path d="M12 8.2v.2M12 11.4v4.6" stroke={c} strokeWidth={1.9} strokeLinecap="round" />
+    </Svg>
+  );
+};
+
+export const PlusMark = ({ size: s = 15, color }: IconProps & { color?: string }) => {
+  const theme = useTheme();
+  const c = color ?? theme.color.success;
+  return (
+    <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 5.5v13M5.5 12h13" stroke={c} strokeWidth={2.6} strokeLinecap="round" />
+    </Svg>
+  );
+};
 
 /**
  * The four marks that sit in a Home row's tile, one per kind of thing the row is: a bell for a
  * task that notifies, an envelope for a plain one, a bullseye for focus (GoalTargetIcon) and a
  * tick for one counting toward a goal (DoneCheckIcon).
  */
-export const ReminderBellMark = ({ size: s = 19 }: IconProps) => (
-  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-    <Path
-      d="M12 3.2a5.6 5.6 0 0 0-5.6 5.6c0 3.3-.7 5.1-1.6 6.2-.5.6-.1 1.5.7 1.5h13c.8 0 1.2-.9.7-1.5-.9-1.1-1.6-2.9-1.6-6.2A5.6 5.6 0 0 0 12 3.2Z"
-      fill={color.taskTypeReminderFg}
-    />
-    <Path d="M9.8 18.4a2.2 2.2 0 0 0 4.4 0Z" fill="#2E5C93" />
-  </Svg>
-);
+export const ReminderBellMark = ({ size: s = 19 }: IconProps) => {
+  const theme = useTheme();
+  return (
+    <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 3.2a5.6 5.6 0 0 0-5.6 5.6c0 3.3-.7 5.1-1.6 6.2-.5.6-.1 1.5.7 1.5h13c.8 0 1.2-.9.7-1.5-.9-1.1-1.6-2.9-1.6-6.2A5.6 5.6 0 0 0 12 3.2Z"
+        fill={theme.color.taskTypeReminderFg}
+      />
+      <Path d="M9.8 18.4a2.2 2.2 0 0 0 4.4 0Z" fill={shade(theme.color.taskTypeReminderFg, -12)} />
+    </Svg>
+  );
+};
 
-export const EnvelopeMark = ({ size: s = 19 }: IconProps) => (
+export const EnvelopeMark = ({ size: s = 19 }: IconProps) => {
+  const theme = useTheme();
+  return (
   <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-    <Rect x={3.4} y={6} width={17.2} height={12} rx={2.2} fill={color.goal} />
+    <Rect x={3.4} y={6} width={17.2} height={12} rx={2.2} fill={theme.color.goal} />
     <Path
       d="M4.6 7.4 12 13l7.4-5.6"
-      stroke={color.screen}
+      stroke={theme.color.screen}
       strokeWidth={1.9}
       strokeLinecap="round"
       strokeLinejoin="round"
     />
   </Svg>
-);
+  );
+};
 
 /** Drawn rather than filled — the tile behind it is what carries the colour on a finished row. */
 export const DoneTickMark = ({ size: s = 19, color: c = "#6F8429" }: IconProps & { color?: string }) => (
@@ -230,26 +259,31 @@ export const BellGlyph = ({ size: s = 18, color: c }: GlyphProps) => (
  */
 export const TAB_ICON_SIZE = 22;
 
-const TabIcon = ({ d, active }: { d: string[]; active: boolean }) => (
+const TabIcon = ({ d, active }: { d: string[]; active: boolean }) => {
+  const theme = useTheme();
+  return (
   <Svg width={TAB_ICON_SIZE} height={TAB_ICON_SIZE} viewBox="0 0 24 24" fill="none">
     {d.map((p, i) => (
       <Path
         key={i}
         d={p}
-        stroke={active ? color.interactive : color.textFaint}
+        stroke={active ? theme.color.interactive : theme.color.textFaint}
         strokeWidth={1.6}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
     ))}
   </Svg>
-);
+  );
+};
 
 export const HomeTabIcon = ({ active }: { active: boolean }) => (
   <TabIcon active={active} d={["M3.2 10.8 12 3.6l8.8 7.2M5.6 9.6V20.4h12.8V9.6M9.6 20.4v-6.2h4.8v6.2"]} />
 );
 
-export const ScheduledTabIcon = ({ active }: { active: boolean }) => (
+export const ScheduledTabIcon = ({ active }: { active: boolean }) => {
+  const theme = useTheme();
+  return (
   <Svg width={TAB_ICON_SIZE} height={TAB_ICON_SIZE} viewBox="0 0 24 24" fill="none">
     <Rect
       x={3.6}
@@ -257,35 +291,39 @@ export const ScheduledTabIcon = ({ active }: { active: boolean }) => (
       width={16.8}
       height={15.2}
       rx={2.4}
-      stroke={active ? color.interactive : color.textFaint}
+      stroke={active ? theme.color.interactive : theme.color.textFaint}
       strokeWidth={1.6}
     />
     <Path
       d="M3.6 9.6h16.8M8 3.6v3M16 3.6v3"
-      stroke={active ? color.interactive : color.textFaint}
+      stroke={active ? theme.color.interactive : theme.color.textFaint}
       strokeWidth={1.6}
       strokeLinecap="round"
       strokeLinejoin="round"
     />
   </Svg>
-);
+  );
+};
 
 export const ProgressTabIcon = ({ active }: { active: boolean }) => (
   <TabIcon active={active} d={["M4 19.4h16M7.6 19.4v-6.6M12 19.4V7.2M16.4 19.4v-9.4"]} />
 );
 
-export const SettingsTabIcon = ({ active }: { active: boolean }) => (
+export const SettingsTabIcon = ({ active }: { active: boolean }) => {
+  const theme = useTheme();
+  return (
   <Svg width={TAB_ICON_SIZE} height={TAB_ICON_SIZE} viewBox="0 0 24 24" fill="none">
-    <Circle cx={12} cy={12} r={2.9} stroke={active ? color.interactive : color.textFaint} strokeWidth={1.6} />
+    <Circle cx={12} cy={12} r={2.9} stroke={active ? theme.color.interactive : theme.color.textFaint} strokeWidth={1.6} />
     <Path
       d="M12 4.6 13.4 6.6h2.3l.6 2.3 2 1.3-.9 2.1.9 2.1-2 1.3-.6 2.3h-2.3L12 19.4l-1.4-2H8.3l-.6-2.3-2-1.3.9-2.1-.9-2.1 2-1.3.6-2.3h2.3z"
-      stroke={active ? color.interactive : color.textFaint}
+      stroke={active ? theme.color.interactive : theme.color.textFaint}
       strokeWidth={1.6}
       strokeLinecap="round"
       strokeLinejoin="round"
     />
   </Svg>
-);
+  );
+};
 
 /**
  * Calendar outline — the "waits under Scheduled until…" hint in ScheduleSheet.
@@ -294,21 +332,29 @@ export const SettingsTabIcon = ({ active }: { active: boolean }) => (
  * active/inactive pair and its stroke weight is tuned for 20px in a tab, not for sitting
  * inline beside 12px hint text.
  */
-export const CalendarGlyph = ({ size: s = 14, color: c = color.textFaint }: IconProps & { color?: string }) => (
-  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-    <Rect x={3.6} y={5.2} width={16.8} height={15.2} rx={2.4} stroke={c} strokeWidth={2} />
-    <Path d="M3.6 9.6h16.8M8 3.6v3M16 3.6v3" stroke={c} strokeWidth={2} strokeLinecap="round" />
-  </Svg>
-);
+export const CalendarGlyph = ({ size: s = 14, color }: IconProps & { color?: string }) => {
+  const theme = useTheme();
+  const c = color ?? theme.color.textFaint;
+  return (
+    <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <Rect x={3.6} y={5.2} width={16.8} height={15.2} rx={2.4} stroke={c} strokeWidth={2} />
+      <Path d="M3.6 9.6h16.8M8 3.6v3M16 3.6v3" stroke={c} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+};
 
 /** Filled warning disc — the inline "this can never fire" note inside the notify card. */
-export const AlertGlyph = ({ size: s = 14, color: c = color.danger }: IconProps & { color?: string }) => (
-  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-    <Circle cx={12} cy={12} r={9} fill={c} />
-    <Path d="M12 7.6v5" stroke={color.selectedTint} strokeWidth={2.2} strokeLinecap="round" />
-    <Circle cx={12} cy={16.3} r={1.3} fill={color.selectedTint} />
-  </Svg>
-);
+export const AlertGlyph = ({ size: s = 14, color }: IconProps & { color?: string }) => {
+  const theme = useTheme();
+  const c = color ?? theme.color.danger;
+  return (
+    <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <Circle cx={12} cy={12} r={9} fill={c} />
+      <Path d="M12 7.6v5" stroke={theme.color.selectedTint} strokeWidth={2.2} strokeLinecap="round" />
+      <Circle cx={12} cy={16.3} r={1.3} fill={theme.color.selectedTint} />
+    </Svg>
+  );
+};
 
 /* ------------------------------------------------- Task Detail's own marks */
 
@@ -318,64 +364,88 @@ export const AlertGlyph = ({ size: s = 14, color: c = color.danger }: IconProps 
  * Separate from the marks above rather than reusing them: the geometry is the design's own,
  * and changing the shared ones would restyle screens nobody asked to change.
  */
-export const BackChevronIcon = ({ size: s = 26, color: c = detail.ink }: IconProps & { color?: string }) => (
-  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-    <Path d="M14.5 5.5L8 12l6.5 6.5" stroke={c} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
+export const BackChevronIcon = ({ size: s = 26, color }: IconProps & { color?: string }) => {
+  const theme = useTheme();
+  const c = color ?? theme.detail.ink;
+  return (
+    <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <Path d="M14.5 5.5L8 12l6.5 6.5" stroke={c} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+};
 
 /** The chevron at the end of an open row — quieter than ChevronRightIcon's action arrow. */
-export const RowChevronIcon = ({ size: s = 16, color: c = detail.chevron }: IconProps & { color?: string }) => (
-  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-    <Path d="M9.5 5.5L16 12l-6.5 6.5" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
+export const RowChevronIcon = ({ size: s = 16, color }: IconProps & { color?: string }) => {
+  const theme = useTheme();
+  const c = color ?? theme.detail.chevron;
+  return (
+    <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <Path d="M9.5 5.5L16 12l-6.5 6.5" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+};
 
 /** The + inside the dashed circle where a goal would be. */
-export const AttachPlusIcon = ({ size: s = 17, color: c = detail.emptyPlus }: IconProps & { color?: string }) => (
-  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-    <Path d="M12 5.5v13M5.5 12h13" stroke={c} strokeWidth={1.8} strokeLinecap="round" />
-  </Svg>
-);
+export const AttachPlusIcon = ({ size: s = 17, color }: IconProps & { color?: string }) => {
+  const theme = useTheme();
+  const c = color ?? theme.detail.emptyPlus;
+  return (
+    <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 5.5v13M5.5 12h13" stroke={c} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+};
 
 /** SCHEDULED — the day this is for. */
-export const TimingCalendarIcon = ({ size: s = 19, color: c = detail.rowIcon }: IconProps & { color?: string }) => (
-  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-    <Rect x={3.5} y={5} width={17} height={15.5} rx={3.5} stroke={c} strokeWidth={1.7} strokeLinecap="round" />
-    <Path d="M3.5 10h17M8.5 3.2v3.4M15.5 3.2v3.4" stroke={c} strokeWidth={1.7} strokeLinecap="round" />
-  </Svg>
-);
+export const TimingCalendarIcon = ({ size: s = 19, color }: IconProps & { color?: string }) => {
+  const theme = useTheme();
+  const c = color ?? theme.detail.rowIcon;
+  return (
+    <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <Rect x={3.5} y={5} width={17} height={15.5} rx={3.5} stroke={c} strokeWidth={1.7} strokeLinecap="round" />
+      <Path d="M3.5 10h17M8.5 3.2v3.4M15.5 3.2v3.4" stroke={c} strokeWidth={1.7} strokeLinecap="round" />
+    </Svg>
+  );
+};
 
 /** ONE NUDGE — an alarm clock, for the single buzz counted from now. */
-export const TimingAlarmIcon = ({ size: s = 19, color: c = detail.rowIcon }: IconProps & { color?: string }) => (
-  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-    <Circle cx={12} cy={12.8} r={8.4} stroke={c} strokeWidth={1.7} />
-    <Path
-      d="M12 8.6v4.2l2.8 1.8M19 4.4l1.8 1.8M5 4.4L3.2 6.2"
-      stroke={c}
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </Svg>
-);
+export const TimingAlarmIcon = ({ size: s = 19, color }: IconProps & { color?: string }) => {
+  const theme = useTheme();
+  const c = color ?? theme.detail.rowIcon;
+  return (
+    <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <Circle cx={12} cy={12.8} r={8.4} stroke={c} strokeWidth={1.7} />
+      <Path
+        d="M12 8.6v4.2l2.8 1.8M19 4.4l1.8 1.8M5 4.4L3.2 6.2"
+        stroke={c}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+};
 
 /** KEEP NUDGING — the loop that buzzes again until the task is done. */
-export const TimingRepeatIcon = ({ size: s = 19, color: c = detail.rowIcon }: IconProps & { color?: string }) => (
-  <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-    <Path
-      d="M4 12a8 8 0 0 1 13.7-5.6M20 12a8 8 0 0 1-13.7 5.6"
-      stroke={c}
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <Path
-      d="M17.8 3.2v3.5h-3.5M6.2 20.8v-3.5h3.5"
-      stroke={c}
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </Svg>
-);
+export const TimingRepeatIcon = ({ size: s = 19, color }: IconProps & { color?: string }) => {
+  const theme = useTheme();
+  const c = color ?? theme.detail.rowIcon;
+  return (
+    <Svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 12a8 8 0 0 1 13.7-5.6M20 12a8 8 0 0 1-13.7 5.6"
+        stroke={c}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M17.8 3.2v3.5h-3.5M6.2 20.8v-3.5h3.5"
+        stroke={c}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+};

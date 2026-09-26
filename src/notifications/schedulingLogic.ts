@@ -1,4 +1,4 @@
-import type { IntervalReminderDto } from "../api/types";
+import type { IntervalReminderDto, ReminderDto, TaskDto } from "../api/types";
 import { WEEKDAYS, type RecurrencePattern } from "../utils/recurrence";
 
 /**
@@ -283,7 +283,11 @@ export function intervalOccurrences(interval: IntervalReminderDto): Date[] {
     while (cursor <= windowEnd) {
       const at = cursor.getTime();
       if (at > Date.now() && at <= horizon) occurrences.push(new Date(cursor));
-      cursor.setMinutes(cursor.getMinutes() + stepMinutes);
+      // Stepped in real time, not wall-clock minutes. setMinutes() walks the clock face, so on
+      // the night the clocks go back it jumped from 01:30 straight to the second 02:00 — a
+      // 90-minute hole in "every 30 minutes" — and on the night they go forward it could land on
+      // a time that doesn't exist.
+      cursor.setTime(cursor.getTime() + stepMinutes * 60_000);
     }
   }
   return occurrences;
@@ -300,11 +304,90 @@ export type Scheduled = { at: Date; title: string; body: string; taskId: string;
  * ignore both.
  */
 export function leadIn(daysBefore: number, name: string | undefined, focus: boolean): string {
-  const task = name ?? (focus ? "your task" : "Your task");
+  // Lower-case only where it sits mid-sentence, after "You planned to work on:" — everywhere else
+  // it starts the line.
+  const task = name ?? (focus && daysBefore <= 0 ? "your task" : "Your task");
   if (daysBefore <= 0) return focus ? `You planned to work on: ${task}` : task;
   if (daysBefore === 1) return `${task} — due tomorrow`;
   if (daysBefore === 7) return `${task} — due in a week`;
   return `${task} — due in ${daysBefore} days`;
+}
+
+/**
+ * The device's whole notification queue, decided — everything `scheduleAll` hands to the OS,
+ * soonest first, already cut to the budget.
+ *
+ * Lives here rather than in localNotifications.ts so the *decision* can be checked without a
+ * device: the e2e suite feeds it the same three lists the app syncs and asserts on exactly what a
+ * phone would queue. localNotifications.ts is now only the part that talks to the OS.
+ */
+export function planQueue(
+  reminders: ReminderDto[],
+  intervals: IntervalReminderDto[],
+  tasks: TaskDto[],
+  budget: number = MAX_PENDING,
+  /** Settings → Reminder notifications. Off means nothing is queued at all. */
+  enabled: boolean = true
+): Scheduled[] {
+  if (!enabled) return [];
+  const taskName = new Map(tasks.map((task) => [task.id, task.name]));
+  const isPending = new Set(tasks.filter((t) => t.status === "pending").map((t) => t.id));
+  // Every reminder used to announce itself as "Time to focus", including on reminder-type
+  // tasks — "Time to focus / You planned to work on: Call the dentist" is the wrong sentence
+  // for a task that has nothing to do with a focus session.
+  const isFocusTask = new Set(tasks.filter((t) => t.taskType === "focus").map((t) => t.id));
+  const scheduledFor = new Map(tasks.map((task) => [task.id, task.scheduledFor]));
+
+  // One group per source, each already soonest-first — allocateFairly needs that shape, and it's
+  // also what stops one noisy source from crowding out the rest.
+  const groups: Scheduled[][] = [];
+
+  for (const reminder of reminders) {
+    // Skip anything stopped, or whose task is done — the server keeps these rows around (see the
+    // backend's Reminder.isActive), but there is nothing left to schedule.
+    if (!reminder.isActive || !isPending.has(reminder.taskId)) continue;
+    const occurrences = reminderOccurrences(
+      reminder.reminderTime,
+      // The day is the task's, not the reminder's — since V017 there is only one date, so these
+      // two can't drift apart the way two separate fields could.
+      scheduledFor.get(reminder.taskId) ?? null,
+      reminder.snoozedUntil,
+      reminder.daysBefore ?? 0
+    );
+    if (!occurrences.length) continue;
+    const focus = isFocusTask.has(reminder.taskId);
+    groups.push(
+      occurrences.map((at) => ({
+        at,
+        title: focus ? "Time to focus" : "Reminder",
+        // A lead-time notification says so, otherwise "Buy Mum a gift" a week early reads as if
+        // it's due now and there's nothing to distinguish it from the day-of nudge.
+        body: leadIn(reminder.daysBefore ?? 0, taskName.get(reminder.taskId), focus),
+        taskId: reminder.taskId,
+        // Carried so the notification's Snooze button has something to address — the snooze
+        // endpoint is keyed on the reminder, not the task.
+        reminderId: reminder.id,
+      }))
+    );
+  }
+
+  for (const interval of intervals) {
+    if (!interval.isActive || !isPending.has(interval.taskId)) continue;
+    const occurrences = intervalOccurrences(interval);
+    if (!occurrences.length) continue;
+    groups.push(
+      occurrences.map((at) => ({
+        at,
+        title: "Still on it?",
+        body: `Checking in on: ${taskName.get(interval.taskId) ?? "your task"}`,
+        taskId: interval.taskId,
+      }))
+    );
+  }
+
+  const chosen = allocateFairly(groups, budget);
+  chosen.sort((a, b) => a.at.getTime() - b.at.getTime());
+  return chosen;
 }
 
 /**

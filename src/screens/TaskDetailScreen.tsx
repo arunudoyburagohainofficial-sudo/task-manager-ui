@@ -51,7 +51,8 @@ import {
 import { syncReminders } from "../notifications/useReminderSync";
 import { usePreferences } from "../state/PreferencesContext";
 import { useSession } from "../state/SessionContext";
-import { detail, space, textAtDesignSize as td, type as T } from "../theme";
+import { space, textAtDesignSize as td, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { formatClockTime } from "../utils/format";
 import { DEFAULT_POMODORO_MINUTES, resumeSessionParams } from "../utils/focusSession";
 import { describeRecurrence } from "../utils/recurrence";
@@ -65,6 +66,8 @@ type Route = RouteProp<RootStackParamList, "TaskDetail">;
 const POMODORO_BREAK_MINUTES = 5;
 
 export function TaskDetailScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { user } = useSession();
   const { defaultFocusDurationMinutes, dndDuringFocusEnabled } = usePreferences();
   const navigation = useNavigation<Nav>();
@@ -327,13 +330,16 @@ export function TaskDetailScreen() {
    * Distinguished from "still loading" deliberately: this screen used to render a spinner for
    * any falsy task, so a 404 spun forever with no way forward but the OS back gesture.
    */
-  if (!task && taskQuery.isError) {
+  // A 404 from the re-check means gone, even though an older copy is still cached — the cached
+  // copy is exactly what would otherwise keep a deleted task on screen, editable.
+  const gone = taskQuery.error instanceof ApiError && taskQuery.error.status === 404;
+  if ((!task && taskQuery.isError) || gone) {
     return (
       <ScreenContainer wash="home">
         <ScrollView contentContainerStyle={styles.missingContent}>
           <BackLink onPress={() => navigation.goBack()} />
           <Card style={styles.missingCard}>
-            <Text style={td(T.bodyLg, { color: detail.ink })}>This task is gone</Text>
+            <Text style={td(T.bodyLg, { color: theme.detail.ink })}>This task is gone</Text>
             <Meta style={styles.missingText}>
               It was deleted, here or on another device. Nothing further to do with it.
             </Meta>
@@ -350,7 +356,7 @@ export function TaskDetailScreen() {
     return (
       <ScreenContainer wash="home">
         <View style={styles.loading}>
-          <ActivityIndicator color={detail.action} />
+          <ActivityIndicator color={theme.detail.action} />
         </View>
       </ScreenContainer>
     );
@@ -422,24 +428,9 @@ export function TaskDetailScreen() {
           {finished ? null : <TaskTypeSwitch value={task.taskType} onChange={handleTaskTypeChange} />}
         </View>
 
-        {isFocus ? (
-          <DetailSection label="GOAL">
-            <GoalAttachmentCard
-              goalName={goal?.name ?? null}
-              daysDone={goal?.totalDaysActive ?? 0}
-              targetDays={goal?.targetDays ?? 0}
-              // Only when today hasn't already been counted — a goal moves once a day, however
-              // many focus tasks you finish against it.
-              todayCounts={!finished && !!goal && goal.lastActivityDate !== today}
-              onPress={() => setGoalSheetOpen(true)}
-            />
-          </DetailSection>
-        ) : null}
-
         {isFocus && !finished ? (
           <DetailSection label="SESSION">
             <DetailCard style={styles.sessionCard}>
-              <SessionModeSwitch value={focusMode} onChange={setFocusMode} />
               {focusMode === "regular" ? (
                 <SessionLength minutes={regularMinutes} onChange={setRegularMinutes} />
               ) : (
@@ -451,7 +442,22 @@ export function TaskDetailScreen() {
                   onRounds={setPomodoroCycles}
                 />
               )}
+              <SessionModeSwitch value={focusMode} onChange={setFocusMode} />
             </DetailCard>
+          </DetailSection>
+        ) : null}
+
+        {isFocus ? (
+          <DetailSection label="GOAL">
+            <GoalAttachmentCard
+              goalName={goal?.name ?? null}
+              daysDone={goal?.totalDaysActive ?? 0}
+              targetDays={goal?.targetDays ?? 0}
+              // Only when today hasn't already been counted — a goal moves once a day, however
+              // many focus tasks you finish against it.
+              todayCounts={!finished && !!goal && goal.lastActivityDate !== today}
+              onPress={() => setGoalSheetOpen(true)}
+            />
           </DetailSection>
         ) : null}
 
@@ -570,46 +576,47 @@ export function TaskDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  content: {
-    paddingTop: 14,
-    paddingHorizontal: 20,
-    paddingBottom: 14,
-    gap: 13,
-    // So the reminder screen's spacer has somewhere to push Delete down to.
-    flexGrow: 1,
-  },
-  sessionCard: {
-    paddingBottom: 15,
-  },
-  // Rows carry their own padding so the dividers between them run edge to edge.
-  timingCard: {
-    paddingVertical: 2,
-  },
-  spacer: {
-    flex: 1,
-  },
-  missingContent: {
-    paddingHorizontal: space.gutter,
-    paddingTop: space.md,
-    paddingBottom: 24,
-  },
-  missingCard: {
-    alignItems: "center",
-    paddingVertical: 24,
-    marginTop: 20,
-  },
-  missingText: {
-    marginTop: 4,
-    textAlign: "center",
-  },
-  missingButton: {
-    marginTop: 16,
-    alignSelf: "stretch",
-  },
-  loading: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    content: {
+      paddingTop: 14,
+      paddingHorizontal: 20,
+      paddingBottom: 14,
+      gap: 13,
+      // So the reminder screen's spacer has somewhere to push Delete down to.
+      flexGrow: 1,
+    },
+    sessionCard: {
+      paddingBottom: 15,
+    },
+    // Rows carry their own padding so the dividers between them run edge to edge.
+    timingCard: {
+      paddingVertical: 2,
+    },
+    spacer: {
+      flex: 1,
+    },
+    missingContent: {
+      paddingHorizontal: space.gutter,
+      paddingTop: space.md,
+      paddingBottom: 24,
+    },
+    missingCard: {
+      alignItems: "center",
+      paddingVertical: 24,
+      marginTop: 20,
+    },
+    missingText: {
+      marginTop: 4,
+      textAlign: "center",
+    },
+    missingButton: {
+      marginTop: 16,
+      alignSelf: "stretch",
+    },
+    loading: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+  });

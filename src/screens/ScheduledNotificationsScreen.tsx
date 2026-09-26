@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ApiError } from "../api/client";
@@ -19,12 +19,16 @@ import {
   ScreenContainer,
 } from "../components";
 import { syncReminders } from "../notifications/useReminderSync";
+import { deliveryBlockCopy, type DeliveryBlock } from "../notifications/deliveryStatus";
+import { readDeliveryBlock, SCHEDULING_SUPPORTED } from "../notifications/deliveryProbe";
+import { requestPermission } from "../notifications/localNotifications";
 import {
   NOTIFICATION_BUDGET,
   readScheduledNotifications,
   type ScheduledNotification,
 } from "../notifications/scheduledInspector";
-import { color, space, text as t, type as T } from "../theme";
+import { radius, space, text as t, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { formatScheduleDate, toDateKey } from "../utils/schedule";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -39,7 +43,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  * naming explicitly, because "no notifications queued" and "this device will never queue one"
  * look identical from here and mean completely different things to the person reading it.
  */
-const SCHEDULING_UNSUPPORTED = Platform.OS === "web";
+const SCHEDULING_UNSUPPORTED = !SCHEDULING_SUPPORTED;
 
 /**
  * Everything the phone is actually going to buzz about, and a way to stop any of it.
@@ -55,8 +59,11 @@ const SCHEDULING_UNSUPPORTED = Platform.OS === "web";
  * come back. Turning it off for real is the only honest meaning of a cancel button here.
  */
 export function ScheduledNotificationsScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const navigation = useNavigation<Nav>();
   const [scheduled, setScheduled] = useState<ScheduledNotification[]>([]);
+  const [block, setBlock] = useState<DeliveryBlock | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -67,7 +74,11 @@ export function ScheduledNotificationsScreen() {
   const deleteNudgeMutation = useDeleteIntervalReminderMutation();
 
   const load = useCallback(async () => {
-    setScheduled(await readScheduledNotifications());
+    // Read together, because the pair is the answer: an empty queue means one thing when
+    // delivery is working and something else entirely when it isn't.
+    const [queue, blocked] = await Promise.all([readScheduledNotifications(), readDeliveryBlock()]);
+    setScheduled(queue);
+    setBlock(blocked);
     setLoading(false);
   }, []);
 
@@ -80,6 +91,31 @@ export function ScheduledNotificationsScreen() {
     await syncReminders();
     await load();
     setRefreshing(false);
+  }
+
+  /**
+   * The one button that fixes whatever is blocking delivery.
+   *
+   * Each case goes somewhere different, and sending people to the wrong one is most of why this
+   * was worth building: the phone's settings screen is no use to someone who turned the app's
+   * own switch off, and the app's switch is no use once Android has stopped asking.
+   */
+  async function resolveBlock() {
+    if (block === "switch-off") {
+      navigation.navigate("Main", { screen: "Settings" });
+      return;
+    }
+    if (block === "permission-denied") {
+      // Android allows this prompt once. If it's taken and declined, the next read comes back
+      // as "permission-blocked" and the button becomes the settings link instead.
+      await requestPermission();
+      await syncReminders();
+      await load();
+      return;
+    }
+    if (block === "permission-blocked") {
+      await Linking.openSettings().catch(() => undefined);
+    }
   }
 
   const taskName = new Map((tasksQuery.data ?? []).map((task) => [task.id, task.name]));
@@ -170,6 +206,18 @@ export function ScheduledNotificationsScreen() {
   const used = scheduled.length;
   const busy = updateTaskMutation.isPending || deleteNudgeMutation.isPending;
 
+  /**
+   * How many notifications the user has actually set up — the number that makes an empty queue
+   * either unremarkable or alarming. Counted from the server's reminders rather than the device,
+   * because the whole question here is why the device disagrees with them.
+   */
+  const configured =
+    (remindersQuery.data ?? []).filter((r) => r.isActive && r.reminderTime).length +
+    (intervalsQuery.data ?? []).filter((r) => r.isActive).length;
+  // Nothing set up and nothing queued is the ordinary case, not a fault — say so plainly rather
+  // than explaining a permission the user has no reason to care about yet.
+  const blockCopy = block && configured > 0 ? deliveryBlockCopy(block, configured) : null;
+
   return (
     <ScreenContainer>
       <ScrollView
@@ -178,7 +226,7 @@ export function ScheduledNotificationsScreen() {
       >
         <BackLink onPress={() => navigation.goBack()} />
         <H1>Upcoming notifications</H1>
-        <Meta style={{ color: color.textFaint }}>
+        <Meta style={{ color: theme.color.textFaint }}>
           Exactly what your phone is queued to buzz about — read from the device itself, not from
           what's set up. Pull down to refresh.
         </Meta>
@@ -197,16 +245,16 @@ export function ScheduledNotificationsScreen() {
               <Body style={{ fontWeight: "700" }}>
                 {used} of {NOTIFICATION_BUDGET} slots used
               </Body>
-              <Meta style={{ color: used >= NOTIFICATION_BUDGET ? color.danger : color.textFaint }}>
+              <Meta style={{ color: used >= NOTIFICATION_BUDGET ? theme.color.danger : theme.color.textFaint }}>
                 {used >= NOTIFICATION_BUDGET ? "Full" : `${NOTIFICATION_BUDGET - used} free`}
               </Meta>
             </View>
             <ProgressBar
               pct={(used / NOTIFICATION_BUDGET) * 100}
-              fill={used >= NOTIFICATION_BUDGET ? color.danger : color.progress}
+              fill={used >= NOTIFICATION_BUDGET ? theme.color.danger : theme.color.progress}
             />
             {used >= NOTIFICATION_BUDGET ? (
-              <Meta style={{ color: color.danger }}>
+              <Meta style={{ color: theme.color.danger }}>
                 The queue is full, so some notifications you've set up aren't scheduled. Turning a
                 few off here frees up room for the rest.
               </Meta>
@@ -215,32 +263,48 @@ export function ScheduledNotificationsScreen() {
         )}
 
         {loading ? (
-          <Meta style={{ color: color.textFaint }}>Reading the queue…</Meta>
+          <Meta style={{ color: theme.color.textFaint }}>Reading the queue…</Meta>
         ) : days.length === 0 ? (
+          /*
+            Three different empty queues, and they used to read as one.
+
+            The old copy hedged — "expected if none of your tasks have a notification, or if
+            permission was declined" — which is no use to the person it's aimed at: someone
+            looking at this screen already knows whether they set one up, and the app already
+            knows too. Worse, when delivery was genuinely blocked it offered the reason as one
+            possibility among two and gave nothing to press.
+
+            Now: if something is set up and can't be delivered, say exactly what's wrong and
+            put the fix on the card. Otherwise there's genuinely nothing to report.
+          */
           <Card style={styles.emptyCard}>
-            {/*
-              On web the queue is empty for a reason that has nothing to do with the user's
-              setup: expo-notifications has no scheduler in a browser, so nothing is ever
-              queued no matter how many notifications are configured. Saying "you probably
-              haven't set one up" there sends people off to re-check settings that are
-              already correct.
-            */}
-            <Body style={{ fontWeight: "700" }}>
-              {SCHEDULING_UNSUPPORTED ? "Not available in a browser" : "Nothing queued"}
-            </Body>
+            <Body style={{ fontWeight: "700" }}>{blockCopy ? blockCopy.title : "Nothing queued"}</Body>
             <Meta style={styles.emptyText}>
-              {SCHEDULING_UNSUPPORTED
-                ? "Notifications are scheduled by the phone itself, and a browser can't do it. " +
-                  "Your notifications are saved and will work in the app on your phone — there's " +
-                  "just no device queue to show here."
-                : "Nothing is scheduled to buzz. That's expected if none of your tasks have a " +
-                  "notification, or if notification permission was declined."}
+              {blockCopy
+                ? blockCopy.body
+                : configured > 0
+                  ? "Everything you've set up is either already fired or waiting on a task whose " +
+                    "day has passed. Move the task forward and it'll be queued again."
+                  : "None of your tasks have a notification yet. Open a task and set one, and " +
+                    "it'll show up here."}
             </Meta>
+            {blockCopy?.action ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={blockCopy.action}
+                style={styles.blockAction}
+                onPress={resolveBlock}
+              >
+                <Text style={t(T.body, { fontWeight: "800", color: theme.color.onInteractive })}>
+                  {blockCopy.action}
+                </Text>
+              </Pressable>
+            ) : null}
           </Card>
         ) : (
           days.map((dayKey) => (
             <View key={dayKey} style={styles.dayGroup}>
-              <Text style={t(T.eyebrow, { fontSize: 11, letterSpacing: 1.32, color: color.textMuted })}>
+              <Text style={t(T.eyebrow, { fontSize: 11, letterSpacing: 1.32, color: theme.color.textMuted })}>
                 {formatScheduleDate(dayKey).toUpperCase()}
               </Text>
               {byDay[dayKey].map((item) => (
@@ -249,7 +313,7 @@ export function ScheduledNotificationsScreen() {
                     <Body style={{ fontWeight: "700" }} numberOfLines={1}>
                       {(item.taskId && taskName.get(item.taskId)) || item.title || "Notification"}
                     </Body>
-                    <Meta style={{ color: color.textFaint, marginTop: 2 }} numberOfLines={2}>
+                    <Meta style={{ color: theme.color.textFaint, marginTop: 2 }} numberOfLines={2}>
                       {item.at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                       {item.kind === "nudge" ? " · repeated nudge" : ""}
                       {item.body ? ` · ${item.body}` : ""}
@@ -262,7 +326,7 @@ export function ScheduledNotificationsScreen() {
                     disabled={busy}
                     onPress={() => confirmCancel(item)}
                   >
-                    <Meta style={{ color: busy ? color.textFaint : color.danger, fontWeight: "800" }}>
+                    <Meta style={{ color: busy ? theme.color.textFaint : theme.color.danger, fontWeight: "800" }}>
                       Turn off
                     </Meta>
                   </Pressable>
@@ -277,7 +341,7 @@ export function ScheduledNotificationsScreen() {
           several times, and without saying so the list looks duplicated or broken.
         */}
         {days.length > 0 ? (
-          <Meta style={{ color: color.textFaint }}>
+          <Meta style={{ color: theme.color.textFaint }}>
             A repeating notification appears once for each day it's queued ahead. Turning one off
             turns off all of them for that task.
           </Meta>
@@ -287,35 +351,44 @@ export function ScheduledNotificationsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  content: {
-    padding: space.gutter,
-    gap: space.md,
-    paddingBottom: space.lg,
-  },
-  budgetCard: {
-    gap: space.sm,
-  },
-  budgetRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  dayGroup: {
-    gap: space.sm,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.md,
-  },
-  rowText: {
-    flex: 1,
-  },
-  emptyCard: {
-    gap: space.sm,
-  },
-  emptyText: {
-    color: color.textFaint,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    content: {
+      padding: space.gutter,
+      gap: space.md,
+      paddingBottom: space.lg,
+    },
+    budgetCard: {
+      gap: space.sm,
+    },
+    budgetRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    dayGroup: {
+      gap: space.sm,
+    },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space.md,
+    },
+    rowText: {
+      flex: 1,
+    },
+    emptyCard: {
+      gap: space.sm,
+    },
+    blockAction: {
+      marginTop: space.xs,
+      alignSelf: "flex-start",
+      paddingVertical: space.sm,
+      paddingHorizontal: space.md,
+      borderRadius: radius.pill,
+      backgroundColor: t.color.interactive,
+    },
+    emptyText: {
+      color: t.color.textFaint,
+    },
+  });

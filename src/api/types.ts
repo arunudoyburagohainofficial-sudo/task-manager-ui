@@ -342,4 +342,6 @@ export interface AllTimeProgressDto {
   totalTasksCompleted: number;
   totalFocusTimeMinutes: number;
   weeksTracked: number;
+  /** Finished focus sessions. Progress divides the minutes by this to show an average session. */
+  totalSessions: number;
 }

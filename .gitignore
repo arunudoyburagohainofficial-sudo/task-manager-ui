@@ -40,6 +40,13 @@ yarn-error.*
 /ios
 /android
 
+# Gradle output inside local Expo modules. The /android rule above is anchored to the repo
+# root, so it doesn't reach modules/*/android — without this, `git add modules/` stages ~137
+# build artifacts (jars, classes, resource maps) alongside the 10 files that are actually source.
+modules/*/android/build/
+modules/*/android/.gradle/
+modules/*/android/local.properties
+
 .idea
 designdocs
 
@@ -54,3 +61,10 @@ task-app/design_handoff_focus_capture_app
 task-app/design_handoff_focus_capture_app 2
 
 handoffs
+# Playwright output
+/test-results/
+/playwright-report/
+/e2e/
+
+# Junk from a script that resolved its output path to the literal string "undefined".
+/undefined/

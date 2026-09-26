@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import type { GoalDto } from "../api/types";
-import { color, radius, space, text as t, type as T } from "../theme";
+import { radius, space, text as t, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { BottomSheet } from "./BottomSheet";
 import { Button } from "./Button";
 import { Body, H2, Meta } from "./Text";
@@ -38,17 +39,23 @@ interface GoalEditSheetProps {
   onSave: (fields: { name: string; color: string; targetDays: number }) => void;
   onDelete?: () => void;
   saving?: boolean;
+  deleting?: boolean;
 }
 
-export function GoalEditSheet({ visible, onClose, goal, onSave, onDelete, saving = false }: GoalEditSheetProps) {
+export function GoalEditSheet({ visible, onClose, goal, onSave, onDelete, saving = false, deleting = false }: GoalEditSheetProps) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [name, setName] = useState("");
   const [swatch, setSwatch] = useState(COLOR_PRESETS[0]);
   const [targetDays, setTargetDays] = useState(20);
   const [customMode, setCustomMode] = useState(false);
   const [customText, setCustomText] = useState("");
+  /** Delete asks first, inside the sheet — a goal's days can't be got back. */
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     if (visible) {
+      setConfirmingDelete(false);
       const initialTarget = goal?.targetDays ?? 20;
       // A goal whose target isn't one of the presets reopens in custom mode showing that
       // number, rather than silently snapping to the nearest chip.
@@ -98,6 +105,7 @@ export function GoalEditSheet({ visible, onClose, goal, onSave, onDelete, saving
                 key={preset}
                 accessibilityRole="radio"
                 accessibilityState={{ selected: on }}
+                aria-checked={on}
                 accessibilityLabel={`${preset} days`}
                 onPress={() => {
                   setCustomMode(false);
@@ -105,7 +113,7 @@ export function GoalEditSheet({ visible, onClose, goal, onSave, onDelete, saving
                 }}
                 style={[styles.targetChip, on && styles.targetChipOn]}
               >
-                <Text style={t(T.label, { fontWeight: on ? "800" : "600", color: on ? color.selectedText : color.textBody })}>
+                <Text style={t(T.label, { fontWeight: on ? "800" : "600", color: on ? theme.color.selectedText : theme.color.textBody })}>
                   {preset}
                 </Text>
               </Pressable>
@@ -114,6 +122,7 @@ export function GoalEditSheet({ visible, onClose, goal, onSave, onDelete, saving
           <Pressable
             accessibilityRole="radio"
             accessibilityState={{ selected: customMode }}
+            aria-checked={customMode}
             accessibilityLabel="Custom target"
             onPress={() => setCustomMode(true)}
             style={[styles.targetChip, styles.targetChipWide, customMode && styles.targetChipOn]}
@@ -121,7 +130,7 @@ export function GoalEditSheet({ visible, onClose, goal, onSave, onDelete, saving
             <Text
               style={t(T.label, {
                 fontWeight: customMode ? "800" : "600",
-                color: customMode ? color.selectedText : color.textBody,
+                color: customMode ? theme.color.selectedText : theme.color.textBody,
               })}
             >
               Custom
@@ -143,14 +152,14 @@ export function GoalEditSheet({ visible, onClose, goal, onSave, onDelete, saving
 
         {targetNotice ? (
           <View style={styles.notice}>
-            <Body style={{ color: color.amberText }}>{targetNotice}</Body>
+            <Body style={{ color: theme.color.amberText }}>{targetNotice}</Body>
           </View>
         ) : null}
 
         {/* >=, matching GoalService.refreshCompletionStatus — a target set to exactly the
             days already done completes the goal too, so it needs the same warning. */}
         {goal && targetIsValid && goal.totalDaysActive >= effectiveTarget ? (
-          <Meta style={{ color: color.textFaint }}>
+          <Meta style={{ color: theme.color.textFaint }}>
             You&rsquo;ve already done {goal.totalDaysActive} days — saving this marks the goal reached.
           </Meta>
         ) : null}
@@ -164,12 +173,13 @@ export function GoalEditSheet({ visible, onClose, goal, onSave, onDelete, saving
               key={preset}
               accessibilityRole="radio"
               accessibilityState={{ selected: swatch === preset }}
+              aria-checked={swatch === preset}
               accessibilityLabel={`Colour ${preset}`}
               onPress={() => setSwatch(preset)}
               style={[
                 styles.swatch,
                 { backgroundColor: preset },
-                swatch === preset && { borderWidth: 3, borderColor: color.text },
+                swatch === preset && { borderWidth: 3, borderColor: theme.color.text },
               ]}
             />
           ))}
@@ -182,49 +192,74 @@ export function GoalEditSheet({ visible, onClose, goal, onSave, onDelete, saving
         loading={saving}
         onPress={() => onSave({ name: name.trim(), color: swatch, targetDays: effectiveTarget })}
       />
-      {onDelete ? <Button label="Delete goal" variant="destructive" onPress={onDelete} /> : null}
+      {onDelete && !confirmingDelete ? (
+        <Button label="Delete goal" variant="destructive" onPress={() => setConfirmingDelete(true)} />
+      ) : null}
+      {onDelete && confirmingDelete ? (
+        <View style={styles.confirmDelete}>
+          <Meta style={{ textAlign: "center", color: theme.color.textBody }}>
+            Delete “{goal?.name}” and the {goal?.totalDaysActive ?? 0} day{goal?.totalDaysActive === 1 ? "" : "s"} counted
+            toward it? Its tasks stay.
+          </Meta>
+          <View style={styles.confirmRow}>
+            <Button label="Keep it" variant="secondary" onPress={() => setConfirmingDelete(false)} style={styles.confirmButton} />
+            <Button label="Delete" variant="destructive" loading={deleting} onPress={onDelete} style={styles.confirmButton} />
+          </View>
+        </View>
+      ) : null}
     </BottomSheet>
   );
 }
 
-const styles = StyleSheet.create({
-  section: {
-    gap: space.sm,
-  },
-  targetRow: {
-    flexDirection: "row",
-    gap: 7,
-  },
-  targetChip: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 44,
-    paddingVertical: 10,
-    borderRadius: 9,
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  targetChipWide: {
-    flex: 1.5,
-  },
-  targetChipOn: {
-    borderWidth: 1.5,
-    borderColor: color.interactive,
-    backgroundColor: color.selectedTint,
-  },
-  notice: {
-    backgroundColor: color.amberFill,
-    borderRadius: radius.control,
-    padding: 10,
-  },
-  swatchRow: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  swatch: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    confirmDelete: {
+      gap: space.md,
+    },
+    confirmRow: {
+      flexDirection: "row",
+      gap: space.md,
+    },
+    confirmButton: {
+      flex: 1,
+    },
+    section: {
+      gap: space.sm,
+    },
+    targetRow: {
+      flexDirection: "row",
+      gap: 7,
+    },
+    targetChip: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: 44,
+      paddingVertical: 10,
+      borderRadius: 9,
+      borderWidth: 1,
+      borderColor: t.color.border,
+    },
+    targetChipWide: {
+      flex: 1.5,
+    },
+    targetChipOn: {
+      borderWidth: 1.5,
+      borderColor: t.color.interactive,
+      backgroundColor: t.color.selectedTint,
+    },
+    notice: {
+      backgroundColor: t.color.amberFill,
+      borderRadius: radius.control,
+      padding: 10,
+    },
+    swatchRow: {
+      flexDirection: "row",
+      gap: 12,
+    },
+    swatch: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+    },
+  });

@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 const STORAGE_KEY = "preferences-v1";
 
@@ -11,32 +11,45 @@ interface Preferences {
    */
   defaultFocusDurationMinutes: number;
   /**
-   * Stored but not yet wired to anything functional — real push notifications need an
-   * Expo dev client (see memory/project_design_handoff.md), deferred in this pass.
+   * Settings → Reminder notifications. Read by the scheduler on every sync
+   * (notifications/preference.ts): off means nothing is queued, and whatever was is cleared.
    */
   notificationsEnabled: boolean;
   /**
-   * Opt-in "silence my phone during focus sessions" preference. Genuinely silencing other
-   * apps' notifications needs Android's Notification Policy Access API (a native module
-   * Expo Go can't load — this app has intentionally stayed on Expo Go, see
-   * memory/project_design_handoff.md) and, on iOS, Apple's Screen Time/Family Controls
-   * entitlement (meant for parental-control apps, needs special App Review approval).
-   * Stored as a plain client preference for now, same as notificationsEnabled above —
-   * the full UI/UX is built ahead of that native capability, not wired to a real OS call yet.
+   * "Silence my phone during focus sessions" — real on Android as of the Focus Shield module
+   * (modules/focus-shield), which puts the device into system Do Not Disturb for the length of
+   * a session and restores the user's own setting afterwards.
+   *
+   * Still inert on iOS and in Expo Go, where the native module isn't present: `isShieldSupported`
+   * is false and the shield calls no-op. The preference is kept rather than hidden so the choice
+   * survives moving between an Expo Go build and a real one.
    */
   dndDuringFocusEnabled: boolean;
+  /**
+   * Android package names to block for the length of a session. Empty means notifications-only.
+   *
+   * A device setting, not account data, and deliberately not synced through task-svc: package
+   * names are specific to what's installed on *this* phone, so the same list on another device
+   * would be partly meaningless. (On iOS the equivalent is impossible in principle — Apple's
+   * picker returns opaque tokens that can't be stored server-side at all. See
+   * MD/focus-shield-spec.md.)
+   */
+  blockedAppIds: string[];
 }
 
 const DEFAULT_PREFERENCES: Preferences = {
   defaultFocusDurationMinutes: 25,
   notificationsEnabled: true,
   dndDuringFocusEnabled: false,
+  blockedAppIds: [],
 };
 
 interface PreferencesContextValue extends Preferences {
   setDefaultFocusDurationMinutes: (minutes: number) => void;
-  setNotificationsEnabled: (enabled: boolean) => void;
+  /** Resolves once the preference is on disk, so a sync started after it reads the new value. */
+  setNotificationsEnabled: (enabled: boolean) => Promise<void>;
   setDndDuringFocusEnabled: (enabled: boolean) => void;
+  setBlockedAppIds: (ids: string[]) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | undefined>(undefined);
@@ -50,17 +63,28 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     });
   }, []);
 
-  const persist = (next: Preferences) => {
+  /*
+   * Changes merge into the *latest* preferences, not the render's copy. Every setter used to
+   * spread the same captured `prefs`, so saving two changes at once — Settings saves them one
+   * after another — kept only the last: turning reminders off and changing the focus length in
+   * one save wrote the new length and silently switched reminders back on.
+   */
+  const latest = useRef(prefs);
+  latest.current = prefs;
+  const persist = (patch: Partial<Preferences>): Promise<void> => {
+    const next = { ...latest.current, ...patch };
+    latest.current = next;
     setPrefs(next);
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    return AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   };
 
   const value = useMemo<PreferencesContextValue>(
     () => ({
       ...prefs,
-      setDefaultFocusDurationMinutes: (defaultFocusDurationMinutes) => persist({ ...prefs, defaultFocusDurationMinutes }),
-      setNotificationsEnabled: (notificationsEnabled) => persist({ ...prefs, notificationsEnabled }),
-      setDndDuringFocusEnabled: (dndDuringFocusEnabled) => persist({ ...prefs, dndDuringFocusEnabled }),
+      setDefaultFocusDurationMinutes: (defaultFocusDurationMinutes) => void persist({ defaultFocusDurationMinutes }),
+      setNotificationsEnabled: (notificationsEnabled) => persist({ notificationsEnabled }),
+      setDndDuringFocusEnabled: (dndDuringFocusEnabled) => void persist({ dndDuringFocusEnabled }),
+      setBlockedAppIds: (blockedAppIds) => void persist({ blockedAppIds }),
     }),
     [prefs]
   );

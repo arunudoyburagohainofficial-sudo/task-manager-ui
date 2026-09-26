@@ -1,7 +1,8 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { TaskType } from "../api/types";
-import { color, radius, schedulePanel, space, text as t, type as T } from "../theme";
+import { radius, space, text as t, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { ChevronDownIcon, ChevronRightIcon, RepeatIcon } from "./icons";
 
 /**
@@ -17,11 +18,13 @@ import { ChevronDownIcon, ChevronRightIcon, RepeatIcon } from "./icons";
 
 /** Task-type dot — the one bit of colour on an otherwise monochrome row. */
 function TypeDot({ taskType }: { taskType: TaskType }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View
       style={[
         styles.dot,
-        { backgroundColor: taskType === "focus" ? schedulePanel.focusDot : schedulePanel.reminderDot },
+        { backgroundColor: taskType === "focus" ? theme.schedulePanel.focusDot : theme.schedulePanel.reminderDot },
       ]}
     />
   );
@@ -53,7 +56,9 @@ export function SchedulePanel({
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const skin = tone === "overdue" ? schedulePanel.overdue : schedulePanel.neutral;
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const skin = tone === "overdue" ? theme.schedulePanel.overdue : theme.schedulePanel.neutral;
   return (
     <View style={[styles.panel, { backgroundColor: skin.bg, borderColor: skin.border }]}>
       <View style={styles.panelHeader}>
@@ -65,7 +70,7 @@ export function SchedulePanel({
         </View>
         <View style={[styles.rule, { backgroundColor: skin.rule }]} />
         {note ? (
-          <Text style={t(T.badge, { fontSize: 10, letterSpacing: 0, color: color.danger })} numberOfLines={1}>
+          <Text style={t(T.badge, { fontSize: 10, letterSpacing: 0, color: theme.color.danger })} numberOfLines={1}>
             {note}
           </Text>
         ) : null}
@@ -98,19 +103,21 @@ export function OverdueRow({
   onPress: () => void;
   onAction?: () => void;
 }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${title}. ${subtitle}`}
       onPress={onPress}
-      style={[styles.row, { borderColor: schedulePanel.overdue.rowBorder }]}
+      style={[styles.row, { borderColor: theme.schedulePanel.overdue.rowBorder }]}
     >
       <TypeDot taskType={taskType} />
       <View style={styles.rowText}>
-        <Text style={t(T.body, { fontSize: 15, fontWeight: "700", color: color.text })} numberOfLines={1}>
+        <Text style={t(T.body, { fontSize: 15, fontWeight: "700", color: theme.color.text })} numberOfLines={1}>
           {title}
         </Text>
-        <Text style={t(T.meta, { fontSize: 12, color: color.textMuted, marginTop: 2 })} numberOfLines={1}>
+        <Text style={t(T.meta, { fontSize: 12, color: theme.color.textMuted, marginTop: 2 })} numberOfLines={1}>
           {subtitle}
         </Text>
       </View>
@@ -125,7 +132,7 @@ export function OverdueRow({
           hitSlop={6}
           style={styles.rowAction}
         >
-          <Text style={t(T.meta, { fontSize: 12, fontWeight: "800", color: schedulePanel.overdue.moreText })}>
+          <Text style={t(T.meta, { fontSize: 12, fontWeight: "800", color: theme.schedulePanel.overdue.moreText })}>
             {actionLabel}
           </Text>
         </Pressable>
@@ -144,6 +151,8 @@ export function OverdueRow({
  * stop being behind.
  */
 export function MoveAllToTodayButton({ count, onPress }: { count: number; onPress: () => void }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable
       accessibilityRole="button"
@@ -152,7 +161,7 @@ export function MoveAllToTodayButton({ count, onPress }: { count: number; onPres
       hitSlop={6}
       style={styles.panelAction}
     >
-      <Text style={t(T.badge, { fontSize: 10, letterSpacing: 0.2, color: schedulePanel.overdue.moreText })}>
+      <Text style={t(T.badge, { fontSize: 10, letterSpacing: 0.2, color: theme.schedulePanel.overdue.moreText })}>
         MOVE ALL
       </Text>
     </Pressable>
@@ -161,6 +170,8 @@ export function MoveAllToTodayButton({ count, onPress }: { count: number; onPres
 
 /** The Overdue panel's expander. Named with the remaining count so the tap is a known quantity. */
 export function ShowMoreButton({ remaining, onPress }: { remaining: number; onPress: () => void }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.moreWrap}>
       <Pressable
@@ -169,7 +180,7 @@ export function ShowMoreButton({ remaining, onPress }: { remaining: number; onPr
         onPress={onPress}
         style={styles.morePill}
       >
-        <Text style={t(T.meta, { fontSize: 12, fontWeight: "800", color: schedulePanel.overdue.moreText })}>
+        <Text style={t(T.meta, { fontSize: 12, fontWeight: "800", color: theme.schedulePanel.overdue.moreText })}>
           {remaining} more
         </Text>
         <ChevronDownIcon />
@@ -197,6 +208,8 @@ export function RecurringRow({
   subtitleColor?: string;
   onPress: () => void;
 }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable
       accessibilityRole="button"
@@ -205,14 +218,14 @@ export function RecurringRow({
       style={[styles.row, styles.recurringRow]}
     >
       <View style={styles.repeatTile}>
-        <RepeatIcon size={16} color={schedulePanel.repeatTileFg} />
+        <RepeatIcon size={16} color={theme.schedulePanel.repeatTileFg} />
       </View>
       <View style={styles.rowText}>
-        <Text style={t(T.body, { fontSize: 15, fontWeight: "700", color: color.text })} numberOfLines={1}>
+        <Text style={t(T.body, { fontSize: 15, fontWeight: "700", color: theme.color.text })} numberOfLines={1}>
           {title}
         </Text>
         <Text
-          style={t(T.meta, { fontSize: 12, color: subtitleColor ?? color.textMuted, marginTop: 2 })}
+          style={t(T.meta, { fontSize: 12, color: subtitleColor ?? theme.color.textMuted, marginTop: 2 })}
           numberOfLines={1}
         >
           {subtitle}
@@ -224,9 +237,11 @@ export function RecurringRow({
 
 /** The date sub-heading inside Upcoming — quieter than a panel header, since it's a sub-group. */
 export function DateHeading({ label }: { label: string }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.dateHeading}>
-      <Text style={t(T.eyebrow, { fontSize: 11, letterSpacing: 1.1, color: color.textFaint })} numberOfLines={1}>
+      <Text style={t(T.eyebrow, { fontSize: 11, letterSpacing: 1.1, color: theme.color.textFaint })} numberOfLines={1}>
         {label}
       </Text>
       <View style={styles.dateRule} />
@@ -251,6 +266,8 @@ export function UpcomingRow({
   trailing: string;
   onPress: () => void;
 }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable
       accessibilityRole="button"
@@ -260,131 +277,132 @@ export function UpcomingRow({
     >
       <TypeDot taskType={taskType} />
       <Text
-        style={[t(T.body, { fontSize: 15, fontWeight: "700", color: color.text }), styles.upcomingTitle]}
+        style={[t(T.body, { fontSize: 15, fontWeight: "700", color: theme.color.text }), styles.upcomingTitle]}
         numberOfLines={1}
       >
         {title}
       </Text>
-      <Text style={t(T.meta, { fontSize: 12, fontWeight: "700", color: color.textMuted })} numberOfLines={1}>
+      <Text style={t(T.meta, { fontSize: 12, fontWeight: "700", color: theme.color.textMuted })} numberOfLines={1}>
         {trailing}
       </Text>
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  panel: {
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 13,
-    paddingTop: 13,
-    paddingBottom: 11,
-  },
-  panelHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-  },
-  panelBody: {
-    marginTop: 11,
-    gap: 7,
-  },
-  countPill: {
-    borderRadius: 7,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  rule: {
-    flex: 1,
-    height: 1,
-  },
-  row: {
-    backgroundColor: color.card,
-    borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: radius.card,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  recurringRow: {
-    gap: 11,
-  },
-  upcomingRow: {
-    paddingVertical: 11,
-    paddingHorizontal: 13,
-  },
-  upcomingTitle: {
-    flex: 1,
-    minWidth: 0,
-  },
-  rowText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  panelAction: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 7,
-    borderWidth: 1,
-    borderColor: schedulePanel.overdue.moreBorder,
-    backgroundColor: color.card,
-    flexGrow: 0,
-    flexShrink: 0,
-  },
-  rowAction: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: schedulePanel.overdue.moreBorder,
-    flexGrow: 0,
-    flexShrink: 0,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 3,
-    flexGrow: 0,
-    flexShrink: 0,
-  },
-  repeatTile: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
-    backgroundColor: schedulePanel.repeatTileBg,
-    alignItems: "center",
-    justifyContent: "center",
-    flexGrow: 0,
-    flexShrink: 0,
-  },
-  moreWrap: {
-    alignItems: "center",
-    marginTop: 11,
-  },
-  morePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: color.card,
-    borderWidth: 1,
-    borderColor: schedulePanel.overdue.moreBorder,
-    borderRadius: radius.pill,
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    boxShadow: [{ offsetX: 0, offsetY: 3, blurRadius: 8, spreadDistance: -5, color: "rgba(140,80,55,.45)" }],
-  },
-  dateHeading: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.sm,
-    marginBottom: space.sm,
-  },
-  dateRule: {
-    flex: 1,
-    height: 1,
-    backgroundColor: schedulePanel.dateRule,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    panel: {
+      borderWidth: 1,
+      borderRadius: 16,
+      paddingHorizontal: 13,
+      paddingTop: 13,
+      paddingBottom: 11,
+    },
+    panelHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 9,
+    },
+    panelBody: {
+      marginTop: 11,
+      gap: 7,
+    },
+    countPill: {
+      borderRadius: 7,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+    },
+    rule: {
+      flex: 1,
+      height: 1,
+    },
+    row: {
+      backgroundColor: t.color.card,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      borderRadius: radius.card,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    recurringRow: {
+      gap: 11,
+    },
+    upcomingRow: {
+      paddingVertical: 11,
+      paddingHorizontal: 13,
+    },
+    upcomingTitle: {
+      flex: 1,
+      minWidth: 0,
+    },
+    rowText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    panelAction: {
+      paddingVertical: 3,
+      paddingHorizontal: 8,
+      borderRadius: 7,
+      borderWidth: 1,
+      borderColor: t.schedulePanel.overdue.moreBorder,
+      backgroundColor: t.color.card,
+      flexGrow: 0,
+      flexShrink: 0,
+    },
+    rowAction: {
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: t.schedulePanel.overdue.moreBorder,
+      flexGrow: 0,
+      flexShrink: 0,
+    },
+    dot: {
+      width: 8,
+      height: 8,
+      borderRadius: 3,
+      flexGrow: 0,
+      flexShrink: 0,
+    },
+    repeatTile: {
+      width: 30,
+      height: 30,
+      borderRadius: 9,
+      backgroundColor: t.schedulePanel.repeatTileBg,
+      alignItems: "center",
+      justifyContent: "center",
+      flexGrow: 0,
+      flexShrink: 0,
+    },
+    moreWrap: {
+      alignItems: "center",
+      marginTop: 11,
+    },
+    morePill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      backgroundColor: t.color.card,
+      borderWidth: 1,
+      borderColor: t.schedulePanel.overdue.moreBorder,
+      borderRadius: radius.pill,
+      paddingVertical: 7,
+      paddingHorizontal: 14,
+      boxShadow: [{ offsetX: 0, offsetY: 3, blurRadius: 8, spreadDistance: -5, color: "rgba(140,80,55,.45)" }],
+    },
+    dateHeading: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space.sm,
+      marginBottom: space.sm,
+    },
+    dateRule: {
+      flex: 1,
+      height: 1,
+      backgroundColor: t.schedulePanel.dateRule,
+    },
+  });

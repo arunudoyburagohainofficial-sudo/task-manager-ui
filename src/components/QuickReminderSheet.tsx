@@ -1,6 +1,7 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { color, radius, size, space, text as t, type as T } from "../theme";
+import { radius, size, space, text as t, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { BottomSheet } from "./BottomSheet";
 import { H2, Meta } from "./Text";
 
@@ -47,12 +48,14 @@ export function QuickReminderSheet({
   onPick: (choice: QuickReminderChoice) => void;
   submitting?: boolean;
 }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const now = new Date();
 
   return (
     <BottomSheet visible={visible} onClose={onClose}>
       <H2>Nudge me in…</H2>
-      <Meta style={{ color: color.textFaint }}>
+      <Meta style={{ color: theme.color.textFaint }}>
         A one-off, counted from right now. Sets the task for the day it lands on.
       </Meta>
 
@@ -80,8 +83,8 @@ export function QuickReminderSheet({
                 })
               }
             >
-              <Text style={t(T.button, { color: color.text })}>{formatDuration(minutes)}</Text>
-              <Meta style={{ color: color.textFaint, marginTop: 2 }}>
+              <Text style={t(T.button, { color: theme.color.text })}>{formatDuration(minutes)}</Text>
+              <Meta style={{ color: theme.color.textFaint, marginTop: 2 }}>
                 {at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                 {crossesMidnight ? " tomorrow" : ""}
               </Meta>
@@ -93,23 +96,24 @@ export function QuickReminderSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: space.sm,
-  },
-  option: {
-    minWidth: 96,
-    flexGrow: 1,
-    minHeight: size.minTouch + 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: color.border,
-    backgroundColor: color.card,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    grid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: space.sm,
+    },
+    option: {
+      minWidth: 96,
+      flexGrow: 1,
+      minHeight: size.minTouch + 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      backgroundColor: t.color.card,
+    },
+  });

@@ -7,6 +7,14 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_SHOW_TEST_LOGIN": "false"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   }
 }

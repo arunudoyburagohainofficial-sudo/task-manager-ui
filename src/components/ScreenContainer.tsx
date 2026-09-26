@@ -1,17 +1,18 @@
 import React from "react";
 import { StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { color } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { ScreenWash, type WashVariant } from "./ScreenWash";
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+    },
+    content: {
+      flex: 1,
+    },
+  });
 
 interface ScreenContainerProps {
   children: React.ReactNode;
@@ -37,8 +38,10 @@ interface ScreenContainerProps {
  * change the colours under the content.
  */
 export function ScreenContainer({ children, style, backgroundColor, wash = "ambient" }: ScreenContainerProps) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const flat = backgroundColor != null;
-  const bg = backgroundColor ?? color.screen;
+  const bg = backgroundColor ?? theme.color.screen;
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: bg }]} edges={["top", "left", "right"]}>
       {flat ? null : <ScreenWash variant={wash} />}

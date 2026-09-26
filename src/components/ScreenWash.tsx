@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useId } from "react";
 import { Animated, Easing, StyleSheet, useWindowDimensions, View, type BoxShadowValue } from "react-native";
 import Svg, {
   Defs,
@@ -9,7 +9,8 @@ import Svg, {
   Stop,
 } from "react-native-svg";
 import { LinearGradient } from "expo-linear-gradient";
-import { color } from "../theme";
+
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { useReduceMotion } from "./Ferne";
 
 /**
@@ -111,6 +112,14 @@ function useDrift(durationMs: number, enabled: boolean) {
 }
 
 export function ScreenWash({ variant = "ambient" }: { variant?: WashVariant }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  /** How hard each layer is painted — the one part of the wash that differs between palettes. */
+  const stops = theme.wash.stops;
+  // Gradient ids are document-global on web: several of these on one page shared one set, and the
+  // browser resolves url(#…) to the *first* — so a copy painted with another's gradients, or with
+  // nothing when that first copy sat on a hidden screen. One id set per instance.
+  const uid = useId().replace(/[^A-Za-z0-9_-]/g, "");
   const { width, height } = useWindowDimensions();
   const reduceMotion = useReduceMotion();
   const drifting = variant === "home" && !reduceMotion;
@@ -168,7 +177,14 @@ export function ScreenWash({ variant = "ambient" }: { variant?: WashVariant }) {
     >
       <Svg width={width} height={height}>
         <Defs>{stops}</Defs>
-        <Rect width={width} height={height} fill={`url(#${id})`} />
+        {/*
+          The same id the gradient was defined with, uid and all. These used to reference the
+          bare name while the <Defs> above declared the prefixed one, so the paint never
+          resolved: a browser treats an unresolvable paint as transparent and looked fine, while
+          Android's SVG falls back to black and painted three full-screen black rectangles over
+          the screen. Invisible in dark mode, which is why it survived every dark screenshot.
+        */}
+        <Rect width={width} height={height} fill={`url(#${uid}${id})`} />
       </Svg>
     </Animated.View>
   );
@@ -181,16 +197,16 @@ export function ScreenWash({ variant = "ambient" }: { variant?: WashVariant }) {
     <View style={[StyleSheet.absoluteFill, styles.clip]} pointerEvents="none">
       <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
         <Defs>
-          <SvgLinearGradient id="wRamp" gradientUnits="userSpaceOnUse" {...ramp}>
-            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.72} />
+          <SvgLinearGradient id={`${uid}wRamp`} gradientUnits="userSpaceOnUse" {...ramp}>
+            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={stops.rampLift} />
             <Stop offset="0.34" stopColor="#FFFFFF" stopOpacity={0} />
-            <Stop offset="0.74" stopColor={VIOLET} stopOpacity={0.05} />
-            <Stop offset="1" stopColor={VIOLET} stopOpacity={0.11} />
+            <Stop offset="0.74" stopColor={VIOLET} stopOpacity={stops.rampVioletMid} />
+            <Stop offset="1" stopColor={VIOLET} stopOpacity={stops.rampVioletEnd} />
           </SvgLinearGradient>
         </Defs>
 
-        <Rect width={width} height={height} fill={color.screen} />
-        <Rect width={width} height={height} fill="url(#wRamp)" />
+        <Rect width={width} height={height} fill={theme.color.screen} />
+        <Rect width={width} height={height} fill={`url(#${uid}wRamp)`} />
       </Svg>
 
       {/* Each bloom fills the screen and is shaped entirely by its own gradient — see
@@ -200,9 +216,9 @@ export function ScreenWash({ variant = "ambient" }: { variant?: WashVariant }) {
         violet,
         violetDrift,
         DRIFT.violet,
-        <RadialGradient id="wViolet" gradientUnits="userSpaceOnUse" {...violet}>
-          <Stop offset="0" stopColor={VIOLET} stopOpacity={0.3} />
-          <Stop offset="0.56" stopColor={VIOLET} stopOpacity={0.06} />
+        <RadialGradient id={`${uid}wViolet`} gradientUnits="userSpaceOnUse" {...violet}>
+          <Stop offset="0" stopColor={VIOLET} stopOpacity={stops.bloomViolet[0]} />
+          <Stop offset="0.56" stopColor={VIOLET} stopOpacity={stops.bloomViolet[1]} />
           <Stop offset="0.74" stopColor={VIOLET} stopOpacity={0} />
         </RadialGradient>
       )}
@@ -211,9 +227,9 @@ export function ScreenWash({ variant = "ambient" }: { variant?: WashVariant }) {
         terra,
         terraDrift,
         DRIFT.terra,
-        <RadialGradient id="wTerra" gradientUnits="userSpaceOnUse" {...terra}>
-          <Stop offset="0" stopColor={TERRA} stopOpacity={0.24} />
-          <Stop offset="0.58" stopColor={TERRA} stopOpacity={0.05} />
+        <RadialGradient id={`${uid}wTerra`} gradientUnits="userSpaceOnUse" {...terra}>
+          <Stop offset="0" stopColor={TERRA} stopOpacity={stops.bloomTerra[0]} />
+          <Stop offset="0.58" stopColor={TERRA} stopOpacity={stops.bloomTerra[1]} />
           <Stop offset="0.76" stopColor={TERRA} stopOpacity={0} />
         </RadialGradient>
       )}
@@ -222,33 +238,33 @@ export function ScreenWash({ variant = "ambient" }: { variant?: WashVariant }) {
         olive,
         oliveDrift,
         DRIFT.olive,
-        <RadialGradient id="wOlive" gradientUnits="userSpaceOnUse" {...olive}>
-          <Stop offset="0" stopColor={OLIVE} stopOpacity={0.16} />
+        <RadialGradient id={`${uid}wOlive`} gradientUnits="userSpaceOnUse" {...olive}>
+          <Stop offset="0" stopColor={OLIVE} stopOpacity={stops.bloomOlive} />
           <Stop offset="0.7" stopColor={OLIVE} stopOpacity={0} />
         </RadialGradient>
       )}
 
       <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
         <Defs>
-          <RadialGradient id="wLiftTop" gradientUnits="userSpaceOnUse" {...lift}>
-            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.85} />
+          <RadialGradient id={`${uid}wLiftTop`} gradientUnits="userSpaceOnUse" {...lift}>
+            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={stops.cornerLift} />
             <Stop offset="0.62" stopColor="#FFFFFF" stopOpacity={0} />
           </RadialGradient>
           {/* Ellipses rather than a radius on a full-screen Rect — 120%×78% and 130%×62% of the
               screen — so each gradient stays a plain centred circle in its own (elliptical) box.
               On a Rect, SVG normalises against the box diagonal and the shape comes out neither
               the right height nor the right width. */}
-          <RadialGradient id="wTopField" cx="50%" cy="50%" r="50%">
-            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.34} />
+          <RadialGradient id={`${uid}wTopField`} cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={stops.closeTop} />
             <Stop offset="0.46" stopColor="#FFFFFF" stopOpacity={0} />
           </RadialGradient>
-          <RadialGradient id="wFootField" cx="50%" cy="50%" r="50%">
-            <Stop offset="0" stopColor="#8B6D4A" stopOpacity={0.13} />
+          <RadialGradient id={`${uid}wFootField`} cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor="#8B6D4A" stopOpacity={stops.closeFoot} />
             <Stop offset="0.58" stopColor="#8B6D4A" stopOpacity={0} />
           </RadialGradient>
         </Defs>
 
-        <Rect width={width} height={height} fill="url(#wLiftTop)" />
+        <Rect width={width} height={height} fill={`url(#${uid}wLiftTop)`} />
 
         {/* The design's Home screens stop here. The closing overlay below belongs to the older
             screens the rest of the app is drawn from — brightening the top and warming the very
@@ -256,9 +272,9 @@ export function ScreenWash({ variant = "ambient" }: { variant?: WashVariant }) {
         {variant === "ambient" ? (
           <>
             {/* 120% 78% at 50% 8% */}
-            <Ellipse cx={width / 2} cy={height * 0.08} rx={width * 1.2} ry={height * 0.78} fill="url(#wTopField)" />
+            <Ellipse cx={width / 2} cy={height * 0.08} rx={width * 1.2} ry={height * 0.78} fill={`url(#${uid}wTopField)`} />
             {/* 130% 62% at 50% 106% */}
-            <Ellipse cx={width / 2} cy={height * 1.06} rx={width * 1.3} ry={height * 0.62} fill="url(#wFootField)" />
+            <Ellipse cx={width / 2} cy={height * 1.06} rx={width * 1.3} ry={height * 0.62} fill={`url(#${uid}wFootField)`} />
           </>
         ) : null}
       </Svg>
@@ -343,8 +359,9 @@ export function InnerShading({ shadows, radius }: { shadows: BoxShadowValue[]; r
   return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, boxShadow: shadows }]} />;
 }
 
-const styles = StyleSheet.create({
-  clip: {
-    overflow: "hidden",
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    clip: {
+      overflow: "hidden",
+    },
+  });

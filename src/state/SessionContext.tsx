@@ -1,6 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
 import { prefetchAppData } from "../api/prefetch";
+import { getMe } from "../api/users";
+import { onCredentialsRejectedDo } from "../api/client";
 import { queryClient } from "../api/queryClient";
 import type { UserDto } from "../api/types";
 
@@ -78,6 +81,51 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, user?.id]);
 
+  /*
+   * The stored UserDto is a snapshot from sign-in. A name or weekly goal changed on another
+   * device never reached this one — Home greeted the old name and measured against the old
+   * goal indefinitely. Re-read on launch and whenever the app comes back to the front. Only
+   * ever applied to the same account, and a failure changes nothing: the snapshot stays.
+   */
+  const userIdRef = useRef<string | null>(null);
+  userIdRef.current = user?.id ?? null;
+  useEffect(() => {
+    if (isLoading || !user?.id) return;
+    const id = user.id;
+    const refresh = () => {
+      getMe()
+        .then((fresh) => {
+          if (userIdRef.current !== id || fresh.id !== id) return;
+          setUser((current) => {
+            if (!current || current.id !== id) return current;
+            if (JSON.stringify(current) === JSON.stringify(fresh)) return current;
+            AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
+            return fresh;
+          });
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") refresh();
+    });
+    return () => sub.remove();
+  }, [isLoading, user?.id]);
+
+  /*
+   * The server rejecting our credentials is the one thing that has to end the session. Anything
+   * else leaves the user looking at cached data they can no longer change.
+   */
+  useEffect(() => {
+    onCredentialsRejectedDo(() => {
+      // Only if we think we're signed in — otherwise the sign-in screen's own 401s would
+      // trigger a pointless sign-out loop.
+      if (userIdRef.current) signOutRef.current();
+    });
+  }, []);
+
+  const signOutRef = useRef<() => void>(() => {});
+
   const value = useMemo<SessionContextValue>(
     () => ({
       user,
@@ -120,6 +168,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }),
     [user, isLoading, isReady]
   );
+
+  signOutRef.current = value.signOut;
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

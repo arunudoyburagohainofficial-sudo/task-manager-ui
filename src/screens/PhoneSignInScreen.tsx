@@ -12,7 +12,8 @@ import {
 } from "../api/firebaseAuth";
 import { Body, Button, H1, Meta, ScreenContainer, TextField } from "../components";
 import { useSession } from "../state/SessionContext";
-import { color, size, space } from "../theme";
+import { size, space } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -23,6 +24,8 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  * without Firebase configured.
  */
 export function PhoneSignInScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { signIn } = useSession();
   const navigation = useNavigation<Nav>();
 
@@ -83,7 +86,7 @@ export function PhoneSignInScreen() {
             autoCapitalize="none"
           />
 
-          {error ? <Body style={{ color: color.danger }}>{error}</Body> : null}
+          {error ? <Body style={{ color: theme.color.danger }}>{error}</Body> : null}
 
           <Button
             label={isPhoneStep ? "Send code" : "Verify"}
@@ -97,7 +100,7 @@ export function PhoneSignInScreen() {
             onPress={() => (isPhoneStep ? navigation.goBack() : setStep("phone"))}
             style={styles.backLink}
           >
-            <Meta style={{ color: color.textFaint }}>{isPhoneStep ? "Back" : "Use a different number"}</Meta>
+            <Meta style={{ color: theme.color.textFaint }}>{isPhoneStep ? "Back" : "Use a different number"}</Meta>
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -105,20 +108,21 @@ export function PhoneSignInScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  content: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: space.gutter,
-    paddingVertical: space.lg,
-    gap: space.base,
-  },
-  backLink: {
-    minHeight: size.minTouch,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    flex: {
+      flex: 1,
+    },
+    content: {
+      flexGrow: 1,
+      justifyContent: "center",
+      paddingHorizontal: space.gutter,
+      paddingVertical: space.lg,
+      gap: space.base,
+    },
+    backLink: {
+      minHeight: size.minTouch,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+  });

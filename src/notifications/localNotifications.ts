@@ -2,14 +2,8 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import type { IntervalReminderDto, ReminderDto, TaskDto } from "../api/types";
 import { REMINDER_CATEGORY, registerNotificationCategory } from "./notificationActions";
-import {
-  allocateFairly,
-  intervalOccurrences,
-  leadIn,
-  MAX_PENDING,
-  reminderOccurrences,
-  type Scheduled,
-} from "./schedulingLogic";
+import { readNotificationsEnabled } from "./preference";
+import { MAX_PENDING, planQueue } from "./schedulingLogic";
 
 /**
  * Reminder delivery lives here, on the device — the backend stores reminders so they sync
@@ -109,71 +103,31 @@ async function runScheduleAll(
   intervals: IntervalReminderDto[],
   tasks: TaskDto[]
 ): Promise<number> {
+  /*
+   * The Settings switch. It used to be stored and never read — reminders kept arriving after
+   * someone turned them off. Checked before asking for permission (no prompt for someone who has
+   * opted out), and it still clears the queue, so switching off removes what was already there.
+   */
+  const enabled = await readNotificationsEnabled();
+  if (!enabled) {
+    await Notifications.cancelAllScheduledNotificationsAsync().catch(() => undefined);
+    return 0;
+  }
+  /*
+   * Asking is still done here rather than through readDeliveryBlock, which deliberately never
+   * prompts — this is the one path where a prompt is wanted, because the user has just done
+   * something that needs delivering. The two agree on what counts as blocked: both reduce to
+   * granted/canAskAgain, and deliveryBlockFrom is the single statement of the rule.
+   */
   if (!(await requestPermission())) return 0;
   await configureAndroidChannel();
   await registerNotificationCategory();
 
-  const taskName = new Map(tasks.map((task) => [task.id, task.name]));
-  const isPending = new Set(tasks.filter((t) => t.status === "pending").map((t) => t.id));
-  // Every reminder used to announce itself as "Time to focus", including on reminder-type
-  // tasks — "Time to focus / You planned to work on: Call the dentist" is the wrong sentence
-  // for a task that has nothing to do with a focus session.
-  const isFocusTask = new Set(tasks.filter((t) => t.taskType === "focus").map((t) => t.id));
-  const scheduledFor = new Map(tasks.map((task) => [task.id, task.scheduledFor]));
-
-  // One group per source, each already soonest-first — allocateFairly needs that shape,
-  // and it's also what stops one noisy source from crowding out the rest.
-  const groups: Scheduled[][] = [];
-
-  for (const reminder of reminders) {
-    // Skip anything stopped, or whose task is done — the server keeps these rows around
-    // (see the backend's Reminder.isActive), but there is nothing left to schedule.
-    if (!reminder.isActive || !isPending.has(reminder.taskId)) continue;
-    const occurrences = reminderOccurrences(
-      reminder.reminderTime,
-      // The day is the task's, not the reminder's — since V017 there is only one date, so
-      // these two can't drift apart the way two separate fields could.
-      scheduledFor.get(reminder.taskId) ?? null,
-      reminder.snoozedUntil,
-      reminder.daysBefore ?? 0
-    );
-    if (!occurrences.length) continue;
-    const focus = isFocusTask.has(reminder.taskId);
-    groups.push(
-      occurrences.map((at) => ({
-        at,
-        title: focus ? "Time to focus" : "Reminder",
-        // A lead-time notification says so, otherwise "Buy Mum a gift" a week early reads as
-        // if it's due now and there's nothing to distinguish it from the day-of nudge.
-        body: leadIn(reminder.daysBefore ?? 0, taskName.get(reminder.taskId), focus),
-        taskId: reminder.taskId,
-        // Carried so the notification's Snooze button has something to address — the snooze
-        // endpoint is keyed on the reminder, not the task.
-        reminderId: reminder.id,
-      }))
-    );
-  }
-
-  for (const interval of intervals) {
-    if (!interval.isActive || !isPending.has(interval.taskId)) continue;
-    const occurrences = intervalOccurrences(interval);
-    if (!occurrences.length) continue;
-    groups.push(
-      occurrences.map((at) => ({
-        at,
-        title: "Still on it?",
-        body: `Checking in on: ${taskName.get(interval.taskId) ?? "your task"}`,
-        taskId: interval.taskId,
-      }))
-    );
-  }
-
-  // Everything above is pure computation, and it deliberately happens *before* the cancel
-  // below: cancelling first and then throwing while building would leave the device with
-  // no notifications at all, and syncReminders swallows the error, so that loss would be
-  // completely silent.
-  const chosen = allocateFairly(groups, MAX_PENDING);
-  chosen.sort((a, b) => a.at.getTime() - b.at.getTime());
+  // Everything above the OS call is pure computation — planQueue — and it deliberately happens
+  // *before* the cancel below: cancelling first and then throwing while building would leave the
+  // device with no notifications at all, and syncReminders swallows the error, so that loss would
+  // be completely silent.
+  const chosen = planQueue(reminders, intervals, tasks, MAX_PENDING, enabled);
 
   await Notifications.cancelAllScheduledNotificationsAsync();
 

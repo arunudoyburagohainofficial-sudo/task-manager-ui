@@ -1,5 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { QueryClient } from "@tanstack/react-query";
+import { focusManager, MutationCache, QueryClient } from "@tanstack/react-query";
+import { ApiError } from "./client";
+import { queryKeys } from "./queryKeys";
+import { AppState } from "react-native";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 
 const ONE_DAY_MS = 1000 * 60 * 60 * 24;
@@ -25,7 +28,46 @@ const ONE_DAY_MS = 1000 * 60 * 60 * 24;
  * next disk save would persist its absence, and a cold launch after that would show
  * nothing for it instead of yesterday's real data.
  */
+/**
+ * "The app is in front again" is what React Query calls focus — wired to AppState, since a phone
+ * has no window focus event of its own (TanStack's documented React Native setup).
+ *
+ * Narrow in effect on purpose: everything here is `staleTime: Infinity`, so a return to the app
+ * re-checks only what is marked always-stale — today, just the task open on Task Detail. Without
+ * this, a task deleted or rescheduled on another device stayed on screen, editable, however long
+ * the app had been away.
+ */
+focusManager.setEventListener((handleFocus) => {
+  const subscription = AppState.addEventListener("change", (state) => handleFocus(state === "active"));
+  return () => subscription.remove();
+});
+
+/** The task a mutation was about, whichever shape its variables take. */
+function taskIdOf(variables: unknown): string | null {
+  if (typeof variables === "string") return variables;
+  if (variables && typeof variables === "object" && "taskId" in variables) {
+    const id = (variables as { taskId: unknown }).taskId;
+    return typeof id === "string" ? id : null;
+  }
+  return null;
+}
+
 export const queryClient = new QueryClient({
+  /*
+   * Any action on a task that the server says doesn't exist re-checks that task. It was deleted —
+   * here, or on another device — and without this the screen kept showing it, editable, with
+   * every action failing behind a generic "Couldn't…". The re-check 404s too, which is what turns
+   * Task Detail into "This task is gone", and the lists drop it on their refetch.
+   */
+  mutationCache: new MutationCache({
+    onError: (error, variables) => {
+      const taskId = taskIdOf(variables);
+      if (!taskId || !(error instanceof ApiError) || error.status !== 404) return;
+      void queryClient.invalidateQueries({ queryKey: queryKeys.task(taskId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tasks() });
+      void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  }),
   defaultOptions: {
     queries: {
       staleTime: Infinity,

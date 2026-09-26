@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { failureHint } from "../api/client";
 import {
   AppState,
   type AppStateStatus,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -36,6 +38,7 @@ import {
   HomeStatStrip,
   HomeTaskRow,
   type HomeRowKind,
+  NotificationBlockBanner,
   RightNowCard,
   RightNowHeader,
   ScreenContainer,
@@ -45,7 +48,8 @@ import { usePreferences } from "../state/PreferencesContext";
 import { useToast } from "../state/ToastContext";
 import { useSession } from "../state/SessionContext";
 import { TourTarget, useTour } from "../state/TourContext";
-import { color, home, textAtDesignSize as td, type as T } from "../theme";
+import { textAtDesignSize as td, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import {
   formatClockTime,
   formatFirstName,
@@ -55,6 +59,7 @@ import {
   isToday,
 } from "../utils/format";
 import { readRunningSession, resumeSessionParams } from "../utils/focusSession";
+import { goalsRowLayout } from "../utils/goalsLayout";
 import { POINTS_PER_MINUTE, REMINDER_POINTS } from "../utils/points";
 import { belongsOnHome } from "../utils/schedule";
 import { useTodayKey } from "../utils/useTodayKey";
@@ -100,6 +105,8 @@ function useNow(intervalMs: number, enabled: boolean): number {
 }
 
 export function HomeScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { user } = useSession();
   const navigation = useNavigation<Nav>();
   const [refreshing, setRefreshing] = useState(false);
@@ -192,7 +199,10 @@ export function HomeScreen() {
       (completedTasksQuery.data ?? [])
         .filter((t) => t.completedAt && isToday(t.completedAt))
         .sort((a, b) => Date.parse(a.completedAt as string) - Date.parse(b.completedAt as string)),
-    [completedTasksQuery.data]
+    // `today` too: at midnight the list has to empty with the app open, and nothing else about
+    // the data changes then — without it yesterday's finished work stayed under DONE.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [completedTasksQuery.data, today]
   );
 
   /**
@@ -328,8 +338,8 @@ export function HomeScreen() {
         message: `“${taskName}” done`,
         action: { label: "Undo", onPress: () => handleUndo(taskId, taskName) },
       });
-    } catch {
-      showToast({ tone: "error", message: `Couldn't complete “${taskName}” — check your connection.` });
+    } catch (err) {
+      showToast({ tone: "error", message: `Couldn't complete “${taskName}” — ${failureHint(err)}` });
     }
   }
 
@@ -337,19 +347,28 @@ export function HomeScreen() {
     try {
       await reopenTaskMutation.mutateAsync(taskId);
       showToast({ message: `“${taskName}” put back` });
-    } catch {
-      showToast({ tone: "error", message: "Couldn't undo — check your connection." });
+    } catch (err) {
+      showToast({ tone: "error", message: `Couldn't undo — ${failureHint(err)}` });
     }
   }
 
+  /*
+   * Both used to let a failure escape as an unhandled rejection: the sheet sat there and nothing
+   * was said. A toast draws beneath a sheet on a phone (the sheet is its own native window), so
+   * on failure the sheet closes and the message shows on Home.
+   */
   async function handleSaveGoal(fields: { name: string; color: string; targetDays: number }) {
-    if (editingGoal) {
-      await updateGoalMutation.mutateAsync({ goalId: editingGoal.id, request: fields });
-    } else {
-      await createGoalMutation.mutateAsync(fields);
-      // Only a genuinely new goal completes the tour's first step — editing an existing
-      // one isn't what was asked for.
-      advanceTour("goal");
+    try {
+      if (editingGoal) {
+        await updateGoalMutation.mutateAsync({ goalId: editingGoal.id, request: fields });
+      } else {
+        await createGoalMutation.mutateAsync(fields);
+        // Only a genuinely new goal completes the tour's first step — editing an existing
+        // one isn't what was asked for.
+        advanceTour("goal");
+      }
+    } catch (err) {
+      showToast({ tone: "error", message: `Couldn't save “${fields.name}” — ${failureHint(err)}` });
     }
     setEditingGoal(null);
     setCreatingGoal(false);
@@ -357,13 +376,27 @@ export function HomeScreen() {
 
   async function handleDeleteGoal() {
     if (!editingGoal) return;
-    await deleteGoalMutation.mutateAsync(editingGoal.id);
+    const goal = editingGoal;
+    try {
+      await deleteGoalMutation.mutateAsync(goal.id);
+      showToast({ message: `“${goal.name}” deleted` });
+    } catch (err) {
+      showToast({ tone: "error", message: `Couldn't delete “${goal.name}” — ${failureHint(err)}` });
+    }
     setEditingGoal(null);
   }
 
   if (!user) return null;
 
   const displayName = user.displayName || user.username;
+  /*
+   * Reset per account, not just per mount: the avatar is keyed on the signed-in user, and a
+   * failure recorded for one account must not blank out the next one's picture after a
+   * sign-out and sign-in on the same device.
+   */
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  useEffect(() => setAvatarFailed(false), [user.id]);
+  const avatarUrl = avatarFailed ? null : user.avatarUrl;
 
   /**
    * What a row is. A task counting toward a goal shows as that first — it's the thing worth
@@ -389,13 +422,17 @@ export function HomeScreen() {
    * has no reason to think exists.
    */
   const goalsInnerWidth = width - 2 * styles.listContent.paddingHorizontal;
-  const scrollingGoalWidth = Math.round(((goalsInnerWidth - ROW_GAP) / 2) * 0.92);
+  const { scroll: goalsScroll, cardWidth: scrollingGoalWidth } = goalsRowLayout(
+    goalsInnerWidth,
+    goals.length,
+    ROW_GAP
+  );
 
   const goalCards = goals.map((goal) => (
     <GoalRingCard
       key={goal.id}
       goal={goal}
-      width={goals.length > 2 ? scrollingGoalWidth : undefined}
+      width={scrollingGoalWidth}
       onPress={() => setEditingGoal(goal)}
     />
   ));
@@ -422,13 +459,13 @@ export function HomeScreen() {
               <View style={styles.greetingText}>
                 <Text
                   numberOfLines={2}
-                  style={td(T.h2, { fontSize: 22, letterSpacing: -0.44, lineHeight: 25, color: color.text })}
+                  style={td(T.h2, { fontSize: 22, letterSpacing: -0.44, lineHeight: 25, color: theme.color.text })}
                 >
                   {greetingForHour()}, {formatFirstName(displayName)}
                 </Text>
                 <Text
                   numberOfLines={1}
-                  style={td(T.meta, { fontSize: 13, fontWeight: "400", color: home.subtle, marginTop: 3 })}
+                  style={td(T.meta, { fontSize: 13, fontWeight: "400", color: theme.home.subtle, marginTop: 3 })}
                 >
                   {formatGreetingDate()}
                 </Text>
@@ -439,17 +476,40 @@ export function HomeScreen() {
                 onPress={() => navigation.navigate("Main", { screen: "Settings" })}
                 style={styles.avatar}
               >
-                <Text style={td(T.body, { fontSize: 15, fontWeight: "800", color: home.avatarInk })}>
-                  {displayName.charAt(0).toUpperCase()}
-                </Text>
+                {/*
+                  The Google account's own picture when there is one. It has been arriving all
+                  along — the backend reads `picture` off the Firebase token at sign-up and
+                  returns it as avatarUrl — and nothing ever rendered it.
+
+                  The initial stays as the fallback, and it is a real one rather than a
+                  placeholder: a phone-only account has no picture, Google doesn't always supply
+                  one, and `avatarUrl` is only written when the account is first created, so any
+                  account that predates its Google link still has none. `onError` falls back too,
+                  because these URLs are hotlinked to Google's CDN and can start 404ing.
+                */}
+                {avatarUrl ? (
+                  <Image
+                    source={{ uri: avatarUrl }}
+                    style={styles.avatarImage}
+                    accessibilityIgnoresInvertColors
+                    onError={() => setAvatarFailed(true)}
+                  />
+                ) : (
+                  <Text style={td(T.body, { fontSize: 15, fontWeight: "800", color: theme.home.avatarInk })}>
+                    {displayName.charAt(0).toUpperCase()}
+                  </Text>
+                )}
               </Pressable>
             </View>
 
             <HomeStatStrip streak={currentStreak} points={pointsToday} focusMinutes={focusMinutesToday} />
 
+            {/* Silent otherwise: nothing else on Home hints that a reminder won't arrive. */}
+            <NotificationBlockBanner />
+
             <HomeRuleHeader
               label="GOALS"
-              ink={color.textLabel}
+              ink={theme.color.textLabel}
               style={styles.goalsHeader}
               trailing={
                 <TourTarget step="goal">
@@ -457,7 +517,7 @@ export function HomeScreen() {
                 </TourTarget>
               }
             />
-            {goals.length > 2 ? (
+            {goalsScroll ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.goalsRow}>
                 {goalCards}
               </ScrollView>
@@ -486,10 +546,10 @@ export function HomeScreen() {
           section.key === "done" ? (
             <HomeListHeader
               label={section.title}
-              ink={color.textLabel}
+              ink={theme.color.textLabel}
               count={section.count}
-              countBg={home.countDoneBg}
-              countInk={home.countDoneInk}
+              countBg={theme.home.countDoneBg}
+              countInk={theme.home.countDoneInk}
               collapsed={!!collapsedSections.done}
               collapsedLabel="Show"
               expandedLabel="Hide"
@@ -499,10 +559,10 @@ export function HomeScreen() {
           ) : (
             <HomeListHeader
               label={section.title}
-              ink={color.amberLabel}
+              ink={theme.color.amberLabel}
               count={section.count}
-              countBg={home.countAmberBg}
-              countInk={home.countAmberInk}
+              countBg={theme.home.countAmberBg}
+              countInk={theme.home.countAmberInk}
               collapsed={!!collapsedSections.todo}
               collapsedLabel="Expand all"
               expandedLabel="Collapse all"
@@ -595,6 +655,7 @@ export function HomeScreen() {
         onSave={handleSaveGoal}
         onDelete={handleDeleteGoal}
         saving={savingGoal}
+        deleting={deleteGoalMutation.isPending}
       />
       <GoalEditSheet
         visible={creatingGoal}
@@ -606,41 +667,49 @@ export function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  listContent: {
-    paddingHorizontal: 18,
-    paddingTop: 6,
-    // Clears the capture button, which rides 40pt above the tab bar and would otherwise sit
-    // over the last row.
-    paddingBottom: 48,
-  },
-  greetingRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-  },
-  greetingText: {
-    flex: 1,
-  },
-  avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: home.avatarBg,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  goalsHeader: {
-    marginTop: 16,
-    marginBottom: 9,
-  },
-  goalsRow: {
-    flexDirection: "row",
-    gap: ROW_GAP,
-  },
-  rowGap: {
-    height: ROW_GAP,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    listContent: {
+      paddingHorizontal: 18,
+      paddingTop: 6,
+      // Clears the capture button, which rides 40pt above the tab bar and would otherwise sit
+      // over the last row.
+      paddingBottom: 48,
+    },
+    greetingRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 12,
+    },
+    greetingText: {
+      flex: 1,
+    },
+    avatar: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      backgroundColor: t.home.avatarBg,
+      alignItems: "center",
+      justifyContent: "center",
+      flexShrink: 0,
+      // So a photo can't paint over the rounded corners — Android ignores a parent's radius
+      // when clipping a child unless the parent says to.
+      overflow: "hidden",
+    },
+    avatarImage: {
+      width: "100%",
+      height: "100%",
+    },
+    goalsHeader: {
+      marginTop: 16,
+      marginBottom: 9,
+    },
+    goalsRow: {
+      flexDirection: "row",
+      gap: ROW_GAP,
+    },
+    rowGap: {
+      height: ROW_GAP,
+    },
+  });

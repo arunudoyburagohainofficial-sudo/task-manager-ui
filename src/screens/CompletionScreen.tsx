@@ -19,7 +19,8 @@ import {
   XpIcon,
 } from "../components";
 import { useCompanion } from "../state/CompanionContext";
-import { color, space, text as t, type as T } from "../theme";
+import { space, text as t, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { celebrationLine } from "../theme/companionCopy";
 import { formatMinutes } from "../utils/format";
 import type { RootStackParamList } from "../navigation/types";
@@ -36,6 +37,8 @@ type Route = RouteProp<RootStackParamList, "Completion">;
  * animation in v1". The moment is carried by copy and colour instead.
  */
 export function CompletionScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { tone } = useCompanion();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Route>();
@@ -61,20 +64,22 @@ export function CompletionScreen() {
           <Ferne size={88} state="celebrate" />
           <H1 style={styles.centered}>Task complete</H1>
 
+          {params.pointsEarned > 0 ? (
           <View style={styles.pointsRow}>
             {/* The handoff's XP mark. This is the one screen with a real points figure to
                 put it against — points are computed server-side per focus session, so
                 nothing else in the app knows a number to show. */}
             <XpIcon size={26} />
-            <Text style={t(T.timer, { fontSize: 40, letterSpacing: -1, color: color.success })}>
+            <Text style={t(T.timer, { fontSize: 40, letterSpacing: -1, color: theme.color.success })}>
               +{params.pointsEarned} XP
             </Text>
-            <InfoTooltip topic="xp" color={color.success} />
+            <InfoTooltip topic="xp" color={theme.color.success} />
           </View>
+          ) : null}
 
           {streak ? (
             <Card style={styles.bubble}>
-              <Meta style={{ color: color.textBody }}>
+              <Meta style={{ color: theme.color.textBody }}>
                 {celebrationLine(tone, streak.currentStreak, params.pointsEarned)}
               </Meta>
             </Card>
@@ -83,7 +88,7 @@ export function CompletionScreen() {
           {streak && streak.currentStreak > 0 ? (
             <View style={styles.streakRow}>
               <StreakIconInline size={14} />
-              <Body style={{ fontWeight: "700", color: color.text }}>{streak.currentStreak}-day streak</Body>
+              <Body style={{ fontWeight: "700", color: theme.color.text }}>{streak.currentStreak}-day streak</Body>
               <InfoTooltip topic="streak" />
             </View>
           ) : null}
@@ -92,13 +97,13 @@ export function CompletionScreen() {
             <View style={styles.progressBlock}>
               <View style={styles.progressHeader}>
                 <Meta>🎯 {goal.name}</Meta>
-                <Meta style={{ fontWeight: "800", color: color.text }}>
+                <Meta style={{ fontWeight: "800", color: theme.color.text }}>
                   {goal.totalDaysActive} of {goal.targetDays} days
                 </Meta>
               </View>
               <ProgressBar
                 pct={Math.min(100, (goal.totalDaysActive / Math.max(1, goal.targetDays)) * 100)}
-                fill={goal.color ?? color.goal}
+                fill={goal.color ?? theme.color.goal}
               />
             </View>
           ) : null}
@@ -110,7 +115,7 @@ export function CompletionScreen() {
                   <Meta>Weekly progress</Meta>
                   <InfoTooltip topic="weeklyProgress" />
                 </View>
-                <Meta style={{ fontWeight: "800", color: color.text }}>
+                <Meta style={{ fontWeight: "800", color: theme.color.text }}>
                   {weekly.tasksCompleted} of {weekly.weeklyGoal} tasks
                 </Meta>
               </View>
@@ -120,18 +125,18 @@ export function CompletionScreen() {
 
           <Card style={styles.statsCard}>
             <View style={styles.statItem}>
-              <Body style={{ fontWeight: "800", color: color.text }}>
+              <Body style={{ fontWeight: "800", color: theme.color.text }}>
                 {formatMinutes(Math.round(params.durationSeconds / 60))}
               </Body>
-              <Meta style={{ color: color.textFaint }}>time spent</Meta>
+              <Meta style={{ color: theme.color.textFaint }}>time spent</Meta>
             </View>
             <View style={styles.statItem}>
-              <Body style={{ fontWeight: "800", color: color.success }}>{params.pointsEarned}</Body>
-              <Meta style={{ color: color.textFaint }}>points</Meta>
+              <Body style={{ fontWeight: "800", color: theme.color.success }}>{params.pointsEarned}</Body>
+              <Meta style={{ color: theme.color.textFaint }}>points</Meta>
             </View>
             <View style={styles.statItem}>
-              <Body style={{ fontWeight: "800", color: color.text }}>{weekly?.totalFocusTimeMinutes ?? 0}</Body>
-              <Meta style={{ color: color.textFaint }}>focus min this week</Meta>
+              <Body style={{ fontWeight: "800", color: theme.color.text }}>{weekly?.totalFocusTimeMinutes ?? 0}</Body>
+              <Meta style={{ color: theme.color.textFaint }}>focus min this week</Meta>
             </View>
           </Card>
         </ScrollView>
@@ -144,63 +149,64 @@ export function CompletionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: space.gutter,
-    paddingTop: space.lg,
-    paddingBottom: space.base,
-    alignItems: "center",
-    gap: space.base,
-  },
-  centered: {
-    textAlign: "center",
-  },
-  pointsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.sm,
-  },
-  bubble: {
-    paddingVertical: 11,
-    paddingHorizontal: 13,
-  },
-  streakRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  progressBlock: {
-    width: "100%",
-    gap: 6,
-  },
-  progressHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: space.sm,
-  },
-  progressLabel: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  statsCard: {
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: space.sm,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: "center",
-    gap: 2,
-  },
-  footer: {
-    paddingHorizontal: space.gutter,
-    paddingTop: space.base,
-    paddingBottom: 18,
-  },
-});
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    flex: {
+      flex: 1,
+    },
+    content: {
+      paddingHorizontal: space.gutter,
+      paddingTop: space.lg,
+      paddingBottom: space.base,
+      alignItems: "center",
+      gap: space.base,
+    },
+    centered: {
+      textAlign: "center",
+    },
+    pointsRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space.sm,
+    },
+    bubble: {
+      paddingVertical: 11,
+      paddingHorizontal: 13,
+    },
+    streakRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    progressBlock: {
+      width: "100%",
+      gap: 6,
+    },
+    progressHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: space.sm,
+    },
+    progressLabel: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+    },
+    statsCard: {
+      width: "100%",
+      flexDirection: "row",
+      justifyContent: "space-between",
+      gap: space.sm,
+    },
+    statItem: {
+      flex: 1,
+      alignItems: "center",
+      gap: 2,
+    },
+    footer: {
+      paddingHorizontal: space.gutter,
+      paddingTop: space.base,
+      paddingBottom: 18,
+    },
+  });

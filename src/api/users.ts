@@ -1,6 +1,11 @@
 import { apiRequest } from "./client";
 import type { UpdateUserRequest, UserDto } from "./types";
 
+/** The account as the server has it — a name or goal changed on another device included. */
+export function getMe(): Promise<UserDto> {
+  return apiRequest<UserDto>(`/users/me`);
+}
+
 export function updateWeeklyGoal(goal: number): Promise<UserDto> {
   return apiRequest<UserDto>(`/users/me/weekly-goal`, {
     method: "PATCH",

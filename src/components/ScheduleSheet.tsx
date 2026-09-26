@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import type { NotificationSpec, RecurrenceRule } from "../api/types";
-import { color, font, radius, size, space, text as t, type as T } from "../theme";
+import { font, radius, size, space, text as t, type as T } from "../theme";
+import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import {
   RECURRENCE_OPTIONS,
   WEEKDAYS,
@@ -23,6 +24,7 @@ import {
   type NotifyVerdict,
 } from "../notifications/schedulingLogic";
 import { BottomSheet } from "./BottomSheet";
+import { PrimaryAction, SecondaryAction } from "./surfaces";
 import { Button } from "./Button";
 import { AlertGlyph, BellGlyph, CalendarGlyph, RepeatIcon } from "./icons";
 import { Stepper } from "./primitives";
@@ -193,17 +195,21 @@ type ChoiceProps = { label: string; active: boolean; onPress: () => void };
 
 /** An equal share of a four-across row — the When shortcuts. */
 function GridChip({ label, active, onPress }: ChoiceProps) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable
       accessibilityRole="radio"
       accessibilityState={{ selected: active }}
+      aria-checked={active}
       onPress={onPress}
       style={[styles.gridChip, active && styles.pillOn]}
     >
       <Text
         style={t(T.meta, {
+          fontSize: 14,
           fontWeight: active ? "800" : "700",
-          color: active ? color.selectedText : color.textMuted,
+          color: active ? theme.surface.chipSelInk : theme.surface.chipInk,
         })}
         numberOfLines={1}
       >
@@ -215,18 +221,22 @@ function GridChip({ label, active, onPress }: ChoiceProps) {
 
 /** One of the five mutually exclusive repeat frequencies, inside the shared track. */
 function SegmentItem({ label, active, onPress }: ChoiceProps) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable
       accessibilityRole="radio"
       accessibilityState={{ selected: active }}
+      aria-checked={active}
       onPress={onPress}
       style={[styles.segmentItem, active && styles.segmentItemOn]}
     >
       <Text
         style={t(T.eyebrow, {
+          fontSize: 12,
           letterSpacing: 0,
           textTransform: "none",
-          color: active ? color.selectedText : color.textMuted,
+          color: active ? theme.surface.segActiveInk : theme.surface.segIdleInk,
         })}
         numberOfLines={1}
       >
@@ -238,17 +248,21 @@ function SegmentItem({ label, active, onPress }: ChoiceProps) {
 
 /** A standalone choice that sizes to its own label — the qualifiers inside the rail. */
 function PillChip({ label, active, onPress }: ChoiceProps) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable
       accessibilityRole="radio"
       accessibilityState={{ selected: active }}
+      aria-checked={active}
       onPress={onPress}
       style={[styles.pill, active && styles.pillOn]}
     >
       <Text
         style={t(T.meta, {
+          fontSize: 13,
           fontWeight: active ? "800" : "700",
-          color: active ? color.selectedText : color.textMuted,
+          color: active ? theme.surface.chipSelInk : theme.surface.chipInk,
         })}
       >
         {label}
@@ -279,6 +293,8 @@ export function ScheduleSheet({
   onClear,
   taskName,
 }: ScheduleSheetProps) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const today = startOfDay(new Date());
   const tomorrow = addDays(today, 1);
 
@@ -293,10 +309,25 @@ export function ScheduleSheet({
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [clockTime, setClockTime] = useState(nextRoundHalfHour);
 
-  // Reset each time the sheet opens, seeding from what the task already has — otherwise
-  // stale state from a previous open leaks through.
+  /*
+   * Reset each time the sheet *opens*, seeding from what the task already has — otherwise stale
+   * state from a previous open leaks through.
+   *
+   * Only on opening, never while open. This used to re-seed whenever the task's stored values
+   * changed, and they change underneath an open sheet more than you'd think: a save updates the
+   * task optimistically and a failure rolls it back — so a failed save snapped the sheet back to
+   * the old values and threw away everything the person had chosen — and the reminders list is
+   * refetched in the background on every return to the app, so switching apps mid-edit did the
+   * same. What someone is in the middle of choosing belongs to them until they save or cancel.
+   */
+  const seededForThisOpen = useRef(false);
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      seededForThisOpen.current = false;
+      return;
+    }
+    if (seededForThisOpen.current) return;
+    seededForThisOpen.current = true;
     setShowDatePicker(false);
     setHasDate(!!initial?.scheduledFor);
     // "T00:00:00" keeps this parsed as local midnight; a bare "YYYY-MM-DD" parses as UTC
@@ -423,7 +454,22 @@ export function ScheduleSheet({
     );
   }
 
+  /*
+   * A save already on its way. The Save button disables itself while `submitting`, but only once
+   * the screen redraws — a second tap before then went through, and on a slow connection a double
+   * tap sent the schedule twice. A ref blocks it the instant the first tap lands.
+   */
+  const saveInFlight = useRef(false);
+  useEffect(() => {
+    if (!submitting) saveInFlight.current = false;
+  }, [submitting]);
+  useEffect(() => {
+    if (!visible) saveInFlight.current = false;
+  }, [visible]);
+
   function handleSave() {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
     onSubmit({
       scheduledFor: hasDate ? toLocalDateString(selectedDate) : null,
       // Can't be on without a date — the control never lets it happen, and this makes that
@@ -490,7 +536,9 @@ export function ScheduleSheet({
   /** The same date, lower-cased for the middle of a sentence: "starting today (Thu)". */
   const startPhraseLower = () => {
     const s = startPhrase();
-    return s.charAt(0).toLowerCase() + s.slice(1);
+    // Only "Today"/"Tomorrow" become ordinary words mid-sentence. A date keeps its capital —
+    // lower-casing every phrase turned "starting Mon, Sep 28" into "starting mon, Sep 28".
+    return /^(Today|Tomorrow) /.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s;
   };
 
   /** "today" / "tomorrow" / "Tue" — a short back-reference once the date's already been named. */
@@ -543,29 +591,27 @@ export function ScheduleSheet({
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      background={color.screen}
+      background={theme.surface.sheetSurface}
       footer={
         <>
-          <Pressable accessibilityRole="button" onPress={onClose} style={styles.cancel} hitSlop={6}>
-            <Text style={t(T.label, { color: color.textMuted })}>Cancel</Text>
-          </Pressable>
-          <Button label="Save schedule" loading={submitting} onPress={handleSave} style={styles.save} />
+          <SecondaryAction label="Cancel" onPress={onClose} />
+          <PrimaryAction label="Save schedule" loading={submitting} onPress={handleSave} style={styles.save} />
         </>
       }
     >
       <View style={styles.heading}>
-        <Text style={t(T.h2, { color: color.text, letterSpacing: -0.4 })}>
+        <Text style={t(T.h2, { color: theme.color.text, letterSpacing: -0.4 })}>
           {initial?.scheduledFor || initial?.notifications?.length ? "Edit schedule" : "Set a schedule"}
         </Text>
-        {taskName ? <Meta style={{ color: color.textMuted, marginTop: 3 }}>{taskName}</Meta> : null}
+        {taskName ? <Meta style={{ color: theme.color.textMuted, marginTop: 3 }}>{taskName}</Meta> : null}
       </View>
 
       {/* ───────────────── WHEN ───────────────── */}
       <View style={styles.card}>
-        <Text style={t(T.eyebrow, { color: color.textMuted })}>When</Text>
+        <Text style={t(T.eyebrow, { color: theme.color.textMuted })}>When</Text>
 
-        {/* Four across, each an equal share of the row — the design's grid, which keeps the
-            labels reading as one set of choices rather than a wrapped pile of pills. */}
+        {/* Two columns, not four: the final screens widened these so each one clears a 44pt
+            target on a 375 screen, and they read as one set either way. */}
         <View style={styles.grid4}>
           <GridChip
             label="No date"
@@ -617,7 +663,7 @@ export function ScheduleSheet({
         )}
 
         <View style={styles.hint}>
-          <CalendarGlyph size={14} color={color.textFaint} />
+          <CalendarGlyph size={14} color={theme.color.textFaint} />
           <Meta style={styles.hintText}>
             {!hasDate ? (
               <>
@@ -640,8 +686,8 @@ export function ScheduleSheet({
       {/* ───────────────── REPEAT ───────────────── */}
       <View style={styles.card}>
         <View style={styles.cardHead}>
-          <RepeatIcon size={14} color={color.textFaint} />
-          <Text style={t(T.eyebrow, { color: color.textMuted })}>Repeat</Text>
+          <RepeatIcon size={14} color={theme.color.textFaint} />
+          <Text style={t(T.eyebrow, { color: theme.color.textMuted })}>Repeat</Text>
         </View>
 
         {hasDate ? (
@@ -671,7 +717,7 @@ export function ScheduleSheet({
                 <View style={styles.subBlock}>
                   {showInterval ? (
                     <View>
-                      <Text style={t(T.eyebrow, { color: color.textMuted, letterSpacing: 0.9 })}>Every</Text>
+                      <Text style={t(T.eyebrow, { color: theme.color.textMuted, letterSpacing: 0.9 })}>Every</Text>
                       <View style={styles.subRow}>
                         <Stepper
                           value={repeat.interval}
@@ -680,14 +726,14 @@ export function ScheduleSheet({
                           max={30}
                           label="repeat interval"
                         />
-                        <Meta style={{ color: color.textBody }}>{intervalUnit(repeat)}</Meta>
+                        <Meta style={{ color: theme.color.textBody }}>{intervalUnit(repeat)}</Meta>
                       </View>
                     </View>
                   ) : null}
 
                   {repeat.freq === "WEEKLY" ? (
                     <View>
-                      <Text style={t(T.eyebrow, { color: color.textMuted, letterSpacing: 0.9 })}>On these days</Text>
+                      <Text style={t(T.eyebrow, { color: theme.color.textMuted, letterSpacing: 0.9 })}>On these days</Text>
                       <View style={styles.dayRow}>
                         {WEEKDAYS.map((d) => {
                           const on = repeat.byDay.includes(d.code);
@@ -696,6 +742,7 @@ export function ScheduleSheet({
                               key={d.code}
                               accessibilityRole="checkbox"
                               accessibilityState={{ checked: on }}
+                              aria-checked={on}
                               accessibilityLabel={d.short}
                               onPress={() => {
                                 const byDay: Weekday[] = on
@@ -710,7 +757,7 @@ export function ScheduleSheet({
                               <Text
                                 style={t(T.eyebrow, {
                                   letterSpacing: 0,
-                                  color: on ? color.selectedText : color.textMuted,
+                                  color: on ? theme.color.selectedText : theme.color.textMuted,
                                 })}
                               >
                                 {d.short}
@@ -724,7 +771,7 @@ export function ScheduleSheet({
 
                   {repeat.freq === "MONTHLY" ? (
                     <View>
-                      <Text style={t(T.eyebrow, { color: color.textMuted, letterSpacing: 0.9 })}>On</Text>
+                      <Text style={t(T.eyebrow, { color: theme.color.textMuted, letterSpacing: 0.9 })}>On</Text>
                       <View style={styles.subRow}>
                         {/* Both labels read off the *stored* anchor, never off the currently
                             selected date. Reading the date instead let the chip say "day 9"
@@ -736,7 +783,7 @@ export function ScheduleSheet({
                           onPress={() => setRepeat({ ...repeat, nth: null, byMonthDay: selectedDate.getDate() })}
                         />
                         <PillChip
-                          label={repeat.nth ? nthLabelOf(repeat.nth) : `The ${nthLabel(selectedDate)}`}
+                          label={repeat.nth ? nthLabelOf(repeat.nth) : nthLabel(selectedDate)}
                           active={!!repeat.nth}
                           onPress={() => setRepeat({ ...repeat, nth: nthOf(selectedDate), byMonthDay: null })}
                         />
@@ -745,7 +792,7 @@ export function ScheduleSheet({
                   ) : null}
 
                   <View>
-                    <Text style={t(T.eyebrow, { color: color.textMuted, letterSpacing: 0.9 })}>Ends</Text>
+                    <Text style={t(T.eyebrow, { color: theme.color.textMuted, letterSpacing: 0.9 })}>Ends</Text>
                     <View style={styles.subRow}>
                       <PillChip
                         label="Forever"
@@ -772,25 +819,25 @@ export function ScheduleSheet({
                 </View>
 
                 <View style={styles.summary}>
-                  <Meta style={{ color: color.textBody, lineHeight: 17 }}>{summaryLine(repeat)}</Meta>
+                  <Meta style={{ color: theme.color.textBody, lineHeight: 17 }}>{summaryLine(repeat)}</Meta>
                 </View>
               </>
             ) : null}
           </>
         ) : (
-          <Meta style={{ color: color.textFaint }}>Pick a day above to make this repeat.</Meta>
+          <Meta style={{ color: theme.color.textFaint }}>Pick a day above to make this repeat.</Meta>
         )}
       </View>
 
       {/* ───────────────── NOTIFY ───────────────── */}
       <View style={styles.card}>
         <View style={styles.cardHead}>
-          <BellGlyph size={14} color={color.textFaint} />
-          <Text style={t(T.eyebrow, { color: color.textMuted })}>Notify me</Text>
+          <BellGlyph size={14} color={theme.color.textFaint} />
+          <Text style={t(T.eyebrow, { color: theme.color.textMuted })}>Notify me</Text>
         </View>
 
         {notifications.length === 0 ? (
-          <Meta style={{ color: color.textFaint }}>Off — no notification.</Meta>
+          <Meta style={{ color: theme.color.textFaint }}>Off — no notification.</Meta>
         ) : null}
 
         {/* One bordered group per notification, with its own note attached underneath rather
@@ -813,10 +860,10 @@ export function ScheduleSheet({
                     setEditingIndex(editingIndex === index ? null : index);
                   }}
                 >
-                  <Text style={t(T.bodyLg, { fontWeight: "800", color: note.bad ? color.danger : color.text })}>
+                  <Text style={t(T.bodyLg, { fontWeight: "800", color: note.bad ? theme.color.danger : theme.color.text })}>
                     {formatClock(n.time)}
                   </Text>
-                  <Meta style={{ color: color.textMuted, marginTop: 1 }}>{leadLabel(n, hasDate)}</Meta>
+                  <Meta style={{ color: theme.color.textMuted, marginTop: 1 }}>{leadLabel(n, hasDate)}</Meta>
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -828,7 +875,7 @@ export function ScheduleSheet({
                   }}
                   style={styles.remove}
                 >
-                  <Text style={t(T.meta, { fontWeight: "800", color: color.selectedText })}>✕</Text>
+                  <Text style={t(T.meta, { fontWeight: "800", color: theme.color.selectedText })}>✕</Text>
                 </Pressable>
               </View>
 
@@ -837,12 +884,12 @@ export function ScheduleSheet({
                   quiet treatment as any other explanatory line. */}
               {note.bad ? (
                 <View style={styles.notifyAlert}>
-                  <AlertGlyph size={14} color={color.danger} />
-                  <Meta style={{ flex: 1, color: color.danger, fontWeight: "700", lineHeight: 17 }}>{note.text}</Meta>
+                  <AlertGlyph size={14} color={theme.color.danger} />
+                  <Meta style={{ flex: 1, color: theme.color.danger, fontWeight: "700", lineHeight: 17 }}>{note.text}</Meta>
                 </View>
               ) : note.text ? (
                 <View style={styles.notifyNote}>
-                  <Meta style={{ color: color.textFaint, lineHeight: 17 }}>{note.text}</Meta>
+                  <Meta style={{ color: theme.color.textFaint, lineHeight: 17 }}>{note.text}</Meta>
                 </View>
               ) : null}
             </View>
@@ -870,7 +917,7 @@ export function ScheduleSheet({
 
             {Platform.OS === "android" ? (
               <Pressable accessibilityRole="button" onPress={openAndroidTimePicker} style={styles.androidTimeButton}>
-                <Text style={t(T.h2, { color: color.text })}>
+                <Text style={t(T.h2, { color: theme.color.text })}>
                   {clockTime.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                 </Text>
               </Pressable>
@@ -909,7 +956,7 @@ export function ScheduleSheet({
                   }}
                   style={styles.add}
                 >
-                  <Text style={t(T.meta, { fontWeight: "700", color: color.textMuted })}>
+                  <Text style={t(T.meta, { fontWeight: "700", color: theme.color.textMuted })}>
                     {notifications.length === 0 && preset.daysBefore === 0 ? "Notify me" : `+ ${preset.label}`}
                   </Text>
                 </Pressable>
@@ -917,7 +964,7 @@ export function ScheduleSheet({
             })}
           </View>
         ) : (
-          <Meta style={{ color: color.textFaint }}>
+          <Meta style={{ color: theme.color.textFaint }}>
             {MAX_NOTIFICATIONS} notifications is the limit for one task.
           </Meta>
         )}
@@ -928,206 +975,215 @@ export function ScheduleSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  heading: {
-    paddingBottom: 2,
-  },
-  /** The white surfaces the sheet is built from — they only read as cards against the cream
-      ground the sheet asks BottomSheet for. */
-  card: {
-    backgroundColor: color.card,
-    borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: 14,
-    padding: space.card,
-    gap: space.base,
-  },
-  cardHead: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.sm,
-  },
+const makeStyles = (t: Tokens) =>
+  StyleSheet.create({
+    heading: {
+      paddingBottom: 2,
+    },
+    /** The white surfaces the sheet is built from — they only read as cards against the cream
+        ground the sheet asks BottomSheet for. */
+    card: {
+      backgroundColor: t.color.card,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      borderRadius: 14,
+      padding: space.card,
+      gap: space.base,
+    },
+    cardHead: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space.sm,
+    },
 
-  /* ---- When ---- */
-  grid4: {
-    flexDirection: "row",
-    gap: 6,
-  },
-  gridChip: {
-    flex: 1,
-    minHeight: size.minTouch,
-    paddingHorizontal: 2,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  hint: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.sm,
-    paddingTop: space.base,
-    borderTopWidth: 1,
-    borderTopColor: color.divider,
-  },
-  hintText: {
-    flex: 1,
-    color: color.textMuted,
-  },
-  hintStrong: {
-    fontFamily: font.black,
-    color: color.textBody,
-  },
+    /* ---- When ---- */
+    grid4: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+    /** Two across, not four: 44pt targets don't fit four to a 375 screen (design 6a). */
+    gridChip: {
+      // Two to a row: a basis just under half, so two fit beside the 8pt gap and a third wraps.
+      flexBasis: "47%",
+      flexGrow: 1,
+      minHeight: 50,
+      paddingHorizontal: 2,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: radius.chip,
+      borderWidth: 1,
+      borderColor: t.surface.chipBorder,
+      backgroundColor: t.surface.chipBg,
+    },
+    hint: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space.sm,
+      paddingTop: space.base,
+      borderTopWidth: 1,
+      borderTopColor: t.color.divider,
+    },
+    hintText: {
+      flex: 1,
+      color: t.color.textMuted,
+    },
+    hintStrong: {
+      fontFamily: font.black,
+      color: t.color.textBody,
+    },
 
-  /* ---- Repeat ---- */
-  segment: {
-    flexDirection: "row",
-    gap: 3,
-    backgroundColor: color.track,
-    borderRadius: radius.track,
-    padding: 3,
-  },
-  segmentItem: {
-    flex: 1,
-    minHeight: 34,
-    paddingHorizontal: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.tab,
-    borderWidth: 1.5,
-    borderColor: "transparent",
-  },
-  segmentItemOn: {
-    backgroundColor: color.card,
-    borderColor: color.interactive,
-  },
-  /** The rail that ties every qualifier back to the frequency it belongs to. */
-  subBlock: {
-    paddingLeft: 11,
-    borderLeftWidth: 2,
-    borderLeftColor: color.divider,
-    gap: space.card,
-  },
-  subRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 6,
-    marginTop: space.sm,
-  },
-  dayRow: {
-    flexDirection: "row",
-    gap: 4,
-    marginTop: space.sm,
-  },
-  day: {
-    flex: 1,
-    aspectRatio: 1,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: color.border,
-    backgroundColor: color.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  dayOn: {
-    borderColor: color.interactive,
-    backgroundColor: color.selectedTint,
-  },
-  pill: {
-    minHeight: 38,
-    paddingHorizontal: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  pillOn: {
-    borderWidth: 1.5,
-    borderColor: color.interactive,
-    backgroundColor: color.selectedTint,
-  },
-  summary: {
-    backgroundColor: color.track,
-    borderRadius: radius.track,
-    padding: space.base,
-  },
+    /* ---- Repeat ---- */
+    segment: {
+      flexDirection: "row",
+      gap: 3,
+      backgroundColor: t.color.track,
+      borderRadius: radius.track,
+      padding: 3,
+    },
+    segmentItem: {
+      flex: 1,
+      minHeight: 34,
+      paddingHorizontal: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: radius.tab,
+      borderWidth: 1.5,
+      borderColor: "transparent",
+    },
+    segmentItemOn: {
+      backgroundColor: t.surface.segActive,
+      borderColor: "transparent",
+      boxShadow: [{ offsetX: 0, offsetY: 1, blurRadius: 3, color: t.surface.segActiveShadow }],
+    },
+    /** The rail that ties every qualifier back to the frequency it belongs to. */
+    subBlock: {
+      paddingLeft: 11,
+      borderLeftWidth: 2,
+      borderLeftColor: t.surface.rule,
+      gap: space.card,
+    },
+    subRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: 6,
+      marginTop: space.sm,
+    },
+    dayRow: {
+      flexDirection: "row",
+      gap: 4,
+      marginTop: space.sm,
+    },
+    day: {
+      flex: 1,
+      aspectRatio: 1,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      backgroundColor: t.color.card,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    dayOn: {
+      borderColor: t.color.interactive,
+      backgroundColor: t.color.selectedTint,
+    },
+    pill: {
+      minHeight: 42,
+      paddingHorizontal: 20,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: radius.chip,
+      borderWidth: 1,
+      borderColor: t.surface.chipBorder,
+      backgroundColor: t.surface.chipBg,
+    },
+    pillOn: {
+      borderWidth: 1.5,
+      borderColor: t.surface.chipSelBorder,
+      backgroundColor: t.surface.chipSelBg,
+    },
+    summary: {
+      backgroundColor: t.surface.summary,
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 13,
+    },
 
-  /* ---- Notify ---- */
-  notify: {
-    borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: radius.card,
-    overflow: "hidden",
-  },
-  notifyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.base,
-    padding: space.base,
-  },
-  notifyText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  remove: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: color.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  /** Attached to the row it describes, inside the same border, so the two can't be read apart. */
-  notifyAlert: {
-    flexDirection: "row",
-    gap: space.sm,
-    paddingHorizontal: space.base,
-    paddingVertical: space.md,
-    backgroundColor: color.selectedTint,
-    borderTopWidth: 1,
-    borderTopColor: color.border,
-  },
-  notifyNote: {
-    paddingHorizontal: space.base,
-    paddingBottom: space.md,
-    marginTop: -space.sm,
-  },
-  addRow: {
-    flexDirection: "row",
-    gap: 6,
-  },
-  add: {
-    flex: 1,
-    minHeight: size.minTouch,
-    paddingHorizontal: 4,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: color.border,
-  },
-  androidTimeButton: {
-    minHeight: size.button + 2,
-    paddingHorizontal: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: color.border,
-    backgroundColor: color.card,
-  },
+    /* ---- Notify ---- */
+    notify: {
+      borderWidth: 1,
+      borderColor: t.color.border,
+      borderRadius: radius.card,
+      overflow: "hidden",
+    },
+    notifyRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space.base,
+      padding: space.base,
+    },
+    notifyText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    remove: {
+      width: 28,
+      height: 28,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    /** Attached to the row it describes, inside the same border, so the two can't be read apart. */
+    notifyAlert: {
+      flexDirection: "row",
+      gap: space.sm,
+      paddingHorizontal: space.base,
+      paddingVertical: space.md,
+      backgroundColor: t.color.selectedTint,
+      borderTopWidth: 1,
+      borderTopColor: t.color.border,
+    },
+    notifyNote: {
+      paddingHorizontal: space.base,
+      paddingBottom: space.md,
+      marginTop: -space.sm,
+    },
+    addRow: {
+      flexDirection: "row",
+      gap: 6,
+    },
+    add: {
+      flex: 1,
+      minHeight: size.minTouch,
+      paddingHorizontal: 4,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderStyle: "dashed",
+      borderColor: t.color.border,
+    },
+    androidTimeButton: {
+      minHeight: size.button + 2,
+      paddingHorizontal: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: t.color.border,
+      backgroundColor: t.color.card,
+    },
 
-  /* ---- Footer ---- */
-  cancel: {
-    paddingVertical: 12,
-    paddingHorizontal: 6,
-  },
-  save: {
-    flex: 1,
-  },
-});
+    /* ---- Footer ---- */
+    cancel: {
+      paddingVertical: 12,
+      paddingHorizontal: 6,
+    },
+    save: {
+      flex: 1,
+    },
+  });

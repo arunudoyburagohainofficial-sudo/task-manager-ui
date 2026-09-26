@@ -3,18 +3,18 @@ import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import {
   useFonts,
-  PlusJakartaSans_400Regular,
-  PlusJakartaSans_500Medium,
-  PlusJakartaSans_600SemiBold,
-  PlusJakartaSans_700Bold,
-  PlusJakartaSans_800ExtraBold,
-} from "@expo-google-fonts/plus-jakarta-sans";
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+  Inter_800ExtraBold,
+} from "@expo-google-fonts/inter";
 import { NavigationContainer } from "@react-navigation/native";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { View } from "react-native";
 import { persistOptions, queryClient } from "./src/api/queryClient";
-import { color } from "./src/theme";
+import { ThemeProvider, useTheme } from "./src/state/ThemeContext";
 import { SessionProvider, useSession } from "./src/state/SessionContext";
 import { PreferencesProvider } from "./src/state/PreferencesContext";
 import { CompanionProvider } from "./src/state/CompanionContext";
@@ -58,19 +58,36 @@ export default function App() {
   // 600/700/800 carry most of the UI; 400 is the date under Home's greeting and 500 the quiet
   // body text on Task Detail.
   const [fontsLoaded] = useFonts({
-    PlusJakartaSans_400Regular,
-    PlusJakartaSans_500Medium,
-    PlusJakartaSans_600SemiBold,
-    PlusJakartaSans_700Bold,
-    PlusJakartaSans_800ExtraBold,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    Inter_800ExtraBold,
   });
 
   if (!fontsLoaded) return null;
 
+  // ThemeProvider sits outermost: everything below it, including the root background and the
+  // status bar, has to follow the active palette.
+  return (
+    <ThemeProvider>
+      <AppShell />
+    </ThemeProvider>
+  );
+}
+
+/**
+ * Everything under the theme. Separate from App() for the same reason AppContent is separate from
+ * this: it needs to *read* a provider that App() renders, and a component can't consume its own
+ * context.
+ */
+function AppShell() {
+  const t = useTheme();
+
   return (
     // Root background matches the screen token so nothing flashes white behind a
     // transition or during the splash handoff.
-    <View style={{ flex: 1, backgroundColor: color.screen }}>
+    <View style={{ flex: 1, backgroundColor: t.color.screen }}>
       <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
         <SafeAreaProvider>
           <PreferencesProvider>
@@ -84,7 +101,8 @@ export default function App() {
                   {/* Sibling of the navigator, not inside it: the walkthrough spotlights
                       elements across several screens and has to sit above the tab bar too. */}
                   <TourOverlay />
-                  <StatusBar style="dark" />
+                  {/* Dark ground needs light status-bar glyphs, and vice versa. */}
+                  <StatusBar style={t.isDark ? "light" : "dark"} />
                   </ToastProvider>
                 </TourProvider>
               </SessionProvider>
