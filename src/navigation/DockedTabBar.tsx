@@ -63,7 +63,10 @@ function CaptureButton({ onPress }: { onPress: () => void }) {
 
   return (
     <View style={styles.captureColumn}>
-      <TourTarget step="capture">
+      {/* alignSelf so the wrapper hugs the round button instead of stretching to the column's
+          width — a full-width wrapper measured as a wide rectangle, and the "circle" shape then
+          drew a pill that clipped Ferne's ears. */}
+      <TourTarget step="capture" shape="circle" style={styles.captureTourTarget}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Capture tasks"
@@ -212,10 +215,19 @@ const makeStyles = (t: Tokens) =>
       alignItems: "center",
       gap: 2,
     },
-    captureButton: {
+    captureTourTarget: {
+      // Sized explicitly to the button rather than left to shrink-wrap. A wrapper that takes
+      // the column's full width measures as a wide rectangle, and "circle" then draws a pill
+      // that clips Ferne's ears. The lift is mirrored so the wrapper sits over the disc, which
+      // protrudes above the bar.
       width: CAPTURE_SIZE,
       height: CAPTURE_SIZE,
       marginTop: -CAPTURE_LIFT,
+      alignSelf: "center",
+    },
+    captureButton: {
+      width: CAPTURE_SIZE,
+      height: CAPTURE_SIZE,
       alignItems: "center",
       justifyContent: "flex-end",
     },

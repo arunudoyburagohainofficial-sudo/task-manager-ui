@@ -40,12 +40,45 @@ export interface TargetRect {
  * would just look like a box.
  */
 export type TargetVariant = "control" | "region";
+export type TargetShape = "rounded" | "circle";
 
 interface TourContextValue {
   activeStep: TourStep | null;
   /** Where the active step's highlighted element sits on screen; null until measured. */
   targetRect: TargetRect | null;
   targetVariant: TargetVariant;
+  /**
+   * Whether everything outside the spotlight should swallow touches.
+   *
+   * On by default — the blockers are how a step keeps someone on it. Off where the step's own
+   * control isn't the only thing the user may still need: Capture's second phase spotlights
+   * "Confirm & Organize", and blocking there left the task name they had just typed dimmed and
+   * uneditable, so a typo was unfixable without abandoning the tour.
+   */
+  targetBlocking: boolean;
+  /**
+   * How to round the spotlight. "circle" for a round control — the docked Ferne is a disc, and
+   * a 12px-cornered rectangle around it clipped her ears off at the top.
+   */
+  targetShape: TargetShape;
+  /**
+   * An explicit way forward, offered by the screen when one action of a multi-part step is
+   * done. Capture's step used to jump the spotlight to the continue button on the first
+   * keystroke, which yanked it away mid-word; now the card offers "Next" instead and the user
+   * decides when they've finished typing.
+   */
+  nextAction: (() => void) | null;
+  setNextAction: (fn: (() => void) | null) => void;
+  /**
+   * A control to draw the ring around, when that isn't the same thing as the live area.
+   *
+   * Capture's step needs the whole screen left interactive — the user types in the field and
+   * then taps Confirm & Organize, and the blockers around a "control" hole would swallow the
+   * second of those. So its target is the whole screen as a "region", which draws no ring at
+   * all and left the step pointing at nothing (reported from a device, 2026-09-26). This lets
+   * the screen say "keep all of me live, but ring *this*".
+   */
+  ringRect: TargetRect | null;
   /**
    * Copy supplied by whichever screen owns the current target, overriding the step's own.
    * A step can be reached on more than one screen with a different thing to do on each —
@@ -102,11 +135,14 @@ interface TourContextValue {
    */
   hasInlineSlot: boolean;
   registerInlineSlot: () => () => void;
+  reportRing: (step: TourStep, rect: TargetRect | null) => void;
   reportTarget: (
     step: TourStep,
     rect: TargetRect | null,
     variant?: TargetVariant,
-    body?: string | null
+    body?: string | null,
+    blocking?: boolean,
+    shape?: TargetShape
   ) => void;
   /** Runs the walkthrough again from step one, regardless of it having been finished before. */
   restart: () => void;
@@ -127,6 +163,18 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const [activeStep, setActiveStep] = useState<TourStep | null>(null);
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
   const [targetVariant, setTargetVariant] = useState<TargetVariant>("control");
+  const [targetBlocking, setTargetBlocking] = useState(true);
+  const [targetShape, setTargetShape] = useState<TargetShape>("rounded");
+  const [nextAction, setNextActionState] = useState<(() => void) | null>(null);
+  // Stored in a box: useState treats a bare function as a lazy initialiser and would call it.
+  const setNextAction = useCallback((fn: (() => void) | null) => setNextActionState(() => fn), []);
+  /*
+   * Kept with the step that reported it. The obvious shape — just the rect — can't be cleared
+   * safely: the clearing call happens as the step becomes inactive, so an "only the active
+   * step may write" guard rejects the very call that tidies up, and the ring is left drawn
+   * over whatever occupies those coordinates next.
+   */
+  const [ring, setRing] = useState<{ step: TourStep; rect: TargetRect } | null>(null);
   const [targetBody, setTargetBody] = useState<string | null>(null);
   const [inlineSlots, setInlineSlots] = useState(0);
   const [loaded, setLoaded] = useState(false);
@@ -268,17 +316,33 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       step: TourStep,
       rect: TargetRect | null,
       variant: TargetVariant = "control",
-      body: string | null = null
+      body: string | null = null,
+      blocking: boolean = true,
+      shape: TargetShape = "rounded"
     ) => {
       // Only the active step may move the spotlight — a screen still mounted underneath
       // (Home, while Capture sits on top of it) otherwise fights for it.
       if (activeStepRef.current !== step) return;
       setTargetRect(rect);
       setTargetVariant(variant);
+      setTargetBlocking(blocking);
+      setTargetShape(shape);
       setTargetBody(rect ? body : null);
     },
     []
   );
+
+  /*
+   * No active-step guard, unlike reportTarget: the rect is stored with its step and the
+   * overlay ignores one belonging to a step that isn't showing, so a late report from a
+   * screen still unmounting can't steal the ring. A null from any step clears only its own.
+   */
+  const reportRing = useCallback((step: TourStep, rect: TargetRect | null) => {
+    setRing((prev) => {
+      if (rect) return { step, rect };
+      return prev?.step === step ? null : prev;
+    });
+  }, []);
 
   // Counted rather than a boolean: screens mount and unmount in overlapping order during a
   // navigation transition, and a plain flag would be cleared by the outgoing screen after
@@ -293,6 +357,13 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       activeStep,
       targetRect,
       targetVariant,
+      targetBlocking,
+      targetShape,
+      nextAction,
+      setNextAction,
+      // Only the active step's ring is exposed; a stale one from a screen still unmounting
+      // is ignored rather than drawn over whatever is now at those coordinates.
+      ringRect: ring && ring.step === activeStep ? ring.rect : null,
       targetBody,
       getActiveStep,
       startIfNeeded,
@@ -304,6 +375,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       back,
       skip: finish,
       restart,
+      reportRing,
       reportTarget,
       isWaiting: Boolean(activeStep) && !targetRect,
       hasInlineSlot: inlineSlots > 0,
@@ -313,6 +385,11 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       activeStep,
       targetRect,
       targetVariant,
+      targetBlocking,
+      targetShape,
+      nextAction,
+      setNextAction,
+      ring,
       targetBody,
       getActiveStep,
       startIfNeeded,
@@ -353,6 +430,8 @@ export function TourTarget({
   style,
   variant = "control",
   body,
+  blocking = true,
+  shape = "rounded",
 }: {
   step: TourStep;
   children: React.ReactNode;
@@ -360,6 +439,10 @@ export function TourTarget({
   variant?: TargetVariant;
   /** Overrides the step's copy — see targetBody. Needed where one step has a different action per screen. */
   body?: string;
+  /** False leaves the rest of the screen usable — see targetBlocking. */
+  blocking?: boolean;
+  /** "circle" for a round control — see targetShape. */
+  shape?: TargetShape;
 }) {
   const { activeStep, reportTarget, measureNonce } = useTour();
   const ref = useRef<View>(null);
@@ -385,9 +468,9 @@ export function TourTarget({
        */
       const screen = Dimensions.get("window");
       const fullyOffScreen = y + height <= 0 || y >= screen.height || x + width <= 0 || x >= screen.width;
-      reportTarget(step, fullyOffScreen ? null : { x, y, width, height }, variant, body ?? null);
+      reportTarget(step, fullyOffScreen ? null : { x, y, width, height }, variant, body ?? null, blocking, shape);
     });
-  }, [isActive, step, reportTarget, variant, body]);
+  }, [isActive, step, reportTarget, variant, body, blocking, shape]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -416,6 +499,65 @@ export function TourTarget({
 
   return (
     <View ref={ref} collapsable={false} onLayout={measure} style={style}>
+      {children}
+    </View>
+  );
+}
+
+/**
+ * Marks the one control a step should draw its ring around, without changing what stays
+ * interactive.
+ *
+ * Only needed where those two differ. A `TourTarget variant="control"` already rings itself,
+ * and the blockers around it are the point — they stop the user wandering off-step. But a step
+ * whose instruction spans two controls can't use that: Capture's asks the user to type in the
+ * field *and* then tap Confirm & Organize, so its target is the whole screen as a "region",
+ * which keeps everything live and deliberately draws no ring. That left the step pointing at
+ * nothing at all (seen on a device, 2026-09-26 — the card said "type what you want to work on"
+ * with no indication of where).
+ *
+ * Wrap the primary control in this and it gets the ring while the region keeps the screen live.
+ */
+export function TourRing({
+  step,
+  children,
+  style,
+}: {
+  step: TourStep;
+  children: React.ReactNode;
+  style?: React.ComponentProps<typeof View>["style"];
+}) {
+  const { activeStep, reportRing, measureNonce } = useTour();
+  const ref = useRef<View>(null);
+  const isFocused = useIsFocused();
+  const isActive = activeStep === step && isFocused;
+
+  const measure = useCallback(() => {
+    if (!isActive) return;
+    ref.current?.measureInWindow((x, y, width, height) => {
+      if (width <= 0 || height <= 0) return;
+      const screen = Dimensions.get("window");
+      const offScreen = y + height <= 0 || y >= screen.height || x + width <= 0 || x >= screen.width;
+      reportRing(step, offScreen ? null : { x, y, width, height });
+    });
+  }, [isActive, step, reportRing]);
+
+  useEffect(() => {
+    if (!isActive) {
+      // Clearing on the way out matters: a ring left behind would be drawn over whatever
+      // occupies those coordinates on the next screen.
+      reportRing(step, null);
+      return;
+    }
+    // Two passes, same reasoning as TourTarget — the first catches the common case, the
+    // second waits out any entrance animation or keyboard-driven relayout.
+    measure();
+    const timer = setTimeout(measure, 350);
+    return () => clearTimeout(timer);
+  }, [isActive, measure, measureNonce, reportRing, step]);
+
+  return (
+    <View ref={ref} collapsable={false} style={style} onLayout={measure}>
       {children}
     </View>
   );

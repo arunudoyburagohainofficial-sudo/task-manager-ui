@@ -1,9 +1,9 @@
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { useIsFocused } from "@react-navigation/native";
-import { TOUR_STEPS, useTour, type TargetRect, type TourStep } from "../state/TourContext";
+import { TOUR_STEPS, useTour, type TargetRect, type TargetShape, type TourStep } from "../state/TourContext";
 import { radius, space, text as t, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 
@@ -23,10 +23,16 @@ const COPY: Record<TourStep, { title: string; body: string; waiting?: string }> 
   goal: {
     title: "Start with a goal",
     body: "A goal is something you show up for repeatedly. Tap + beside Goals to make your first one.",
+    // Both of the first two steps live on Home, so it's tempting to assume they're always
+    // looking at it — but any screen reachable from Home (a task, Settings, Progress) leaves
+    // the step running with nothing to point at, and the card then told people to tap a "+"
+    // that wasn't in front of them. Seen on a device, 2026-09-26, on Task Detail.
+    waiting: "Head back to Home to make your first goal.",
   },
   capture: {
     title: "Now capture a task",
     body: "Tap Ferne to jot down whatever you want to work on.",
+    waiting: "Head back to Home and tap Ferne at the bottom of the screen.",
   },
   describe: {
     title: "Name your task",
@@ -84,11 +90,33 @@ function canStepBack(step: TourStep): boolean {
  */
 export function TourOverlay() {
   const styles = useThemedStyles(makeStyles);
-  const { activeStep, targetRect, targetVariant, targetBody, skip, back, hasInlineSlot } = useTour();
+  const { activeStep, targetRect, targetVariant, targetBody, targetBlocking, targetShape, ringRect, nextAction, skip, back, hasInlineSlot } = useTour();
   const { width, height } = useWindowDimensions();
   // This overlay covers the whole window, system bars included, so the card has to carry
   // the insets itself.
   const insets = useSafeAreaInsets();
+
+  /**
+   * Where this overlay's own top-left sits in window coordinates.
+   *
+   * Targets are measured with `measureInWindow`, but the ring is drawn with absolute
+   * positioning *inside this view* — two different origins. They only agree if the overlay
+   * starts exactly at the window's top-left, and on Android it doesn't: the root view sits
+   * under the status bar, so the ring landed a status-bar's height away from the control it
+   * was pointing at. On a phone that put step 1's ring over the stat strip while the + it
+   * describes sat visibly below it (seen on an emulator, 2026-09-26).
+   *
+   * Measured rather than assumed — subtracting `insets.top` would fix Android today and break
+   * whenever the app goes edge-to-edge, or on a platform where the two origins already match.
+   * Reconciling the systems directly is right in every case, including zero.
+   */
+  const overlayRef = useRef<View>(null);
+  const [origin, setOrigin] = useState({ x: 0, y: 0 });
+  const measureOrigin = useCallback(() => {
+    overlayRef.current?.measureInWindow((x, y) => {
+      setOrigin((prev) => (prev.x === x && prev.y === y ? prev : { x, y }));
+    });
+  }, []);
 
   if (!activeStep) return null;
   const copy = COPY[activeStep];
@@ -106,7 +134,7 @@ export function TourOverlay() {
   if (!targetRect) {
     if (hasInlineSlot) return null;
     return (
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <View ref={overlayRef} onLayout={measureOrigin} style={StyleSheet.absoluteFill} pointerEvents="box-none">
         <View style={[styles.card, { bottom: insets.bottom + 16 }]}>
           <CardBody
             step={activeStep}
@@ -119,7 +147,28 @@ export function TourOverlay() {
     );
   }
 
-  const hole = inflate(targetRect, HALO, width, height);
+  // Into this view's own coordinates before anything is drawn — see `origin` above.
+  const localRect = {
+    ...targetRect,
+    x: targetRect.x - origin.x,
+    y: targetRect.y - origin.y,
+  };
+  const hole = inflate(localRect, HALO, width, height);
+
+  /*
+   * What to draw the ring around. A "control" rings its own hole; a "region" rings only the
+   * control it nominated, and nothing when it nominated none.
+   */
+  const ringSource =
+    targetVariant === "control" ? targetRect : ringRect;
+  const ring = ringSource
+    ? inflate(
+        { ...ringSource, x: ringSource.x - origin.x, y: ringSource.y - origin.y },
+        HALO,
+        width,
+        height
+      )
+    : null;
 
   // Prefer placing the card below the highlight; flip above when there isn't room.
   const spaceBelow = height - (hole.y + hole.height);
@@ -131,7 +180,7 @@ export function TourOverlay() {
   const onLastStep = isLastStep(activeStep);
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    <View ref={overlayRef} onLayout={measureOrigin} style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {/*
         One SVG path for the whole scrim, not four rectangles around the hole. Four
         adjacent semi-transparent views show hairline seams where their edges meet —
@@ -142,7 +191,7 @@ export function TourOverlay() {
       */}
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
         <Svg width={width} height={height}>
-          <Path d={scrimPath(hole, width, height)} fill="rgba(26,26,26,.55)" fillRule="evenodd" />
+          <Path d={scrimPath(hole, width, height, targetShape)} fill="rgba(26,26,26,.55)" fillRule="evenodd" />
         </Svg>
       </View>
 
@@ -152,18 +201,34 @@ export function TourOverlay() {
         transparent blockers is harmless. Everything outside the highlighted control is
         inert; the hole itself is left uncovered so the control stays tappable.
       */}
-      <Blocker style={{ top: 0, left: 0, right: 0, height: hole.y }} />
-      <Blocker style={{ top: hole.y + hole.height, left: 0, right: 0, bottom: 0 }} />
-      <Blocker style={{ top: hole.y, left: 0, width: hole.x, height: hole.height }} />
-      <Blocker style={{ top: hole.y, left: hole.x + hole.width, right: 0, height: hole.height }} />
+      {/* The scrim above is drawn either way; only the touch-swallowing is optional. A step
+          that spotlights its "continue" control still needs what came before it editable —
+          see targetBlocking. */}
+      {targetBlocking ? (
+        <>
+          <Blocker style={{ top: 0, left: 0, right: 0, height: hole.y }} />
+          <Blocker style={{ top: hole.y + hole.height, left: 0, right: 0, bottom: 0 }} />
+          <Blocker style={{ top: hole.y, left: 0, width: hole.x, height: hole.height }} />
+          <Blocker style={{ top: hole.y, left: hole.x + hole.width, right: 0, height: hole.height }} />
+        </>
+      ) : null}
 
       {/* Ring only for a single control. A region is a whole block of the screen kept
           live, and boxing it just reads as a stray border. pointerEvents none is
-          essential — it sits over the control the user is asked to tap. */}
-      {targetVariant === "control" ? (
+          essential — it sits over the control the user is asked to tap.
+
+          A region may still nominate one control to ring (see TourRing): the step keeps the
+          whole screen interactive, but the user is shown where to start. */}
+      {ring ? (
         <View
           pointerEvents="none"
-          style={[styles.ring, { top: hole.y, left: hole.x, width: hole.width, height: hole.height }]}
+          style={[
+            styles.ring,
+            { top: ring.y, left: ring.x, width: ring.width, height: ring.height },
+            // A round control needs a round ring; the default 12px corner clipped the docked
+            // Ferne's ears. Half the shorter side is a circle for a square target.
+            targetShape === "circle" ? { borderRadius: Math.min(ring.width, ring.height) / 2 } : null,
+          ]}
         />
       ) : null}
 
@@ -176,6 +241,7 @@ export function TourOverlay() {
             onSkip={skip}
             onBack={canGoBack ? back : undefined}
             onFinish={onLastStep ? skip : undefined}
+            onNext={nextAction}
           />
         </View>
       )}
@@ -193,9 +259,11 @@ function Blocker({ style }: { style: object }) {
  * The scrim: the full screen as one subpath, the spotlight as a second, rounded subpath.
  * Filled with evenodd so the inner one becomes a hole rather than more fill.
  */
-function scrimPath(hole: TargetRect, width: number, height: number): string {
+function scrimPath(hole: TargetRect, width: number, height: number, shape: TargetShape = "rounded"): string {
   const { x, y, width: w, height: h } = hole;
-  const r = Math.min(radius.card, w / 2, h / 2);
+  // Matches the ring drawn over it — a rounded-rect hole behind a circular ring shows the
+  // undimmed corners poking out past it.
+  const r = shape === "circle" ? Math.min(w, h) / 2 : Math.min(radius.card, w / 2, h / 2);
 
   const outer = `M0,0 H${width} V${height} H0 Z`;
   const inner =
@@ -270,10 +338,16 @@ function CardBody({
   onSkip,
   onBack,
   onFinish,
+  onNext,
 }: {
   step: TourStep;
   copy: { title: string; body: string };
   onSkip: () => void;
+  /**
+   * Offered by the screen when one action of a multi-part step is done — see nextAction.
+   * Sits where Skip would, because by then moving on is the likelier intent.
+   */
+  onNext?: (() => void) | null;
   /** Omitted on the first step, where there is nowhere to go back to. */
   onBack?: () => void;
   /**
@@ -289,7 +363,7 @@ function CardBody({
       <Text style={t(T.meta, { fontWeight: "800", color: theme.color.interactive })}>{stepLabel(step)}</Text>
       <Text style={t(T.h2, { fontSize: 20, color: theme.color.text, marginTop: 2 })}>{copy.title}</Text>
       <Text style={t(T.body, { color: theme.color.textBody, marginTop: 6, lineHeight: 21 })}>{copy.body}</Text>
-      <Footer onSkip={onSkip} onBack={onBack} onFinish={onFinish} />
+      <Footer onSkip={onSkip} onBack={onBack} onFinish={onFinish} onNext={onNext} />
     </>
   );
 }
@@ -298,10 +372,12 @@ function Footer({
   onSkip,
   onBack,
   onFinish,
+  onNext,
 }: {
   onSkip: () => void;
   onBack?: () => void;
   onFinish?: () => void;
+  onNext?: (() => void) | null;
 }) {
   const theme = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -322,6 +398,10 @@ function Footer({
       {onFinish ? (
         <Pressable accessibilityRole="button" onPress={onFinish} style={styles.finish}>
           <Text style={t(T.meta, { fontWeight: "800", color: "#FFFFFF" })}>Finish</Text>
+        </Pressable>
+      ) : onNext ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Next" onPress={onNext} style={styles.finish}>
+          <Text style={t(T.meta, { fontWeight: "800", color: "#FFFFFF" })}>Next →</Text>
         </Pressable>
       ) : (
         <Pressable accessibilityRole="button" onPress={onSkip} hitSlop={10}>

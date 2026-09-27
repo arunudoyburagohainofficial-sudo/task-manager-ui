@@ -42,14 +42,47 @@ export async function requestPermission(): Promise<boolean> {
   return requested.granted;
 }
 
+/**
+ * The app's own notification sound — see scripts/make-notification-sound.py, which generates it.
+ *
+ * A chime rather than the system default, because the default is the same ping the user's email,
+ * bank and supermarket app all make. This one has to be recognisable from the next room as
+ * "that's my reminder, time to start".
+ */
+export const REMINDER_SOUND = "foyg_chime.wav";
+
+/**
+ * The channel id. Versioned, and that is not cosmetic.
+ *
+ * An Android notification channel's sound, importance and vibration are fixed at creation and
+ * cannot be changed afterwards — calling setNotificationChannelAsync again on a channel the user
+ * already has is a no-op for those fields. So shipping a new sound to existing installs means
+ * shipping a *new channel*; reusing "reminders" would have left everyone who already had the app
+ * on the system default while new installs got the chime, which is exactly the sort of
+ * difference nobody would think to test for.
+ *
+ * Bump this whenever the sound or importance changes, and add the old id to RETIRED_CHANNELS.
+ */
+const CHANNEL_ID = "reminders-v2";
+
+/**
+ * Channels this app used to use. Deleted on startup so they don't sit in the user's notification
+ * settings as dead entries they can still toggle and be confused by.
+ */
+const RETIRED_CHANNELS = ["reminders"];
+
 /** Android shows notifications silently unless they belong to a channel. */
 export async function configureAndroidChannel(): Promise<void> {
   if (Platform.OS !== "android") return;
-  await Notifications.setNotificationChannelAsync("reminders", {
+  await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
     name: "Task reminders",
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
+    sound: REMINDER_SOUND,
   });
+  for (const retired of RETIRED_CHANNELS) {
+    await Notifications.deleteNotificationChannelAsync(retired).catch(() => undefined);
+  }
 }
 
 /**
@@ -142,7 +175,13 @@ async function runScheduleAll(
           // Attaches the Done / Snooze buttons and, on a tap, gives the response handler
           // the task to open — see notificationActions.ts.
           categoryIdentifier: REMINDER_CATEGORY,
-          ...(Platform.OS === "android" ? { channelId: "reminders" } : {}),
+          /*
+           * iOS takes the sound per notification; Android takes it from the channel and ignores
+           * this. Set on both so neither platform falls back to the system default, and so the
+           * one place to change the sound is REMINDER_SOUND.
+           */
+          sound: REMINDER_SOUND,
+          ...(Platform.OS === "android" ? { channelId: CHANNEL_ID } : {}),
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,

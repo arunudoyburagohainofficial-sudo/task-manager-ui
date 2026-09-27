@@ -13,7 +13,6 @@ import {
   ScreenContainer,
   SecondaryAction,
   SectionLabel,
-  TourInlineSlot,
 } from "../components";
 import { useCompanion } from "../state/CompanionContext";
 import { TourTarget, useTour } from "../state/TourContext";
@@ -36,9 +35,40 @@ let nextLocalId = 0;
  *
  * Every draft defaults to `focus`, freely changeable on the next screen (Organize).
  */
+/**
+ * Holds the "describe" spotlight only while `active`, so exactly one control has it.
+ *
+ * The step spans two actions — type a name, then continue — and a mounted TourTarget reports
+ * itself whether or not it's meant to be the one, so two of them for one step overwrite each
+ * other. Same reason ConfirmOrganizeScreen has its own MaybeTourTarget.
+ *
+ * `body` overrides the step's copy per phase: one instruction at a time reads better than a
+ * sentence describing both, and the card is pointing at whichever control it names.
+ */
+function MaybeDescribeTarget({
+  active,
+  body,
+  style,
+  blocking = true,
+  children,
+}: {
+  active: boolean;
+  body: string;
+  style?: React.ComponentProps<typeof View>["style"];
+  blocking?: boolean;
+  children: React.ReactNode;
+}) {
+  if (!active) return <View style={style}>{children}</View>;
+  return (
+    <TourTarget step="describe" style={style} body={body} blocking={blocking}>
+      {children}
+    </TourTarget>
+  );
+}
+
 export function CaptureScreen() {
   const { name } = useCompanion();
-  const { activeStep: tourStep, advance: advanceTour, back: tourBack, getActiveStep } = useTour();
+  const { activeStep: tourStep, advance: advanceTour, back: tourBack, getActiveStep, setNextAction } = useTour();
   const tourRunning = tourStep !== null;
   const navigation = useNavigation<Nav>();
   const theme = useTheme();
@@ -63,6 +93,23 @@ export function CaptureScreen() {
     [getActiveStep, tourBack]
   );
   const [text, setText] = useState("");
+  /*
+   * Which half of the walkthrough's "describe" step is showing. Driven by the card's Next
+   * button rather than by there being any text: switching on the first keystroke snatched the
+   * spotlight away mid-word, before the user had finished naming anything.
+   */
+  const [describeConfirming, setDescribeConfirming] = useState(false);
+
+  /*
+   * Offer "Next" on the tour card once there's something to continue with, and take it away
+   * again if the field is cleared. Registered with the tour rather than drawn here because the
+   * card belongs to the overlay, which floats above every screen.
+   */
+  useEffect(() => {
+    const canContinue = tourStep === "describe" && !describeConfirming && !!text.trim();
+    setNextAction(canContinue ? () => setDescribeConfirming(true) : null);
+    return () => setNextAction(null);
+  }, [tourStep, describeConfirming, text, setNextAction]);
   const [drafts, setDrafts] = useState<CapturedTaskDraft[]>([]);
 
   function addDraft() {
@@ -108,11 +155,12 @@ export function CaptureScreen() {
   return (
     <ScreenContainer>
       {/*
-        The whole screen is the walkthrough's region, not just the field: its step needs the
-        field *and* the pinned bar's primary, and those are now siblings rather than one block.
-        "region" keeps everything inside live without drawing a ring around the lot.
+        The walkthrough spotlights one control at a time here rather than keeping the whole
+        screen live. It used to be a screen-sized "region", which draws no ring and dims
+        nothing — the step pointed at nothing at all. The step needs two controls in sequence,
+        so it moves: the field until something is typed, then the button that continues.
       */}
-      <TourTarget step="describe" variant="region" style={styles.fill}>
+      <View style={styles.fill}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.fill}>
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
             {captured ? (
@@ -168,6 +216,16 @@ export function CaptureScreen() {
                 glow. The mock also drew a 2px terracotta rule inside the field, standing in for a
                 cursor that a static mock can't show — on a device the real caret does that, and
                 the rule read as a stray mark whenever the field wasn't focused. */}
+            {/* Phase one of the step: type something. */}
+            {/*
+              Dimmed but not blocked. Blocking everything but the field reads well until you
+              realise the only thing outside it worth tapping is "Confirm & Organize" — "+ Add
+              another" and Cancel are already suppressed during the tour — so the block's sole
+              effect was to make the obvious next tap do nothing. The scrim still points the eye
+              at the field; the button underneath keeps working for anyone who doesn't need
+              telling twice.
+            */}
+            <MaybeDescribeTarget active={!describeConfirming} body="Type what you want to work on." blocking={false}>
             <View style={[styles.field, focused && styles.fieldFocused]}>
               <TextInput
                 accessibilityLabel="Task name"
@@ -181,6 +239,7 @@ export function CaptureScreen() {
                 style={[ds(T.bodyLg, { fontSize: 16, fontWeight: "500", color: theme.color.text }), styles.fieldInput]}
               />
             </View>
+            </MaybeDescribeTarget>
 
             {/* Disabled during the walkthrough: the tour asks for one task and then moves on, and
                 stacking up several drafts here leads somewhere its next step can't describe. */}
@@ -201,24 +260,22 @@ export function CaptureScreen() {
               </Text>
             </View>
 
-            {/* Directly beneath the hint, in the page's own flow — the floating version would sit
-                at the bottom of the window with dead space above it. */}
-            <TourInlineSlot always />
           </ScrollView>
 
           <PinnedBar>
             {/* Disabled during the walkthrough for the same reason as "+ Add another": leaving
                 here mid-step strands the tour on a screen the user is no longer on. */}
             {tourRunning ? null : <SecondaryAction label="Cancel" onPress={() => navigation.goBack()} />}
-            <PrimaryAction
-              label={`Confirm & Organize${total > 0 ? ` (${total})` : ""}`}
-              disabled={total === 0}
-              onPress={handleContinue}
-              style={styles.confirm}
-            />
+            <MaybeDescribeTarget active={describeConfirming} body="Now tap Confirm & Organize." style={styles.confirm} blocking={false}>
+              <PrimaryAction
+                label={`Confirm & Organize${total > 0 ? ` (${total})` : ""}`}
+                disabled={total === 0}
+                onPress={handleContinue}
+              />
+            </MaybeDescribeTarget>
           </PinnedBar>
         </KeyboardAvoidingView>
-      </TourTarget>
+      </View>
     </ScreenContainer>
   );
 }
