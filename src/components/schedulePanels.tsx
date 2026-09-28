@@ -1,7 +1,7 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { TaskType } from "../api/types";
-import { radius, space, text as t, type as T } from "../theme";
+import { px, radius, space, text as t, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { ChevronDownIcon, ChevronRightIcon, RepeatIcon } from "./icons";
 
@@ -362,15 +362,15 @@ const makeStyles = (t: Tokens) =>
       flexShrink: 0,
     },
     dot: {
-      width: 8,
-      height: 8,
+      width: px(8),
+      height: px(8),
       borderRadius: 3,
       flexGrow: 0,
       flexShrink: 0,
     },
     repeatTile: {
-      width: 30,
-      height: 30,
+      width: px(30),
+      height: px(30),
       borderRadius: 9,
       backgroundColor: t.schedulePanel.repeatTileBg,
       alignItems: "center",

@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { Ferne, useReduceMotion } from "../components/Ferne";
 import { HomeTabIcon, ProgressTabIcon, ScheduledTabIcon, SettingsTabIcon } from "../components/icons";
-import { textAtDesignSize as td, type as T } from "../theme";
+import { px, textAtDesignSize as td, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { TourTarget } from "../state/TourContext";
 import type { MainTabParamList } from "./types";
@@ -202,7 +202,7 @@ const makeStyles = (t: Tokens) =>
       top: -4,
       right: -10,
       minWidth: 16,
-      height: 16,
+      height: px(16),
       borderRadius: 8,
       paddingHorizontal: 4,
       backgroundColor: t.color.danger,
@@ -210,7 +210,7 @@ const makeStyles = (t: Tokens) =>
       justifyContent: "center",
     },
     captureColumn: {
-      width: 84,
+      width: px(84),
       flexShrink: 0,
       alignItems: "center",
       gap: 2,

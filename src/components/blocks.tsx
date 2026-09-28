@@ -1,7 +1,7 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View, type BoxShadowValue } from "react-native";
 import type { GoalDto } from "../api/types";
-import { accentRamp, lift, shade, space, text as t, type as T } from "../theme";
+import { accentRamp, lift, px, shade, space, text as t, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { Card } from "./Card";
 import { GradientFill, InnerShading } from "./ScreenWash";
@@ -173,8 +173,8 @@ const makeStyles = (t: Tokens) =>
       gap: space.sm,
     },
     goalSwatch: {
-      width: 9,
-      height: 9,
+      width: px(9),
+      height: px(9),
       borderRadius: 3,
       // Optically centres the swatch on the name's first line ((lineHeight - size) / 2).
       marginTop: (GOAL_NAME_LINE_HEIGHT - 9) / 2,

@@ -9,7 +9,7 @@ import React, { useEffect, useRef } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import type { GoalDto } from "../api/types";
-import { textAtDesignSize as td, type as T } from "../theme";
+import { px, textAtDesignSize as td, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { useReduceMotion } from "./Ferne";
 import {
@@ -567,7 +567,7 @@ const makeStyles = (t: Tokens) =>
     },
     statDivider: {
       width: 1,
-      height: 32,
+      height: px(32),
       backgroundColor: t.home.statDivider,
     },
     ruleHeader: {
@@ -592,8 +592,8 @@ const makeStyles = (t: Tokens) =>
       minHeight: 25,
     },
     plusButton: {
-      width: 28,
-      height: 28,
+      width: px(28),
+      height: px(28),
       borderRadius: 9,
       backgroundColor: t.color.card,
       borderWidth: 1,
@@ -634,8 +634,8 @@ const makeStyles = (t: Tokens) =>
       gap: 11,
     },
     goalRing: {
-      width: 46,
-      height: 46,
+      width: px(46),
+      height: px(46),
       flexShrink: 0,
       alignItems: "center",
       justifyContent: "center",
@@ -658,8 +658,8 @@ const makeStyles = (t: Tokens) =>
       boxShadow: [{ offsetX: 0, offsetY: 2, blurRadius: 12, color: t.home.cardShadow }],
     },
     sessionRing: {
-      width: 48,
-      height: 48,
+      width: px(48),
+      height: px(48),
       flexShrink: 0,
       alignItems: "center",
       justifyContent: "center",
@@ -689,8 +689,8 @@ const makeStyles = (t: Tokens) =>
       minHeight: 0,
     },
     rowTile: {
-      width: 36,
-      height: 36,
+      width: px(36),
+      height: px(36),
       borderRadius: 10,
       alignItems: "center",
       justifyContent: "center",
@@ -730,8 +730,8 @@ const makeStyles = (t: Tokens) =>
       gap: 11,
     },
     doneTile: {
-      width: 36,
-      height: 36,
+      width: px(36),
+      height: px(36),
       borderRadius: 10,
       backgroundColor: t.home.doneTileBg,
       borderWidth: 1,

@@ -6,7 +6,7 @@
  * introduce colours, sizes or radii that are not in this file — if a value isn't here, it
  * isn't in the design.
  */
-import { PixelRatio, type BoxShadowValue, type TextStyle } from "react-native";
+import { Dimensions, PixelRatio, type BoxShadowValue, type TextStyle } from "react-native";
 import { light } from "./palette";
 
 export type { Palette, ThemeMode } from "./palette";
@@ -206,7 +206,47 @@ const OS_FONT_CAP = (() => {
   return scale > MAX_FONT_SCALE ? MAX_FONT_SCALE / scale : 1;
 })();
 
-export const FONT_SCALE_CORRECTION = OS_FONT_CAP * TYPE_SCALE;
+/** The width the design was drawn at. Everything below is measured as a fraction of it. */
+const DESIGN_WIDTH = 375;
+
+/**
+ * How much narrower this device's layout grid is than the one the design assumes.
+ *
+ * This is the half of the problem `OS_FONT_CAP` above cannot see. Android has two independent
+ * settings: **Font size**, which `PixelRatio.getFontScale()` reports, and **Display size**,
+ * which it doesn't. Display size raises the screen density, so the same physical panel reports
+ * fewer dp — a 360dp phone becomes roughly 320dp — and every fixed size in the app is suddenly
+ * a larger share of the screen. Nothing in the app noticed, so on those phones text wrapped
+ * mid-word ("Appearanc / e"), rows grew, and two starter tasks filled the whole of Home.
+ *
+ * Measured from the real window rather than inferred, so it catches Display size, an unusually
+ * narrow phone, and a small split-screen pane with the same number.
+ *
+ * Only ever shrinks. Scaling *up* on a wide phone would inflate a design that already looks
+ * right there, and floored at 0.85 so an extreme setting degrades rather than becoming
+ * unreadable — past that point the honest answer is fewer rows, not smaller type.
+ */
+const GRID_SCALE = (() => {
+  const { width, height } = Dimensions.get("window");
+  // The shorter side, so a device in landscape isn't read as a very wide phone.
+  const shortest = Math.min(width, height);
+  return Math.max(0.85, Math.min(1, shortest / DESIGN_WIDTH));
+})();
+
+/**
+ * Read once at module load, like OS_FONT_CAP. Both only change when the OS settings change,
+ * which restarts the app anyway.
+ */
+export const FONT_SCALE_CORRECTION = OS_FONT_CAP * TYPE_SCALE * GRID_SCALE;
+
+/**
+ * Rounds a spacing value onto the same grid as the type.
+ *
+ * Type alone isn't enough: padding and gaps are fixed dp, so shrinking only the text on a
+ * compressed grid leaves the same tall rows with smaller writing in them — which reads as a
+ * bug rather than a smaller layout. Scaling both keeps the proportions the design intended.
+ */
+const gridded = (value: number): number => Math.round(value * GRID_SCALE);
 
 /**
  * Resolves a design type token into a React Native text style, attaching the font family
@@ -309,7 +349,20 @@ export function textAtDesignSize(token: TypeToken, extra?: TextStyle): TextStyle
  * it's the screen's horizontal margin, which has no bearing on how many rows fit and
  * narrowing it would make the content look cramped against the edges.
  */
-export const space = { xs: 3, sm: 7, md: 9, base: 10, card: 13, gutter: 20, lg: 20 } as const;
+/**
+ * Vertical rhythm, on the same grid as the type — see `gridded`. On a phone whose Display size
+ * has been turned up these shrink alongside the text, so rows get shorter rather than just
+ * holding smaller writing in the same tall box.
+ */
+export const space = {
+  xs: gridded(3),
+  sm: gridded(7),
+  md: gridded(9),
+  base: gridded(10),
+  card: gridded(13),
+  gutter: gridded(20),
+  lg: gridded(20),
+} as const;
 
 export const radius = {
   /** The final screens' card and sheet corners — 16, where the older surfaces use 12. */
@@ -336,23 +389,49 @@ export const radius = {
  * already sitting at that floor before this pass. `button` had 6px of genuine slack above
  * the floor and comes down; `minTouch` itself does not move.
  */
+/**
+ * Fixed dimensions, on the same grid as the type and spacing — see `gridded`.
+ *
+ * `minTouch` is deliberately *not* scaled. It's the smallest a tappable target may be before
+ * people start missing it, which is a property of fingers rather than of the screen; shrinking
+ * it on a compressed grid would make the hardest-to-use phones harder still. Everything else
+ * here is visual and scales.
+ */
 export const size = {
+  /** Accessibility floor — never scaled. Both platforms put the minimum at ~44dp. */
   minTouch: 44,
   /**
    * How far the docked capture disc rises above the tab bar (DockedTabBar's CAPTURE_LIFT of 40,
    * plus the 5px glow ring around it, plus a hair). Anything pinned to the bottom of a *tab*
    * screen has to clear this or the disc sits on top of it.
    */
-  dockRise: 46,
-  button: 46,
-  toggleW: 44,
-  toggleH: 26,
-  toggleKnob: 20,
-  icon: 19, // in-row icon marks
-  iconLg: 22, // standalone icon in a card
-  iconInline: 16, // inside a text run — use the 2-shape variant
-  ferne: 46,
+  dockRise: gridded(46),
+  button: gridded(46),
+  toggleW: gridded(44),
+  toggleH: gridded(26),
+  toggleKnob: gridded(20),
+  icon: gridded(19), // in-row icon marks
+  iconLg: gridded(22), // standalone icon in a card
+  iconInline: gridded(16), // inside a text run — use the 2-shape variant
+  ferne: gridded(46),
 } as const;
+
+/**
+ * A one-off dimension, put on the layout grid.
+ *
+ * For sizes that are genuinely specific to one component and don't belong in the shared `size`
+ * scale above — a particular disc, a stepper button, a progress bar's height. Writing the number
+ * inline is fine; leaving it *unscaled* is not, because on a compressed grid it keeps its
+ * original size while everything around it shrinks, and the proportions drift.
+ *
+ * Hairlines are left alone: `px(1)` is still 1, because a divider is meant to be the thinnest
+ * line the screen can draw rather than a scaled quantity.
+ */
+export function px(value: number): number {
+  if (value <= 1) return value;
+  // Never round a real dimension away to nothing.
+  return Math.max(1, Math.round(value * GRID_SCALE));
+}
 
 export const shadow = {
   /**

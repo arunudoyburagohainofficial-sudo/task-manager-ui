@@ -1,6 +1,6 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
-import { radius, size, space, text as t, type as T } from "../theme";
+import { px, radius, size, space, text as t, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 
 /**
@@ -376,8 +376,8 @@ const makeStyles = (t: Tokens) =>
       backgroundColor: t.surface.unsavedRowBg,
     },
     pendingDot: {
-      width: 6,
-      height: 6,
+      width: px(6),
+      height: px(6),
       borderRadius: 3,
       backgroundColor: t.surface.unsavedDot,
     },

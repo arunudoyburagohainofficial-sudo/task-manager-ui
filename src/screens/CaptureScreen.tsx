@@ -16,7 +16,7 @@ import {
 } from "../components";
 import { useCompanion } from "../state/CompanionContext";
 import { TourTarget, useTour } from "../state/TourContext";
-import { radius, space, textAtDesignSize as ds, type as T } from "../theme";
+import { px, radius, space, textAtDesignSize as ds, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { listeningLine } from "../theme/companionCopy";
 import type { CapturedTaskDraft, RootStackParamList } from "../navigation/types";
@@ -323,8 +323,8 @@ const makeStyles = (t: Tokens) =>
       gap: 12,
     },
     draftMark: {
-      width: 34,
-      height: 34,
+      width: px(34),
+      height: px(34),
       borderRadius: 17,
       backgroundColor: t.color.taskTypeFocusBg,
       alignItems: "center",

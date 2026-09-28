@@ -32,7 +32,7 @@ import { usePreferences } from "../state/PreferencesContext";
 import { useSession } from "../state/SessionContext";
 import { useTour } from "../state/TourContext";
 import { useAppearance, useTheme, useThemedStyles, type AppearanceChoice, type Tokens } from "../state/ThemeContext";
-import { radius, space, textAtDesignSize as ds, type as T } from "../theme";
+import { px, radius, space, textAtDesignSize as ds, type as T } from "../theme";
 import { formatMinutes } from "../utils/format";
 
 const FOCUS_DURATION_PRESETS = [15, 25, 45, 60];
@@ -516,8 +516,8 @@ const makeStyles = (t: Tokens) =>
       boxShadow: [{ offsetX: 0, offsetY: 1, blurRadius: 3, color: t.surface.segActiveShadow }],
     },
     stepperButton: {
-      width: 30,
-      height: 30,
+      width: px(30),
+      height: px(30),
       borderRadius: 15,
       backgroundColor: t.surface.segActive,
       alignItems: "center",

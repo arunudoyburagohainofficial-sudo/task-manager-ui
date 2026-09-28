@@ -9,7 +9,7 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { textAtDesignSize as td, type as T, withAlpha } from "../theme";
+import { px, textAtDesignSize as td, type as T, withAlpha } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { ActionPill } from "./surfaces";
 import { Ferne } from "./Ferne";
@@ -664,8 +664,8 @@ const makeStyles = (t: Tokens) =>
       paddingHorizontal: 20,
     },
     headerDisc: {
-      width: 34,
-      height: 34,
+      width: px(34),
+      height: px(34),
       borderRadius: 17,
       backgroundColor: t.surface.headerBg,
       alignItems: "center",
@@ -676,8 +676,8 @@ const makeStyles = (t: Tokens) =>
       gap: 3.5,
     },
     dot: {
-      width: 3.5,
-      height: 3.5,
+      width: px(3.5),
+      height: px(3.5),
       borderRadius: 2,
       backgroundColor: t.detail.dots,
     },
@@ -751,8 +751,8 @@ const makeStyles = (t: Tokens) =>
       gap: 14,
     },
     goalRing: {
-      width: 46,
-      height: 46,
+      width: px(46),
+      height: px(46),
       flexShrink: 0,
     },
     goalRingLabel: {
@@ -761,8 +761,8 @@ const makeStyles = (t: Tokens) =>
       justifyContent: "center",
     },
     goalEmptyRing: {
-      width: 38,
-      height: 38,
+      width: px(38),
+      height: px(38),
       borderRadius: 19,
       borderWidth: 1.5,
       borderStyle: "dashed",
@@ -833,16 +833,16 @@ const makeStyles = (t: Tokens) =>
     },
     /** A filled disc in the final screens, not an outlined one. */
     step: {
-      width: 44,
-      height: 44,
+      width: px(44),
+      height: px(44),
       borderRadius: 22,
       backgroundColor: t.surface.stepperBg,
       alignItems: "center",
       justifyContent: "center",
     },
     stepCompact: {
-      width: 26,
-      height: 26,
+      width: px(26),
+      height: px(26),
       borderRadius: 13,
       borderWidth: 1,
       borderColor: t.detail.stepperBorder,
@@ -886,7 +886,7 @@ const makeStyles = (t: Tokens) =>
       marginTop: 15,
     },
     roundSegment: {
-      height: 8,
+      height: px(8),
       borderRadius: 99,
     },
     roundWork: {

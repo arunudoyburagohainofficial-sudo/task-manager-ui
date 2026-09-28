@@ -48,7 +48,7 @@ import { usePreferences } from "../state/PreferencesContext";
 import { useToast } from "../state/ToastContext";
 import { useSession } from "../state/SessionContext";
 import { TourTarget, useTour } from "../state/TourContext";
-import { textAtDesignSize as td, type as T } from "../theme";
+import { px, textAtDesignSize as td, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import {
   formatClockTime,
@@ -686,8 +686,8 @@ const makeStyles = (t: Tokens) =>
       flex: 1,
     },
     avatar: {
-      width: 38,
-      height: 38,
+      width: px(38),
+      height: px(38),
       borderRadius: 12,
       backgroundColor: t.home.avatarBg,
       alignItems: "center",

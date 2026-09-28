@@ -22,7 +22,7 @@ import {
   Segmented,
   StreakIconInline,
 } from "../components";
-import { space, textAtDesignSize as ds, type as T } from "../theme";
+import { px, space, textAtDesignSize as ds, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { formatMinutes, formatShortDate } from "../utils/format";
 import { goalsRowLayout } from "../utils/goalsLayout";
@@ -416,14 +416,14 @@ const makeStyles = (t: Tokens) =>
       marginTop: 10,
     },
     goalBarTrack: {
-      height: 10,
+      height: px(10),
       borderRadius: 99,
       backgroundColor: t.surface.progressTrack,
       marginTop: 14,
       overflow: "hidden",
     },
     goalBarFill: {
-      height: 10,
+      height: px(10),
       borderRadius: 99,
       backgroundColor: t.surface.barHigh,
     },
@@ -434,7 +434,7 @@ const makeStyles = (t: Tokens) =>
       flexDirection: "row",
       alignItems: "flex-end",
       gap: 6,
-      height: 52,
+      height: px(52),
       marginTop: 16,
     },
     stripColumn: {
@@ -507,14 +507,14 @@ const makeStyles = (t: Tokens) =>
       flexShrink: 1,
     },
     weekBarTrack: {
-      height: 7,
+      height: px(7),
       borderRadius: 99,
       backgroundColor: t.surface.progressTrack,
       marginTop: 10,
       overflow: "hidden",
     },
     weekBarFill: {
-      height: 7,
+      height: px(7),
       borderRadius: 99,
     },
     ferneLine: {

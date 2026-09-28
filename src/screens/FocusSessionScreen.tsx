@@ -23,7 +23,7 @@ import {
   Timer,
 } from "../components";
 import { useCompanion } from "../state/CompanionContext";
-import { FONT_SCALE_CORRECTION, radius, space, text as t, type as T } from "../theme";
+import { FONT_SCALE_CORRECTION, px, radius, space, text as t, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { restingLine } from "../theme/companionCopy";
 import { formatMMSS, formatMinutes } from "../utils/format";
@@ -555,8 +555,8 @@ const makeStyles = (th: Tokens) =>
       marginTop: 16,
     },
     dot: {
-      width: 9,
-      height: 9,
+      width: px(9),
+      height: px(9),
       borderRadius: 5,
     },
     bottomRow: {
@@ -586,8 +586,8 @@ const makeStyles = (th: Tokens) =>
       gap: space.base,
     },
     breakIcon: {
-      width: 72,
-      height: 72,
+      width: px(72),
+      height: px(72),
       borderRadius: 36,
       backgroundColor: th.color.successFill,
       alignItems: "center",
@@ -617,8 +617,8 @@ const makeStyles = (th: Tokens) =>
       gap: space.base,
     },
     completeIcon: {
-      width: 64,
-      height: 64,
+      width: px(64),
+      height: px(64),
       borderRadius: 32,
       backgroundColor: th.color.successFill,
       alignItems: "center",

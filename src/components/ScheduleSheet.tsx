@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import type { NotificationSpec, RecurrenceRule } from "../api/types";
-import { font, radius, size, space, text as t, type as T } from "../theme";
+import { font, px, radius, size, space, text as t, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import {
   RECURRENCE_OPTIONS,
@@ -1129,8 +1129,8 @@ const makeStyles = (t: Tokens) =>
       minWidth: 0,
     },
     remove: {
-      width: 28,
-      height: 28,
+      width: px(28),
+      height: px(28),
       borderRadius: radius.pill,
       borderWidth: 1,
       borderColor: t.color.border,
