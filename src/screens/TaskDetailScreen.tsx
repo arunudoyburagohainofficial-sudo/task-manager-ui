@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
-import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { RouteProp, useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useQueryClient } from "@tanstack/react-query";
 import { focusSessionsApi } from "../api";
@@ -27,6 +27,7 @@ import {
   DetailHeader,
   DetailSection,
   DetailTitle,
+  DoNotDisturbIcon,
   GoalAttachmentCard,
   GoalPickerSheet,
   Meta,
@@ -50,6 +51,8 @@ import {
 } from "../components";
 import { syncReminders } from "../notifications/useReminderSync";
 import { usePreferences } from "../state/PreferencesContext";
+import { isShieldSupported } from "../../modules/focus-shield";
+import { getPermissions as getShieldPermissions, missingPermissions, shieldCapability } from "../utils/focusShield";
 import { useSession } from "../state/SessionContext";
 import { space, textAtDesignSize as td, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
@@ -69,7 +72,7 @@ export function TaskDetailScreen() {
   const theme = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { user } = useSession();
-  const { defaultFocusDurationMinutes, dndDuringFocusEnabled } = usePreferences();
+  const { defaultFocusDurationMinutes, dndDuringFocusEnabled, blockedAppIds } = usePreferences();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<Route>();
 
@@ -124,6 +127,41 @@ export function TaskDetailScreen() {
   useEffect(() => {
     setSessionDndEnabled(dndDuringFocusEnabled);
   }, [dndDuringFocusEnabled]);
+
+  /*
+   * What the shield will actually do for this session, not what the toggle says.
+   *
+   * Android grants the three permissions this needs through its own Settings screens, so
+   * someone can have it switched on and still get nothing. Saying "On" in that case is the
+   * same dishonesty the old "Do Not Disturb · preview" badge had — it promised silence that
+   * never came. Re-read on focus because the grant happens outside the app.
+   */
+  const [shieldPermissions, setShieldPermissions] = useState(() => getShieldPermissions());
+  useFocusEffect(
+    useCallback(() => {
+      setShieldPermissions(getShieldPermissions());
+    }, [])
+  );
+
+  const dndRowValue = (() => {
+    if (!sessionDndEnabled) return "Off";
+    /*
+     * "On" rather than a description of what it will do, where it can't do anything — the web
+     * preview. The setting really is on; there's just no shield behind it there, and reporting
+     * "Off" next to a "Change" button (which is what the capability check returns off-Android)
+     * reads as a broken toggle.
+     */
+    if (!isShieldSupported) return "On";
+    if (missingPermissions(true, blockedAppIds, shieldPermissions).length > 0) return "Needs permission";
+    switch (shieldCapability(true, blockedAppIds, shieldPermissions)) {
+      case "notificationsAndApps":
+        return `Silences your phone · ${blockedAppIds.length} app${blockedAppIds.length === 1 ? "" : "s"} blocked`;
+      case "notificationsOnly":
+        return "Silences your phone";
+      default:
+        return "On";
+    }
+  })();
 
   useEffect(() => {
     setRegularMinutes(defaultFocusDurationMinutes);
@@ -443,6 +481,32 @@ export function TaskDetailScreen() {
                 />
               )}
               <SessionModeSwitch value={focusMode} onChange={setFocusMode} />
+
+              {/*
+                Do Not Disturb belongs here, not only in Settings. `sessionDndEnabled` has always
+                been a per-session override seeded from the global default — the state, the nav
+                param and the shield all existed, but nothing on this screen could set it, so the
+                only way to change it was to leave, open Settings, and come back.
+
+                Hidden on iOS, where the shield genuinely can't run and a dead control would
+                just mislead. Shown on web even though nothing happens there, because web isn't
+                a platform anyone ships to — it's the preview loop and where the e2e suite runs,
+                and hiding it made the row impossible to see without a 20-minute device build
+                and impossible for any test to reach.
+              */}
+              {isShieldSupported || Platform.OS === "web" ? (
+                <TimingRow
+                  icon={<DoNotDisturbIcon size={19} />}
+                  label="DO NOT DISTURB"
+                  value={dndRowValue}
+                  action={sessionDndEnabled ? "Change" : "Turn on"}
+                  onPress={
+                    sessionDndEnabled
+                      ? () => navigation.navigate("BlockedApps")
+                      : () => setSessionDndEnabled(true)
+                  }
+                />
+              ) : null}
             </DetailCard>
           </DetailSection>
         ) : null}
