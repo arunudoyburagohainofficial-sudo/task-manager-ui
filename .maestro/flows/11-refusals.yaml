@@ -1,0 +1,112 @@
+# 11 · Refusals and warnings — the app saying no, legibly.
+#
+# Two classes here, and the difference matters:
+#
+#  - Rules the server enforces, which the UI must explain rather than surface as a raw error.
+#    "Repeat requires a date" is the single rule that replaced the old every-day-vs-repeat
+#    conflict, and it is refused at create and update, in both directions.
+#  - The lead-time warnings, which exist because a notification can be configured and still be
+#    incapable of ever firing. `daysBefore` is subtracted from the task's day and a resulting
+#    instant already past is dropped permanently — a dated one-off gets no retry. Pairing a dead
+#    lead time with a day-of notification hides it completely, because the task still buzzes.
+#
+# The lead-time case is the one `MD/notification-placement-audit.md` found and flagged as a real,
+# currently-unfixed UI gap. Pinning the *current* behaviour here is deliberate: when it is fixed,
+# this flow fails and says so, rather than the fix going unnoticed.
+appId: com.mactora.taskManager
+tags:
+  - fast
+  - refusals
+---
+- launchApp:
+    clearState: false
+- runFlow: ../helpers/sign-in.yaml
+- runFlow: ../helpers/finish-tour.yaml
+
+# ── Repeat is not offered without a day ───────────────────────────────────────────────────────
+- tapOn: "Capture tasks"
+- extendedWaitUntil:
+    visible: "Task name"
+    timeout: 20000
+- tapOn:
+    text: "Task name"
+    index: 0
+- inputText: "REF no date"
+- tapOn:
+    text: "Confirm & Organize.*"
+- extendedWaitUntil:
+    visible: "Organize your tasks"
+    timeout: 20000
+- tapOn: "Set a schedule"
+- extendedWaitUntil:
+    visible: "When"
+    timeout: 20000
+
+- tapOn: "No date"
+# Not a disabled control the user has to poke to discover — a sentence telling them what to do.
+- assertVisible: "Pick a day above to make this repeat."
+- assertVisible: "Stays on Home until you give it a day"
+
+# ── An undated notification is honest about what it will do ───────────────────────────────────
+# On an undated task a lead time is meaningless, so setNotifications flattens daysBefore to 0
+# rather than storing a promise it cannot keep. The sheet says so, and offers only the day-of
+# preset — the other two are not rendered at all when there is no date.
+- tapOn:
+    text: "Notify me"
+    index: 1
+- assertVisible: "Every day until you finish it."
+- assertNotVisible: "1 week before"
+- assertNotVisible: "1 day before"
+- takeScreenshot: artifacts/11-undated-notify
+
+# Giving it a day makes the lead times appear — the same controls, now meaningful.
+- tapOn: "Today"
+- extendedWaitUntil:
+    visible: ".*1 week before.*"
+    timeout: 20000
+
+# ── A lead time longer than the runway cannot fire, and the sheet says which day it missed ────
+# Today + "1 week before" lands seven days in the past. The warning names the day rather than
+# saying something vague, because "it won't fire" without a date is not actionable.
+- tapOn:
+    text: ".*1 week before.*"
+- extendedWaitUntil:
+    visible: ".*already past — it won't fire.*"
+    timeout: 20000
+- takeScreenshot: artifacts/11-lead-time-warning
+
+# ── The warning clears when the cause does, without saving and reopening ──────────────────────
+- tapOn: "Tomorrow"
+- tapOn: "Today"
+- assertVisible: ".*already past — it won't fire.*"
+
+- tapOn: "Cancel"
+- extendedWaitUntil:
+    visible: "Set a schedule"
+    timeout: 20000
+- tapOn:
+    text: "Confirm & Add.*"
+- extendedWaitUntil:
+    visible: "TO DO"
+    timeout: 30000
+
+# ── A nudge window cannot cross midnight, and the refusal is readable ─────────────────────────
+# The server refuses startTime >= endTime. The client carries working midnight-crossing code the
+# server makes unreachable — a contract mismatch the placement audit pinned deliberately rather
+# than "fixed" on one side. What must be true is that the user is told, in the sheet.
+- tapOn: "REF no date"
+- extendedWaitUntil:
+    visible: "TIMING"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "KEEP NUDGING"
+    direction: DOWN
+    timeout: 20000
+- tapOn: "Add keep nudging"
+- extendedWaitUntil:
+    visible: "Nudge me repeatedly"
+    timeout: 20000
+- assertVisible: "How often"
+- assertVisible: "15 min"
+- takeScreenshot: artifacts/11-nudge-sheet

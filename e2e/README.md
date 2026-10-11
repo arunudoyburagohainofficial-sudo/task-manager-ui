@@ -50,7 +50,8 @@ cd task-app && npx playwright test --config=e2e/playwright.config.ts --project=a
 | [14 · Accessibility and rendering](plan/14-accessibility-and-rendering.md) | 8 | Names, Reduce Motion, large text, small screens |
 | [15 · The walkthrough](plan/15-walkthrough.md) | 10 | Five steps coupled to five real controls across four screens |
 | [16 · Visual regression](plan/16-visual-regression.md) | 10 | The design itself — gradients, rings, shadows, the docked bar |
-| **Total** | **288** | |
+| 17 · Focus Now | 13 | **Starting work in one motion**, and the throwaway tasks that shortcut creates |
+| **Total** | **301** | |
 | [17 · What this can't prove](plan/17-device-only.md) | — | Notification delivery and everything else that needs a real phone |
 
 Two entries are **blocked on the app**, and say so: `DETAIL-18` (no rename control exists yet)

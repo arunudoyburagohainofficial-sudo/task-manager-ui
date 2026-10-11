@@ -116,7 +116,7 @@ export function SettingsScreen() {
       updateUser(updated);
       setProfileSheetOpen(false);
     } catch (e) {
-      setProfileError(e instanceof ApiError ? e.message : "Couldn't save — try again.");
+      setProfileError(e instanceof ApiError ? e.message : "Couldn't save - try again.");
     } finally {
       setSavingProfile(false);
     }
@@ -208,7 +208,7 @@ export function SettingsScreen() {
             label="Email"
             right={
               <Text style={ds(T.body, { fontWeight: "600", color: theme.surface.dashInkQuiet })}>
-                {user.email ?? "—"}
+                {user.email ?? "-"}
               </Text>
             }
           />
@@ -217,7 +217,7 @@ export function SettingsScreen() {
             last
             right={
               <Text style={ds(T.body, { fontWeight: "600", color: theme.surface.dashInkQuiet })}>
-                {user.phoneNumber ?? "—"}
+                {user.phoneNumber ?? "-"}
               </Text>
             }
           />
@@ -388,7 +388,7 @@ export function SettingsScreen() {
               ? "Silences your phone while a session runs, then puts your own setting back. " +
                 "Blocked apps show a reminder instead of opening, and work normally again the " +
                 "moment the session ends."
-              : "Silences your phone while a session runs. Available on Android — your choice is " +
+              : "Silences your phone while a session runs. Available on Android - your choice is " +
                 "saved and will apply there."}
           </PanelNote>
         </PanelCard>
@@ -427,7 +427,7 @@ export function SettingsScreen() {
       <ConfirmModal
         visible={deleteConfirmOpen}
         title="Delete my account?"
-        message="This permanently deletes your account and everything in it — tasks, goals, reminders, streak, and progress history. This can't be undone."
+        message="This permanently deletes your account and everything in it - tasks, goals, reminders, streak, and progress history. This can't be undone."
         confirmLabel="Delete"
         cancelLabel="Cancel"
         loading={deleting}
@@ -446,11 +446,11 @@ export function SettingsScreen() {
 
         <View style={styles.readOnlyField}>
           <Meta>Email</Meta>
-          <Body>{user.email ?? "—"}</Body>
+          <Body>{user.email ?? "-"}</Body>
         </View>
         <View style={styles.readOnlyField}>
           <Meta>Phone</Meta>
-          <Body>{user.phoneNumber ?? "—"}</Body>
+          <Body>{user.phoneNumber ?? "-"}</Body>
         </View>
         <Meta style={{ color: theme.color.textFaint }}>
           Email and phone come from how you signed in and can&rsquo;t be changed here.

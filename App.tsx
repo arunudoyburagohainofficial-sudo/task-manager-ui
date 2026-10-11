@@ -20,6 +20,7 @@ import { PreferencesProvider } from "./src/state/PreferencesContext";
 import { CompanionProvider } from "./src/state/CompanionContext";
 import { ToastProvider } from "./src/state/ToastContext";
 import { TourProvider } from "./src/state/TourContext";
+import { OnboardingProvider } from "./src/state/OnboardingContext";
 import { TourOverlay } from "./src/components/TourOverlay";
 import { RootNavigator } from "./src/navigation/RootNavigator";
 import { navigationRef } from "./src/navigation/navigationRef";
@@ -93,6 +94,7 @@ function AppShell() {
           <PreferencesProvider>
             <CompanionProvider>
               <SessionProvider>
+                <OnboardingProvider>
                 <TourProvider>
                   {/* Inside SafeAreaProvider (it reads the bottom inset) and wrapping the
                       navigator, so any screen can raise a toast and it renders above them. */}
@@ -105,6 +107,7 @@ function AppShell() {
                   <StatusBar style={t.isDark ? "light" : "dark"} />
                   </ToastProvider>
                 </TourProvider>
+                </OnboardingProvider>
               </SessionProvider>
             </CompanionProvider>
           </PreferencesProvider>

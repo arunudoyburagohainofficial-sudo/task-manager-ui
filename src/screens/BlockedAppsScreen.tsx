@@ -104,7 +104,7 @@ export function BlockedAppsScreen() {
           <Card style={styles.emptyCard}>
             <Body style={{ fontWeight: "700" }}>Not available in this build</Body>
             <Meta style={{ color: theme.color.textFaint }}>
-              Blocking apps needs the installed app, on Android. It does nothing here — your
+              Blocking apps needs the installed app, on Android. It does nothing here - your
               choices are saved and will apply on a phone.
             </Meta>
           </Card>

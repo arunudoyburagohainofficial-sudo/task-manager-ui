@@ -33,7 +33,7 @@ export function useGoogleSignIn(): GoogleSignIn {
         return result.params.id_token ?? null;
       }
       if (result.type === "error") {
-        throw new Error(result.error?.message ?? "Google sign-in failed — try again.");
+        throw new Error(result.error?.message ?? "Google sign-in failed - try again.");
       }
       // dismiss / cancel / locked — the user closed the popup, not an error.
       return null;

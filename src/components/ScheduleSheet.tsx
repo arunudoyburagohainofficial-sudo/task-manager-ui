@@ -422,20 +422,20 @@ export function ScheduleSheet({
           };
         }
         if (notificationHealth(n) === "passed-today") {
-          return { text: "That time has already passed today — it won't fire. Pick a later time.", bad: true };
+          return { text: "That time has already passed today - it won't fire. Pick a later time.", bad: true };
         }
         return {
-          text: `That lands on ${fireDayLabel(n)}, already past — it won't fire. Try a shorter warning or a later date.`,
+          text: `That lands on ${fireDayLabel(n)}, already past - it won't fire. Try a shorter warning or a later date.`,
           bad: true,
         };
       case "only-this-time":
         return {
-          text: "Fires this time, but not on the copies after it — this repeats sooner than the warning.",
+          text: "Fires this time, but not on the copies after it - this repeats sooner than the warning.",
           bad: true,
         };
       case "not-this-time":
         // Deliberately not an error: nothing is lost, it simply starts at the next occurrence.
-        return { text: "Too late for this one — starts from the next.", bad: false };
+        return { text: "Too late for this one - starts from the next.", bad: false };
       default:
         if (!hasDate) return { text: "Every day until you finish it.", bad: false };
         return {
@@ -567,7 +567,7 @@ export function ScheduleSheet({
   function weeklyStartNote(p: RecurrencePattern): string | null {
     if (p.freq !== "WEEKLY" || p.byDay.length === 0) return null;
     if (p.byDay.includes(nthOf(selectedDate).day)) return null;
-    return `${startPhrase()} — a one-time reminder.`;
+    return `${startPhrase()} - a one-time reminder.`;
   }
 
   /**
@@ -837,7 +837,7 @@ export function ScheduleSheet({
         </View>
 
         {notifications.length === 0 ? (
-          <Meta style={{ color: theme.color.textFaint }}>Off — no notification.</Meta>
+          <Meta style={{ color: theme.color.textFaint }}>Off - no notification.</Meta>
         ) : null}
 
         {/* One bordered group per notification, with its own note attached underneath rather
@@ -860,9 +860,18 @@ export function ScheduleSheet({
                     setEditingIndex(editingIndex === index ? null : index);
                   }}
                 >
-                  <Text style={t(T.bodyLg, { fontWeight: "800", color: note.bad ? theme.color.danger : theme.color.text })}>
-                    {formatClock(n.time)}
-                  </Text>
+                  <View style={styles.notifyClockRow}>
+                    <Text style={t(T.bodyLg, { fontWeight: "800", color: note.bad ? theme.color.danger : theme.color.text })}>
+                      {formatClock(n.time)}
+                    </Text>
+                    {/* The time is the only control here that looked like plain text, so it read
+                        as a readout rather than something to tap. */}
+                    <View style={styles.notifyChange}>
+                      <Text style={t(T.badge, { color: theme.surface.actionInk })}>
+                        {editingIndex === index ? "Done" : "Change"}
+                      </Text>
+                    </View>
+                  </View>
                   <Meta style={{ color: theme.color.textMuted, marginTop: 1 }}>{leadLabel(n, hasDate)}</Meta>
                 </Pressable>
                 <Pressable
@@ -948,11 +957,15 @@ export function ScheduleSheet({
                   key={preset.daysBefore}
                   accessibilityRole="button"
                   onPress={() => {
-                    const next = [...notifications, { time: DEFAULT_NOTIFY_TIME, daysBefore: preset.daysBefore }];
+                    const added = { time: DEFAULT_NOTIFY_TIME, daysBefore: preset.daysBefore };
+                    const next = [...notifications, added];
                     // Earliest warning first, so the list reads in the order things happen.
                     next.sort((a, b) => b.daysBefore - a.daysBefore);
                     setNotifications(next);
-                    setEditingIndex(null);
+                    // Open the new row's time editor straight away. Picking a time used to take
+                    // three taps — add, then the bare clock text, which nothing marked as
+                    // tappable — and people reported the time as missing rather than hidden.
+                    setEditingIndex(next.indexOf(added));
                   }}
                   style={styles.add}
                 >
@@ -1127,6 +1140,17 @@ const makeStyles = (t: Tokens) =>
     notifyText: {
       flex: 1,
       minWidth: 0,
+    },
+    notifyClockRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space.sm,
+    },
+    notifyChange: {
+      backgroundColor: t.surface.action,
+      borderRadius: 999,
+      paddingHorizontal: px(10),
+      paddingVertical: px(3),
     },
     remove: {
       width: px(28),

@@ -101,7 +101,7 @@ export function NudgeSheet({ visible, onClose, onSubmit, onRemove, submitting = 
     <BottomSheet visible={visible} onClose={onClose}>
       <H2>{existing ? "Edit nudges" : "Nudge me repeatedly"}</H2>
       <Meta style={{ color: theme.color.textFaint }}>
-        Buzzes on a loop inside a window today — for something you need chasing about, not
+        Buzzes on a loop inside a window today - for something you need chasing about, not
         something with a due date.
       </Meta>
 
@@ -138,7 +138,7 @@ export function NudgeSheet({ visible, onClose, onSubmit, onRemove, submitting = 
 
         {inverted ? (
           <Meta style={{ color: theme.color.danger }}>
-            The end time needs to be after the start — a window that closes before it opens
+            The end time needs to be after the start - a window that closes before it opens
             can't nudge you at all.
           </Meta>
         ) : null}
@@ -179,7 +179,7 @@ export function NudgeSheet({ visible, onClose, onSubmit, onRemove, submitting = 
           <Body style={{ color: nudgeCount > 20 ? theme.color.danger : theme.color.textBody }}>
             About {nudgeCount} {nudgeCount === 1 ? "nudge" : "nudges"} between {formatTime(start)} and{" "}
             {formatTime(end)}
-            {nudgeCount > 20 ? " — that's a lot of buzzing." : ""}
+            {nudgeCount > 20 ? " - that's a lot of buzzing." : ""}
           </Body>
         ) : null}
       </View>

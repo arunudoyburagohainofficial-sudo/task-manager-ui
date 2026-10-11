@@ -41,12 +41,12 @@ const COPY: Record<TourStep, { title: string; body: string; waiting?: string }> 
   },
   attachGoal: {
     title: "Count it toward your goal",
-    body: "Tap here to attach the task to your goal — finishing it will move that goal forward.",
+    body: "Tap here to attach the task to your goal - finishing it will move that goal forward.",
     waiting: "Head to Confirm & Organize to attach a goal.",
   },
   start: {
     title: "Then just start",
-    body: "Tap Focus to begin a session. That’s the whole loop — capture, attach, focus.",
+    body: "Tap Focus to begin a session. That’s the whole loop - capture, attach, focus.",
     // True whether the user is on another tab or simply scrolled the row out of sight —
     // "head back to Home" read as nonsense to someone already standing on Home.
     waiting: "Find the task you just made on your Home list and tap Focus to start it.",

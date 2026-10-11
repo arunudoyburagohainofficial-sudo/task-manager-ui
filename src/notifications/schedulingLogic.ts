@@ -308,9 +308,9 @@ export function leadIn(daysBefore: number, name: string | undefined, focus: bool
   // it starts the line.
   const task = name ?? (focus && daysBefore <= 0 ? "your task" : "Your task");
   if (daysBefore <= 0) return focus ? `You planned to work on: ${task}` : task;
-  if (daysBefore === 1) return `${task} — due tomorrow`;
-  if (daysBefore === 7) return `${task} — due in a week`;
-  return `${task} — due in ${daysBefore} days`;
+  if (daysBefore === 1) return `${task} - due tomorrow`;
+  if (daysBefore === 7) return `${task} - due in a week`;
+  return `${task} - due in ${daysBefore} days`;
 }
 
 /**

@@ -1,0 +1,6 @@
+# Suite-level Maestro config. `maestro test .maestro/` reads this.
+#
+# Flows are listed explicitly rather than globbed so that `helpers/` is never picked up as a
+# runnable flow — a helper has no meaning on its own and fails if launched directly.
+flows:
+  - "flows/*.yaml"

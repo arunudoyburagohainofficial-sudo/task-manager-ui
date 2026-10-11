@@ -1,0 +1,132 @@
+# 06 · Focus sessions.
+#
+# The two claims here that no browser test can make honestly:
+#
+#  1. A session survives a real process death. Reopening must hand back the REMAINING time, not a
+#     fresh full-length timer — that bug once let a 25-minute session run far longer than planned
+#     while the server's credit and the screen disagreed.
+#  2. A second concurrent session is refused as a usable door rather than a dead end. The database
+#     enforces it (uq_focus_sessions_one_open_per_user, V019) because the service's check-then-act
+#     let two starts both through; afterwards every read of the current session failed and the user
+#     could neither start, resume nor discard. The 409 must become an offer, not a crash.
+appId: com.mactora.taskManager
+tags:
+  - fast
+  - focus
+---
+- launchApp:
+    clearState: false
+- runFlow: ../helpers/sign-in.yaml
+- runFlow: ../helpers/finish-tour.yaml
+
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "FOCUS session one"
+      TYPE: "Focus Task"
+      WHEN: ""
+      REPEAT: ""
+      NOTIFY: ""
+
+# Open the task rather than tapping the row's Focus button, because the detail screen is where the
+# session length and the start control live.
+- tapOn: "FOCUS session one"
+- extendedWaitUntil:
+    visible: "SESSION"
+    timeout: 20000
+- assertVisible: "TIMING"
+
+# The footer's label carries the length — "Start 25 min session" — so the prefix is the stable part.
+- tapOn:
+    text: "Start .*"
+- extendedWaitUntil:
+    visible: "End Session"
+    timeout: 20000
+- assertVisible: "Pause"
+
+# ── The session outlives the app's process ────────────────────────────────────────────────────
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: "TO DO"
+    timeout: 60000
+
+# Home lifts the running task out of TO DO into RIGHT NOW, so the count drops by one and the task
+# is not listed twice.
+- assertVisible: "RIGHT NOW"
+- assertVisible: "FOCUS session one"
+- assertVisible: "Resume"
+
+# ── A second concurrent session is refused, and offers a way out ──────────────────────────────
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "FOCUS session two"
+      TYPE: "Focus Task"
+      WHEN: ""
+      REPEAT: ""
+      NOTIFY: ""
+- tapOn: "FOCUS session two"
+- extendedWaitUntil:
+    visible: "SESSION"
+    timeout: 20000
+- tapOn:
+    text: "Start .*"
+
+# A native Alert, so these are OS dialog buttons. The claim is that the user is told what is going
+# on and given both doors — not that the app errors.
+- extendedWaitUntil:
+    visible: "A session is already running"
+    timeout: 20000
+- assertVisible: "Discard it"
+- assertVisible: "Cancel"
+- tapOn: "Cancel"
+
+# ── Discarding credits nothing, and frees the slot ────────────────────────────────────────────
+- tapOn: "Home"
+- extendedWaitUntil:
+    visible: "RIGHT NOW"
+    timeout: 20000
+- tapOn: "Resume"
+- extendedWaitUntil:
+    visible: "Discard session"
+    timeout: 20000
+- tapOn: "Discard session"
+
+# ConfirmModal, whose cancel label defaults to "Keep going".
+- extendedWaitUntil:
+    visible: "Discard this session?"
+    timeout: 20000
+- assertVisible: "None of this time will count — no minutes, no XP."
+- tapOn: "Discard"
+
+- extendedWaitUntil:
+    visible: "Session discarded — nothing was counted"
+    timeout: 20000
+- tapOn: "Home"
+- extendedWaitUntil:
+    visible: "TO DO"
+    timeout: 20000
+- assertNotVisible: "RIGHT NOW"
+
+# The slot is genuinely free: the second task can now start where a moment ago it was refused.
+- tapOn: "FOCUS session two"
+- extendedWaitUntil:
+    visible: "SESSION"
+    timeout: 20000
+- tapOn:
+    text: "Start .*"
+- extendedWaitUntil:
+    visible: "End Session"
+    timeout: 20000
+- assertNotVisible: "A session is already running"
+
+# Leave the device with nothing running, so flow order stays irrelevant.
+- tapOn: "Discard session"
+- extendedWaitUntil:
+    visible: "Discard this session?"
+    timeout: 20000
+- tapOn: "Discard"
+
+- takeScreenshot: artifacts/06-focus

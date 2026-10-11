@@ -1,0 +1,49 @@
+# 01 · Auth and session.
+#
+# The one test here with no browser equivalent is session restore across a real process death.
+# The Playwright suite's AUTH-02 reloads a tab, which keeps the JS context's memory warm; only
+# stopApp/launchApp reproduces the OS actually reclaiming the process and the app rebuilding its
+# session from persisted storage.
+appId: com.mactora.taskManager
+tags:
+  - fast
+  - auth
+---
+- launchApp:
+    clearState: false
+- runFlow: ../helpers/sign-in.yaml
+- runFlow: ../helpers/finish-tour.yaml
+
+# A uniquely named task, so "the same account came back" is provable rather than inferred from the
+# mere absence of the sign-in screen.
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "AUTH survives restart"
+      TYPE: "Focus Task"
+      WHEN: ""
+      REPEAT: ""
+      NOTIFY: ""
+- assertVisible: "AUTH survives restart"
+
+# ── Session survives a real process death ──────────────────────────────────────────────────────
+- stopApp
+- launchApp:
+    clearState: false
+
+# The Auth screen must never appear. Asserting its absence is the actual claim — waiting for Home
+# alone would also pass if the app flashed sign-in and auto-authenticated.
+- extendedWaitUntil:
+    visible: "TO DO"
+    timeout: 60000
+- assertNotVisible: "Continue as test user"
+- assertNotVisible: "Welcome"
+- assertVisible: "AUTH survives restart"
+
+# ── The walkthrough does not come back ────────────────────────────────────────────────────────
+# finish() persisted {"finished":true} under the AsyncStorage key "tour-v1" (TourContext.tsx:238).
+# A relaunch that re-showed the tour would block every later flow's taps.
+- assertNotVisible: "Skip tour"
+- assertNotVisible: "Start with a goal"
+
+- takeScreenshot: artifacts/01-auth-restored

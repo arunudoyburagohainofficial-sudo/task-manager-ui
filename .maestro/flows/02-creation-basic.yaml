@@ -1,0 +1,84 @@
+# 02 · Creation, completion and undo — the loop everything else is built on.
+#
+# Deliberately narrow: this is the path a person walks on their first day, and the assertions are
+# about what a row *says*, not only that it exists. The row's meta line is the app's one-line
+# explanation of what a task is and when it will bother you, and it has been wrong before — every
+# reminder once announced itself as "Time to focus".
+appId: com.mactora.taskManager
+tags:
+  - fast
+  - creation
+---
+- launchApp:
+    clearState: false
+- runFlow: ../helpers/sign-in.yaml
+- runFlow: ../helpers/finish-tour.yaml
+
+# ── A focus task and a reminder task read differently ─────────────────────────────────────────
+# Focus Task is the default type on Organize, so this row also proves the default.
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "BASIC focus work"
+      TYPE: "Focus Task"
+      WHEN: ""
+      REPEAT: ""
+      NOTIFY: ""
+- assertVisible: "BASIC focus work"
+# A focus row's action starts a session; a reminder's finishes the task. The label is the
+# difference, and it is what the accessibility layer reads aloud.
+- assertVisible: "Focus: BASIC focus work"
+
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "BASIC just remind"
+      TYPE: "Reminder Task"
+      WHEN: ""
+      REPEAT: ""
+      NOTIFY: ""
+- assertVisible: "BASIC just remind"
+- assertVisible: "Done: BASIC just remind"
+- takeScreenshot: artifacts/02-two-kinds
+
+# ── Completing, and the toast that offers to take it back ─────────────────────────────────────
+- tapOn: "Done: BASIC just remind"
+- extendedWaitUntil:
+    visible: "“BASIC just remind” done"
+    timeout: 20000
+
+# It leaves TO DO for DONE. Both sections exist on Home, so this is a move rather than a removal.
+- assertVisible: "DONE"
+
+# Undo is tested on a reminder, not on the focus task above. A focus row's button STARTS A
+# SESSION rather than completing the task — which is the distinction this flow asserts two steps
+# earlier and which I then contradicted by tapping "Done:" on it. Completing a focus task means
+# running and finishing a session, and that belongs in 06.
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "BASIC undo me"
+      TYPE: "Reminder Task"
+      WHEN: ""
+      REPEAT: ""
+      NOTIFY: ""
+
+- tapOn: "Done: BASIC undo me"
+- extendedWaitUntil:
+    visible: "Undo"
+    timeout: 15000
+- tapOn: "Undo"
+- extendedWaitUntil:
+    visible: "“BASIC undo me” put back"
+    timeout: 20000
+
+# Back where it was, still actionable — undo restores the row, not merely a status.
+- assertVisible: "Done: BASIC undo me"
+# And the focus task is untouched throughout.
+- assertVisible: "Focus: BASIC focus work"
+
+# ── An undated task says so, without inventing a time ─────────────────────────────────────────
+# The meta line for an undated plain task reads "Task" alone: no "anytime", no dangling separator.
+# A row that claimed a time it does not have would be a lie in the one slot people scan.
+- assertVisible: "TO DO"
+- takeScreenshot: artifacts/02-after-undo

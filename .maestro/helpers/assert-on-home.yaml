@@ -1,0 +1,38 @@
+# Asserts whether a task is on Home, by name.
+#
+# env:
+#   TITLE   the task's name
+#   PRESENT "true" it must be on Home | "false" it must not be
+#
+# Absence is asserted as hard as presence on purpose. Both device documents call a task that
+# appears on *neither* Home nor the Scheduled tab a task the user has lost — so a flow that only
+# checked for presence would pass while work quietly vanished.
+#
+# Presence uses scrollUntilVisible, not assertVisible: Home's list virtualises, so a row below the
+# fold is genuinely absent from the view hierarchy and a plain assert would call a present task
+# missing. Absence is checked from the top of a deliberately short list — every flow creates only
+# the handful of tasks it needs, so "not in the hierarchy" and "not on the screen" coincide. If a
+# flow ever grows past one screenful, its absence assertions stop being trustworthy.
+appId: com.mactora.taskManager
+---
+- tapOn: "Home"
+- extendedWaitUntil:
+    visible: "TO DO"
+    timeout: 20000
+
+- runFlow:
+    when:
+      true: ${PRESENT === "true"}
+    commands:
+      - scrollUntilVisible:
+          element:
+            text: "${TITLE}"
+          direction: DOWN
+          timeout: 20000
+          centerElement: false
+
+- runFlow:
+    when:
+      true: ${PRESENT !== "true"}
+    commands:
+      - assertNotVisible: "${TITLE}"

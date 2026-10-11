@@ -1,0 +1,30 @@
+# 00 · Setup — the prerequisite every other flow depends on.
+#
+# Signs in on a clean install and finishes the walkthrough once, leaving a signed-in device with a
+# tour-free Home. Every other flow launches with `clearState: false` and inherits that.
+#
+# This is the only flow that deliberately wipes state, apart from 10-walkthrough which needs a
+# fresh install to exercise the tour itself.
+appId: com.mactora.taskManager
+tags:
+  - fast
+  - setup
+---
+- launchApp:
+    clearState: true
+
+# A cleared dev build lands on the development-client launcher, not the app. See the helper.
+- runFlow: ../helpers/ensure-app-loaded.yaml
+- runFlow: ../helpers/sign-in.yaml
+- runFlow: ../helpers/finish-tour.yaml
+
+# Proof the rig is sound before 12 other flows build on it: a signed-in Home with its own
+# furniture present. These four strings are the ones every later flow navigates by.
+- assertVisible: "TO DO"
+- assertVisible: "GOALS"
+# The tab bar. On Home these are unambiguous; "Scheduled" collides with the ScheduledScreen's own
+# H1, but that screen is not mounted yet here.
+- assertVisible: "Home"
+- assertVisible: "Scheduled"
+
+- takeScreenshot: artifacts/00-setup-home

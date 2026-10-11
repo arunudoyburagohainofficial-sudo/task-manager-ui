@@ -1,6 +1,10 @@
 import type { NavigatorScreenParams } from "@react-navigation/native";
 
 export type RootStackParamList = {
+  OnboardingWelcome: undefined;
+  OnboardingScreenTime: undefined;
+  OnboardingPermissions: undefined;
+  OnboardingPickApps: undefined;
   Auth: undefined;
   PhoneSignIn: undefined;
   Main: NavigatorScreenParams<MainTabParamList>;

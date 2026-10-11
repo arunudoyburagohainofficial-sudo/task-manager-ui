@@ -1,0 +1,27 @@
+# Signs in through the sanctioned SHOW_TEST_LOGIN path and waits for Home to have data.
+#
+# "Continue as test user" is matched as an accessibility label rather than visible text on
+# purpose: while the request is in flight the Pressable swaps its text for an ActivityIndicator,
+# so the visible string disappears mid-tap while the label stays put (AuthScreen.tsx:139).
+#
+# The button is optional — a flow launched with clearState: false is often already signed in, and
+# re-running this helper must be harmless. Hence runFlow/when rather than a bare tapOn.
+appId: com.mactora.taskManager
+---
+- extendedWaitUntil:
+    visible:
+      text: "Continue as test user|TO DO"
+    timeout: 60000
+
+- runFlow:
+    when:
+      visible: "Continue as test user"
+    commands:
+      - tapOn: "Continue as test user"
+
+# Home is "ready" when TO DO exists — the same signal the browser harness waits on
+# (e2e/harness/app.ts:29), so the two suites agree on what a loaded Home means.
+- extendedWaitUntil:
+    visible:
+      text: "TO DO"
+    timeout: 60000

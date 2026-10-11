@@ -34,7 +34,7 @@ export const phoneAuthUnavailableReason: string | null = isPhoneAuthAvailable
   ? null
   : Platform.OS === "web"
     ? "Phone sign-in works in the app, not in a browser."
-    : "Phone sign-in needs a development build — it isn’t part of Expo Go.";
+    : "Phone sign-in needs a development build - it isn’t part of Expo Go.";
 
 /** Opaque to callers — structurally @react-native-firebase's ConfirmationResult. */
 export interface PhoneConfirmation {
@@ -42,7 +42,7 @@ export interface PhoneConfirmation {
 }
 
 const UNAVAILABLE_MESSAGE =
-  "Phone sign-in needs a development build — it isn't part of Expo Go.";
+  "Phone sign-in needs a development build - it isn't part of Expo Go.";
 
 /**
  * Resolves the SDK's Auth instance, or null when unavailable. getAuth() itself can also
@@ -71,7 +71,7 @@ export async function sendPhoneVerificationCode(phoneNumber: string): Promise<Ph
 export async function confirmPhoneCode(confirmation: PhoneConfirmation, code: string): Promise<void> {
   const credential = await confirmation.confirm(code);
   if (!credential) {
-    throw new Error("Incorrect code — try again.");
+    throw new Error("Incorrect code - try again.");
   }
 }
 

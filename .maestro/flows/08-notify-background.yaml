@@ -1,0 +1,106 @@
+# 08 · A scheduled reminder fires with the app not open. Part 1 of 2 — the arming half.
+#
+# This is the flow the whole suite exists for. All 245 browser checks prove the app makes the right
+# *decision* about when to fire; not one proves the phone rings, because the web build stubs the
+# native scheduler. e2e/plan/17-device-only.md calls this "the big one".
+#
+# Three things make it trustworthy rather than theatre:
+#
+#  1. The app is backgrounded with the HOME key, NOT force-stopped. Android puts a force-stopped app
+#     into the "stopped" state and cancels every pending alarm — measured in this repo, 10 pending
+#     to 0. Force-stopping here would prove the opposite of what it appears to.
+#  2. The reminder is built through the real ScheduleSheet, so the whole chain from tap to OS alarm
+#     is under test — nothing is seeded.
+#  3. Delivery itself is asserted by the runner from `dumpsys notification`, after it moves the
+#     clock past the target. Maestro cannot see SystemUI while the app is not in front, and it
+#     cannot run adb, so the proof has to live in scripts/maestro-run.sh. That split is the honest
+#     shape of this test, not a workaround.
+#
+# The clock: the runner sets the device to 20:58 before this flow runs, so choosing the "Night"
+# preset (21:00, ScheduleSheet.tsx:87) puts the reminder ~2 minutes out regardless of the real time
+# of day. Without that, a fixed preset is as likely to be in the past — and the sheet correctly
+# refuses a time already gone ("That time has already passed today — it won't fire").
+appId: com.mactora.taskManager
+tags:
+  - slow
+  - notifications
+---
+- launchApp:
+    clearState: false
+- runFlow: ../helpers/sign-in.yaml
+- runFlow: ../helpers/finish-tour.yaml
+
+- tapOn: "Capture tasks"
+- extendedWaitUntil:
+    visible: "Task name"
+    timeout: 20000
+- tapOn:
+    text: "Task name"
+    index: 0
+- inputText: "FIRE background"
+- tapOn:
+    text: "Confirm & Organize.*"
+- extendedWaitUntil:
+    visible: "Organize your tasks"
+    timeout: 20000
+- tapOn: "Reminder Task"
+- tapOn: "Set a schedule"
+- extendedWaitUntil:
+    visible: "When"
+    timeout: 20000
+- tapOn: "Today"
+
+# Add a day-of notification. On the very first add the control reads "Notify me" rather than
+# "+ On the day" (ScheduleSheet.tsx:943) — and "Notify me" is ALSO the card's eyebrow, so there are
+# two matches. index: 1 takes the button rather than the heading; the runner's --hierarchy mode is
+# how that index was confirmed rather than guessed.
+- tapOn:
+    text: "Notify me"
+    index: 1
+
+# Move it to 21:00. The time control's label is "Change the time for 9:00 AM · on the day", so the
+# stable part is the prefix.
+- tapOn:
+    text: "Change the time for.*"
+- extendedWaitUntil:
+    visible: "Night"
+    timeout: 20000
+- tapOn: "Night"
+
+- tapOn: "Save schedule"
+- extendedWaitUntil:
+    visible: "Set a schedule"
+    timeout: 20000
+- tapOn:
+    text: "Confirm & Add.*"
+- extendedWaitUntil:
+    visible: "TO DO"
+    timeout: 30000
+
+- assertVisible: "FIRE background"
+
+# ── The app queued it, before asking whether the OS delivered it ───────────────────────────────
+# Settings -> Upcoming notifications reads the real expo-notifications pending queue, not server
+# state, which makes it the one screen that separates the two failure modes. The release gate's own
+# triage rule: absent here means the app never scheduled it, so the bug is before delivery; present
+# here but undelivered means the OS.
+#
+# It is also the screen that was blind until this session — Android reports a trigger's instant as
+# trigger.value, not trigger.date, so this list rendered empty however many alarms were pending.
+# Asserting on it is what stops that regressing.
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element:
+      text: "Upcoming notifications"
+    direction: DOWN
+    timeout: 20000
+- tapOn: "Upcoming notifications"
+- extendedWaitUntil:
+    visible: "FIRE background"
+    timeout: 20000
+- takeScreenshot: artifacts/08-queued-before-firing
+
+# ── Background it the way a person does ───────────────────────────────────────────────────────
+- pressKey: Home
+- assertNotVisible: "TO DO"
+- takeScreenshot: artifacts/08-backgrounded

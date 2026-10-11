@@ -22,12 +22,14 @@ import {
   ScreenContainer,
   Timer,
 } from "../components";
+import { tasksApi } from "../api";
 import { useCompanion } from "../state/CompanionContext";
 import { FONT_SCALE_CORRECTION, px, radius, space, text as t, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { restingLine } from "../theme/companionCopy";
 import { formatMMSS, formatMinutes } from "../utils/format";
 import { lowerShield, raiseShield } from "../utils/focusShield";
+import { forgetQuickFocusStub, isQuickFocusStub } from "../utils/quickFocusStubs";
 import { usePreferences } from "../state/PreferencesContext";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -147,6 +149,40 @@ export function FocusSessionScreen() {
                 : totalCycles
               : undefined,
         });
+        /*
+         * A quick-focus task finishes with its session. It was never a thing to come back to —
+         * it exists only because a session needs a task — so asking "is it done, or will you
+         * come back to it?" is a question about nothing.
+         *
+         * Completing it is also what makes it go away. An undated task sits on Home forever
+         * (a null date reads as "today"), and dating it today only turns it overdue tomorrow,
+         * which is still Home. Done is the one state Home ages out: it filters DONE to tasks
+         * completed today, so this is on the list for the rest of the day and gone after.
+         */
+        if (await isQuickFocusStub(taskId)) {
+          await forgetQuickFocusStub(taskId);
+          /*
+           * Under a minute credits nothing (CompletionPoints floors it), so finishing that fast
+           * is a discard wearing a different button. Completing it would put a 0-point row in
+           * DONE for work that never happened.
+           */
+          if ((completed.durationSeconds ?? 0) < 60) {
+            await tasksApi.deleteTask(taskId).catch(() => {});
+            queryClient.invalidateQueries({ queryKey: ["tasks"] });
+            queryClient.invalidateQueries({ queryKey: queryKeys.currentFocusSession() });
+            showToast({ message: "Too short to count - nothing was saved" });
+            navigation.navigate("Main", { screen: "Home" });
+            return;
+          }
+          await completeTaskMutation.mutateAsync(taskId).catch(() => {});
+          navigation.replace("Completion", {
+            taskId,
+            taskName: task?.name ?? "Quick focus",
+            durationSeconds: completed.durationSeconds ?? 0,
+            pointsEarned: completed.pointsEarned ?? 0,
+          });
+          return;
+        }
         setCompletedSession(completed);
         setPhase("completePrompt");
         // Home reads both: the session is no longer running, and the minutes it credited are
@@ -166,8 +202,8 @@ export function FocusSessionScreen() {
           tone: "error",
           message:
             err instanceof ApiError && err.status === 429
-              ? "Couldn't save this session — too many requests right now. End it again in a minute."
-              : "Couldn't save this session — check your connection and end it again.",
+              ? "Couldn't save this session - too many requests right now. End it again in a minute."
+              : "Couldn't save this session - check your connection and end it again.",
         });
       } finally {
         setFinishing(false);
@@ -246,13 +282,23 @@ export function FocusSessionScreen() {
     void lowerShield();
     try {
       await focusSessionsApi.abandonFocusSession(sessionId);
+      // A task invented purely to carry this session has nothing to show for itself now, and an
+      // undated task never leaves Home on its own. Sliding and changing your mind should leave
+      // no trace.
+      if (await isQuickFocusStub(taskId)) {
+        await tasksApi.deleteTask(taskId).catch(() => {});
+        await forgetQuickFocusStub(taskId);
+        // The ["tasks"] prefix, not queryKeys.tasks(): Home reads tasks("pending"), which an
+        // exact-key invalidation does not match. Same three-key sweep the mutation cache uses.
+        queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.currentFocusSession() });
       queryClient.invalidateQueries({ queryKey: ["todayProgress"] });
-      showToast({ message: "Session discarded — nothing was counted" });
+      showToast({ message: "Session discarded - nothing was counted" });
       navigation.navigate("Main", { screen: "Home" });
     } catch (err) {
       firedFor.current = null;
-      showToast({ tone: "error", message: `Couldn't discard this session — ${failureHint(err)}` });
+      showToast({ tone: "error", message: `Couldn't discard this session - ${failureHint(err)}` });
     } finally {
       setDiscarding(false);
     }
@@ -312,7 +358,7 @@ export function FocusSessionScreen() {
               <Text style={{ fontSize: 32 }}>☕</Text>
             </View>
             <H2>Cycle {currentCycle} complete</H2>
-            <Meta style={styles.centerText}>Break time — stretch, breathe, hydrate.</Meta>
+            <Meta style={styles.centerText}>Break time - stretch, breathe, hydrate.</Meta>
             <Text style={t(T.timer, { fontSize: 56, color: theme.color.textMuted, textAlign: "center" })}>
               {formatMMSS(secondsLeft)}
             </Text>
@@ -477,7 +523,7 @@ export function FocusSessionScreen() {
       <ConfirmModal
         visible={discardConfirmOpen}
         title="Discard this session?"
-        message="None of this time will count — no minutes, no XP."
+        message="None of this time will count - no minutes, no XP."
         confirmLabel="Discard"
         cancelLabel="Keep going"
         onConfirm={handleDiscardConfirm}

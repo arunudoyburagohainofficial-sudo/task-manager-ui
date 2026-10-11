@@ -64,7 +64,7 @@ export function GoalPickerSheet({ visible, onClose, goals, selectedGoalId, onSel
         )}
 
         {goals.length === 0 ? (
-          <Meta style={styles.empty}>No goals yet — create one from Home to start tracking longer-term work.</Meta>
+          <Meta style={styles.empty}>No goals yet - create one from Home to start tracking longer-term work.</Meta>
         ) : null}
       </View>
     </BottomSheet>

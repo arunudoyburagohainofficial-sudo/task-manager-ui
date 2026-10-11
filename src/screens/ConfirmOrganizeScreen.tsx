@@ -195,8 +195,8 @@ export function ConfirmOrganizeScreen() {
       if (saved.size > 0 && drafts.some((d) => d.notifications.length > 0)) void syncReminders();
       setError(
         saved.size > 0
-          ? `Saved ${saved.size} — couldn't save “${failedName}”. Try again.`
-          : `Couldn't save “${failedName}” — try again.`
+          ? `Saved ${saved.size} - couldn't save “${failedName}”. Try again.`
+          : `Couldn't save “${failedName}” - try again.`
       );
     } finally {
       setSubmitting(false);
@@ -222,7 +222,7 @@ export function ConfirmOrganizeScreen() {
               Organize your tasks
             </Text>
             <Text style={[ds(T.meta, { fontSize: 13, fontWeight: "500", color: theme.home.subtle }), styles.subtitle]}>
-              {drafts.length} task{drafts.length === 1 ? "" : "s"} captured — set a type &amp; schedule for each
+              {drafts.length} task{drafts.length === 1 ? "" : "s"} captured - set a type &amp; schedule for each
             </Text>
           </View>
 
@@ -327,7 +327,7 @@ export function ConfirmOrganizeScreen() {
           {tourGoalAttached ? (
             <TourTarget
               step="attachGoal"
-              body="Saved — now tap “Confirm & Add” to add it to your list."
+              body="Saved - now tap “Confirm & Add” to add it to your list."
               style={styles.flex}
             >
               <PrimaryAction

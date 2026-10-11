@@ -83,13 +83,13 @@ export function ScheduledScreen() {
               await reopenTaskMutation.mutateAsync(taskId);
               showToast({ message: `“${taskName}” put back` });
             } catch (err) {
-              showToast({ tone: "error", message: `Couldn't undo — ${failureHint(err)}` });
+              showToast({ tone: "error", message: `Couldn't undo - ${failureHint(err)}` });
             }
           },
         },
       });
     } catch (err) {
-      showToast({ tone: "error", message: `Couldn't complete “${taskName}” — ${failureHint(err)}` });
+      showToast({ tone: "error", message: `Couldn't complete “${taskName}” - ${failureHint(err)}` });
     }
   }
 
@@ -216,13 +216,13 @@ export function ScheduledScreen() {
         message:
           `Moved ${moved} task${moved === 1 ? "" : "s"} to today` +
           (silenced > 0
-            ? ` · ${silenced} reminder${silenced === 1 ? "" : "s"} can't fire that soon — open ${
+            ? ` · ${silenced} reminder${silenced === 1 ? "" : "s"} can't fire that soon - open ${
                 silenced === 1 ? "it" : "them"
               } to pick a new time`
             : ""),
       });
     } catch (err) {
-      showToast({ tone: "error", message: `Couldn't move everything — ${failureHint(err)}` });
+      showToast({ tone: "error", message: `Couldn't move everything - ${failureHint(err)}` });
     } finally {
       setMovingAll(false);
     }

@@ -1,0 +1,158 @@
+# 04 · Recurrence — one live occurrence, and what completion and undo do to it.
+#
+# The model: a repeating task is never expanded into a series. Exactly one occurrence exists at a
+# time and completing it mints the next (RecurrenceService.spawnNextOccurrence). So every
+# completion is also a creation, and every undo is also a deletion — which is why undo is a real
+# operation (POST /tasks/{id}/reopen) rather than a status write.
+#
+# Reminder tasks throughout, not focus tasks: a focus row's action button starts a session
+# ("Focus: <name>"), while a reminder's finishes it outright ("Done: <name>"). Completion is what
+# this flow is about, so the shorter path is the honest one.
+appId: com.mactora.taskManager
+tags:
+  - fast
+  - recurrence
+---
+- launchApp:
+    clearState: false
+- runFlow: ../helpers/sign-in.yaml
+- runFlow: ../helpers/finish-tour.yaml
+
+# ── Completing an occurrence mints exactly one successor ───────────────────────────────────────
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "RECUR daily"
+      TYPE: "Reminder Task"
+      WHEN: "Today"
+      REPEAT: "Daily"
+      NOTIFY: ""
+
+- runFlow:
+    file: ../helpers/assert-on-home.yaml
+    env: { TITLE: "RECUR daily", PRESENT: "true" }
+
+# The row's action button is labelled "Done: <task name>" (home.tsx:409). Bare "Done" would be
+# ambiguous — it also matches the DONE section heading, and Maestro's text matching is regex-based
+# and case-insensitive.
+- tapOn: "Done: RECUR daily"
+
+# The toast confirms the write landed. Curly quotes are what the app actually renders.
+- extendedWaitUntil:
+    visible: "“RECUR daily” done"
+    timeout: 20000
+
+# The successor is dated tomorrow, so it must NOT be on today's list. A successor appearing on Home
+# today would mean the routine had been expanded rather than advanced.
+- tapOn: "Scheduled"
+- scrollUntilVisible:
+    element:
+      text: "RECURRING"
+    direction: DOWN
+    timeout: 20000
+- assertVisible: "RECUR daily"
+# RecurringRow's subtitle joins the rule and the next date: "Repeats every day · next Tomorrow".
+- assertVisible:
+    text: ".*next Tomorrow.*"
+
+# ── Undo retracts the successor ────────────────────────────────────────────────────────────────
+# Undo lives only in the toast, so this half has to be prompt. A separate task is used rather than
+# reusing the one above, because that toast has already been dismissed by the navigation.
+- tapOn: "Home"
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "RECUR undo"
+      TYPE: "Reminder Task"
+      WHEN: "Today"
+      REPEAT: "Daily"
+      NOTIFY: ""
+
+- tapOn: "Done: RECUR undo"
+- extendedWaitUntil:
+    visible: "Undo"
+    timeout: 15000
+- tapOn: "Undo"
+- extendedWaitUntil:
+    visible: "“RECUR undo” put back"
+    timeout: 20000
+
+# Back on today's list, and tomorrow's copy is gone. The second assertion is the one that matters:
+# reopen retracts the occurrence completion spawned, via Task.spawnedFrom.
+- runFlow:
+    file: ../helpers/assert-on-home.yaml
+    env: { TITLE: "RECUR undo", PRESENT: "true" }
+- tapOn: "Scheduled"
+- scrollUntilVisible:
+    element:
+      text: "RECURRING"
+    direction: DOWN
+    timeout: 20000
+- assertVisible:
+    text: "RECUR undo"
+# One occurrence, not two — so its next date is tomorrow, and no second row bears the same name.
+# (Exact duplicate detection is beyond Maestro's matchers; the count is covered by the API suite.)
+
+# ── COUNT=1 ends the series instead of minting an unwanted final occurrence ────────────────────
+# "COUNT is occurrences remaining, including this one", so COUNT=1 means the live one is the last.
+# An off-by-one here produces one extra task the user never asked for.
+- tapOn: "Home"
+- tapOn: "Capture tasks"
+- extendedWaitUntil:
+    visible: "Task name"
+    timeout: 20000
+- tapOn:
+    text: "Task name"
+    index: 0
+- inputText: "RECUR last one"
+- tapOn:
+    text: "Confirm & Organize.*"
+- extendedWaitUntil:
+    visible: "Organize your tasks"
+    timeout: 20000
+- tapOn: "Reminder Task"
+- tapOn: "Set a schedule"
+- extendedWaitUntil:
+    visible: "When"
+    timeout: 20000
+- tapOn: "Today"
+- tapOn: "Daily"
+
+# Ends: Forever | After. Choosing "After" reveals a stepper that starts at 10, so it is walked down
+# to 1. The stepper's controls are labelled, which is why this is 9 taps on a name rather than on a
+# glyph (the "−" in the label is U+2212, not a hyphen — another reason to use the label).
+- scrollUntilVisible:
+    element:
+      text: "After"
+    direction: DOWN
+    timeout: 20000
+- tapOn: "After"
+- repeat:
+    times: 9
+    commands:
+      - tapOn: "Decrease number of times"
+
+- tapOn: "Save schedule"
+- extendedWaitUntil:
+    visible: "Set a schedule"
+    timeout: 20000
+- tapOn:
+    text: "Confirm & Add.*"
+- extendedWaitUntil:
+    visible: "TO DO"
+    timeout: 30000
+
+- tapOn: "Done: RECUR last one"
+- extendedWaitUntil:
+    visible: "“RECUR last one” done"
+    timeout: 20000
+
+# The series is over: nothing under RECURRING carries this name any more.
+- tapOn: "Scheduled"
+- extendedWaitUntil:
+    visible:
+      text: "Scheduled|Nothing scheduled|.*Nothing scheduled.*"
+    timeout: 20000
+- assertNotVisible: "RECUR last one"
+
+- takeScreenshot: artifacts/04-recurrence

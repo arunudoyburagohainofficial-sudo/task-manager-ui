@@ -238,7 +238,7 @@ export function GoalAttachmentCard({
         <Text style={td(T.meta, { fontSize: 12.5, fontWeight: "500", color: theme.detail.muted, marginTop: 3 })}>
           {attached
             ? `${daysDone} of ${targetDays} days${todayCounts ? ` · today makes ${spellOut(daysDone + 1)}` : ""}`
-            : "Optional — link it to a goal"}
+            : "Optional - link it to a goal"}
         </Text>
       </View>
 
@@ -565,7 +565,7 @@ export function WhyNoGoalCard() {
             })}
           >
             A reminder only buzzes. It never runs a session, so it has no length, no goal to attach, and it adds
-            nothing to your streak or weekly progress — those track focused work only.
+            nothing to your streak or weekly progress - those track focused work only.
           </Text>
         </View>
       </View>

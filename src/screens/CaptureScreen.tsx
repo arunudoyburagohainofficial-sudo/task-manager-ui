@@ -256,7 +256,7 @@ export function CaptureScreen() {
             <View style={styles.hint}>
               <InfoCircleIcon size={14} color={theme.surface.infoStroke} />
               <Text style={ds(T.meta, { fontSize: 12, color: theme.color.textMuted })}>
-                Type one, or a few — sorting happens next.
+                Type one, or a few - sorting happens next.
               </Text>
             </View>
 

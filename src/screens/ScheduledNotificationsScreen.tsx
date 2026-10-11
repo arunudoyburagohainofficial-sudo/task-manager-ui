@@ -181,7 +181,7 @@ export function ScheduledNotificationsScreen() {
       isNudge
         ? `“${name}” will stop nudging you. The task itself stays exactly as it is.`
         : siblings > 0
-          ? `This turns the notification off for “${name}” — including the ${siblings} other ` +
+          ? `This turns the notification off for “${name}” - including the ${siblings} other ` +
             `time${siblings === 1 ? "" : "s"} it's already queued to fire. The task itself stays as it is.`
           : `“${name}” won't notify you. The task itself stays exactly as it is.`,
       [
@@ -227,7 +227,7 @@ export function ScheduledNotificationsScreen() {
         <BackLink onPress={() => navigation.goBack()} />
         <H1>Upcoming notifications</H1>
         <Meta style={{ color: theme.color.textFaint }}>
-          Exactly what your phone is queued to buzz about — read from the device itself, not from
+          Exactly what your phone is queued to buzz about - read from the device itself, not from
           what's set up. Pull down to refresh.
         </Meta>
 

@@ -168,7 +168,7 @@ export function ProgressScreen() {
             <PlusMark size={15} color={theme.surface.ghostPlus} />
           </GhostRing>
           <Text style={ds(T.meta, { fontSize: 14, color: theme.color.textMuted })}>
-            No goals yet — create one from Home.
+            No goals yet - create one from Home.
           </Text>
         </View>
       )}

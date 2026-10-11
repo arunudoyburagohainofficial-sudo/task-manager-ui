@@ -1,0 +1,117 @@
+# 10 · The walkthrough.
+#
+# This flow exists because three separate tour bugs were found by hand in one session and none was
+# visible to the browser suite:
+#
+#  - step 3 had no ring at all, while steps 1 and 2 did — and I reported the tour "fixed" on the
+#    strength of step 1 without checking the rest;
+#  - a spotlight was offset by the status bar height, which a viewport with no status bar cannot
+#    reproduce;
+#  - phase-2 blocking trapped the user, unable to correct a typo they could see.
+#
+# So the assertions are per step, not "the tour completes". A tour that skips a ring still finishes.
+#
+# The one flow that deliberately runs with clearState: true — the walkthrough only appears on a
+# fresh install, and 00-setup's whole job is to get rid of it for everyone else. It therefore also
+# leaves the device signed into a NEW account, which is why it is numbered last among the fast
+# flows.
+appId: com.mactora.taskManager
+tags:
+  - fast
+  - walkthrough
+---
+- launchApp:
+    clearState: true
+- runFlow: ../helpers/ensure-app-loaded.yaml
+- runFlow: ../helpers/sign-in.yaml
+
+# ── Step 1 · the goal ─────────────────────────────────────────────────────────────────────────
+- extendedWaitUntil:
+    visible: "Start with a goal"
+    timeout: 30000
+- assertVisible: ".*Tap \\+ beside Goals to make your first one.*"
+# "Skip tour" is on every step but the last; "← Back" is absent on the first.
+- assertVisible: "Skip tour"
+- assertNotVisible: "← Back"
+- takeScreenshot: artifacts/10-tour-step1
+
+# The tour advances when the real control is used, not by a Next button — the steps are coupled to
+# five real controls across four screens, which is exactly what makes them breakable.
+- tapOn: "New goal"
+- extendedWaitUntil:
+    visible: "Now capture a task"
+    timeout: 30000
+
+# ── Step 2 · capture ──────────────────────────────────────────────────────────────────────────
+- assertVisible: ".*Tap Ferne to jot down whatever you want to work on.*"
+- takeScreenshot: artifacts/10-tour-step2
+
+- tapOn: "Capture tasks"
+- extendedWaitUntil:
+    visible: "Name your task"
+    timeout: 30000
+
+# ── Step 3 · describe — the step that had no ring ─────────────────────────────────────────────
+# On Capture the body is overridden to "Type what you want to work on." and blocking is
+# deliberately off, so the field stays usable. A blocker here is the bug that trapped the user.
+- assertVisible: ".*Type what you want to work on.*"
+- takeScreenshot: artifacts/10-tour-step3
+
+- tapOn:
+    text: "Task name"
+    index: 0
+- inputText: "TOUR first task"
+
+# The Next button appears only on this step, and only once the field is non-empty. It was added
+# because a single typed letter used to advance the step out from under the user.
+- extendedWaitUntil:
+    visible: "Next"
+    timeout: 20000
+- tapOn: "Next"
+
+- extendedWaitUntil:
+    visible: ".*Confirm & Organize.*"
+    timeout: 20000
+- tapOn:
+    text: "Confirm & Organize.*"
+
+# ── Step 4 · attach the goal ──────────────────────────────────────────────────────────────────
+- extendedWaitUntil:
+    visible: "Count it toward your goal"
+    timeout: 30000
+- assertVisible: ".*finishing it will move that goal forward.*"
+- takeScreenshot: artifacts/10-tour-step4
+
+- tapOn: "Count toward a goal"
+- extendedWaitUntil:
+    visible: ".*Confirm & Add.*"
+    timeout: 30000
+- tapOn:
+    text: "Confirm & Add.*"
+
+# ── Step 5 · start ────────────────────────────────────────────────────────────────────────────
+- extendedWaitUntil:
+    visible: "Then just start"
+    timeout: 30000
+# "Finish" replaces "Skip tour" on the last step only.
+- assertVisible: "Finish"
+- assertNotVisible: "Skip tour"
+- takeScreenshot: artifacts/10-tour-step5
+
+- tapOn: "Finish"
+- extendedWaitUntil:
+    visible: "TO DO"
+    timeout: 20000
+- assertNotVisible: "Then just start"
+
+# ── It does not come back ─────────────────────────────────────────────────────────────────────
+# finish() persists {"finished":true} under the AsyncStorage key "tour-v1" (TourContext.tsx:238).
+# A relaunch that re-showed the tour would swallow every tap in every later flow.
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: "TO DO"
+    timeout: 60000
+- assertNotVisible: "Start with a goal"
+- assertNotVisible: "Skip tour"

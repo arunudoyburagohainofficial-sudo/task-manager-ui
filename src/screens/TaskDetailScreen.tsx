@@ -334,7 +334,7 @@ export function TaskDetailScreen() {
            */
           Alert.alert(
             "A session is already running",
-            "One focus at a time. If you've lost track of it, you can discard it — nothing will be credited.",
+            "One focus at a time. If you've lost track of it, you can discard it - nothing will be credited.",
             [
               { text: "Cancel", style: "cancel" },
               {
@@ -560,7 +560,7 @@ export function TaskDetailScreen() {
 
         {isFocus ? (
           <StreakNote>
-            {`Finishing a session counts toward your streak and weekly progress${goal ? "" : " — goal or not"}.`}
+            {`Finishing a session counts toward your streak and weekly progress${goal ? "" : " - goal or not"}.`}
           </StreakNote>
         ) : (
           <WhyNoGoalCard />

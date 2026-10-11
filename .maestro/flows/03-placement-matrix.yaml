@@ -1,0 +1,206 @@
+# 03 · Placement — which screen does a task actually land on?
+#
+# The rules, from code rather than from the docs (which disagree with each other — see below):
+#
+#   src/utils/schedule.ts:47  bucketFor
+#     no scheduledFor      -> "today"     (a backlog item, deliberately)
+#     scheduledFor < today -> "overdue"
+#     scheduledFor = today -> "today"
+#     scheduledFor > today -> "upcoming"
+#   src/utils/schedule.ts:67  belongsOnHome = bucket is "today" or "overdue"
+#     ...and it does NOT look at recurrenceRule. The comment above it is explicit: Home shows
+#     anything overdue, "one-off or repeating alike".
+#
+#   src/screens/ScheduledScreen.tsx:131-173 splits on recurrence FIRST, so a repeating task is in
+#   RECURRING and nowhere else on that screen, however its date falls.
+#
+# A documented contradiction this flow adjudicates: MD/schedule-combination-matrix.md line 254 says
+# an overdue recurring task is in "Recurring panel only", while plan/02-home.md HOME-05,
+# plan/06-recurrence.md RECUR-10 and plan/18 LOGIC-27 all say it is on Home too. The code settles
+# it in favour of the latter. This flow is the executable proof; whichever way it lands, the losing
+# document gets corrected.
+#
+# Each row creates its task through the real UI and checks Home *and* the Scheduled tab. Absence is
+# asserted as hard as presence: a task on neither screen is a task the user has lost.
+#
+# Overdue rows are NOT in this flow. There is no clock mock on a device, and moving the emulator's
+# date perturbs every other assertion in the run — so they live in their own flow (03b) which owns
+# the clock change.
+appId: com.mactora.taskManager
+tags:
+  - fast
+  - placement
+---
+- launchApp:
+    clearState: false
+- runFlow: ../helpers/sign-in.yaml
+- runFlow: ../helpers/finish-tour.yaml
+
+# ── Row 1 · undated, silent → Home only ───────────────────────────────────────────────────────
+# The deliberate case: no date means "today" rather than "upcoming", because an undated task is a
+# backlog item you should still see.
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "MX undated silent"
+      TYPE: "Focus Task"
+      WHEN: ""
+      REPEAT: ""
+      NOTIFY: ""
+- runFlow:
+    file: ../helpers/assert-on-home.yaml
+    env: { TITLE: "MX undated silent", PRESENT: "true" }
+- runFlow:
+    file: ../helpers/assert-on-scheduled.yaml
+    env: { TITLE: "MX undated silent", SECTION: "none" }
+
+# ── Row 2 · today, silent → Home only ─────────────────────────────────────────────────────────
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "MX today silent"
+      TYPE: "Focus Task"
+      WHEN: "Today"
+      REPEAT: ""
+      NOTIFY: ""
+- runFlow:
+    file: ../helpers/assert-on-home.yaml
+    env: { TITLE: "MX today silent", PRESENT: "true" }
+- runFlow:
+    file: ../helpers/assert-on-scheduled.yaml
+    env: { TITLE: "MX today silent", SECTION: "none" }
+
+# ── Row 3 · tomorrow, silent → UPCOMING only, absent from Home ────────────────────────────────
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "MX tomorrow silent"
+      TYPE: "Reminder Task"
+      WHEN: "Tomorrow"
+      REPEAT: ""
+      NOTIFY: ""
+- runFlow:
+    file: ../helpers/assert-on-home.yaml
+    env: { TITLE: "MX tomorrow silent", PRESENT: "false" }
+- runFlow:
+    file: ../helpers/assert-on-scheduled.yaml
+    env: { TITLE: "MX tomorrow silent", SECTION: "UPCOMING" }
+
+# ── Row 4 · today + notification → placement unchanged by Notify ──────────────────────────────
+# Notify is orthogonal to placement. Rows 2 and 4 differ only in the Notify column and must land
+# identically — the same proof-by-construction the combination matrix uses.
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "MX today notify"
+      TYPE: "Reminder Task"
+      WHEN: "Today"
+      REPEAT: ""
+      NOTIFY: "On the day"
+- runFlow:
+    file: ../helpers/assert-on-home.yaml
+    env: { TITLE: "MX today notify", PRESENT: "true" }
+- runFlow:
+    file: ../helpers/assert-on-scheduled.yaml
+    env: { TITLE: "MX today notify", SECTION: "none" }
+
+# ── Row 5 · today + daily repeat → Home AND RECURRING ─────────────────────────────────────────
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "MX today daily"
+      TYPE: "Focus Task"
+      WHEN: "Today"
+      REPEAT: "Daily"
+      NOTIFY: ""
+- runFlow:
+    file: ../helpers/assert-on-home.yaml
+    env: { TITLE: "MX today daily", PRESENT: "true" }
+- runFlow:
+    file: ../helpers/assert-on-scheduled.yaml
+    env: { TITLE: "MX today daily", SECTION: "RECURRING" }
+
+# ── Row 6 · tomorrow + daily repeat → RECURRING only, NOT Upcoming ────────────────────────────
+# The highest-value row in the flow, and one I got wrong by assumption earlier: a repeating task
+# never appears under its date, so a routine is not listed twice.
+#
+# Exclusivity is proven here rather than in the helper. "MX tomorrow silent" from row 3 is the only
+# other future task, so before this row UPCOMING contains exactly one task. After it, UPCOMING must
+# still contain only that one — asserted by checking this task's name is absent while the UPCOMING
+# heading is on screen.
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "MX tomorrow daily"
+      TYPE: "Focus Task"
+      WHEN: "Tomorrow"
+      REPEAT: "Daily"
+      NOTIFY: ""
+- runFlow:
+    file: ../helpers/assert-on-home.yaml
+    env: { TITLE: "MX tomorrow daily", PRESENT: "false" }
+- runFlow:
+    file: ../helpers/assert-on-scheduled.yaml
+    env: { TITLE: "MX tomorrow daily", SECTION: "RECURRING" }
+
+- tapOn: "Scheduled"
+- scrollUntilVisible:
+    element:
+      text: "UPCOMING"
+    direction: DOWN
+    timeout: 20000
+
+# `below:` rather than a bare assertNotVisible, and the distinction is the whole assertion.
+#
+# A plain `assertNotVisible: "MX tomorrow daily"` fails even when the app is right, because the
+# RECURRING panel and the UPCOMING heading are on screen together — the row is in the hierarchy,
+# correctly placed, and the assertion cannot tell where. Measured here: RECURRING at y=272 with
+# the row at y=553, UPCOMING at y=780. The row was exactly where it belonged and the test said
+# otherwise.
+#
+# Anchoring to the heading asks the real question: is this row listed under UPCOMING as well?
+- assertVisible:
+    text: "MX tomorrow silent"
+    below:
+      text: "UPCOMING"
+- assertNotVisible:
+    text: "MX tomorrow daily"
+    below:
+      text: "UPCOMING"
+
+# ── Row 7 · today + weekly repeat → Home AND RECURRING ────────────────────────────────────────
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "MX today weekly"
+      TYPE: "Focus Task"
+      WHEN: "Today"
+      REPEAT: "Weekly"
+      NOTIFY: ""
+- runFlow:
+    file: ../helpers/assert-on-home.yaml
+    env: { TITLE: "MX today weekly", PRESENT: "true" }
+- runFlow:
+    file: ../helpers/assert-on-scheduled.yaml
+    env: { TITLE: "MX today weekly", SECTION: "RECURRING" }
+
+# ── Row 8 · today + monthly repeat → Home AND RECURRING ───────────────────────────────────────
+# Monthly must carry BYMONTHDAY or it drifts permanently (Jan 31 -> Feb 28 -> Mar 28 -> forever).
+# The client may send a bare FREQ=MONTHLY; normalize() adds the anchor server-side. This row proves
+# the round trip survives creation; the anchor's arithmetic is covered by the logic suite.
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "MX today monthly"
+      TYPE: "Focus Task"
+      WHEN: "Today"
+      REPEAT: "Monthly"
+      NOTIFY: ""
+- runFlow:
+    file: ../helpers/assert-on-home.yaml
+    env: { TITLE: "MX today monthly", PRESENT: "true" }
+- runFlow:
+    file: ../helpers/assert-on-scheduled.yaml
+    env: { TITLE: "MX today monthly", SECTION: "RECURRING" }
+
+- takeScreenshot: artifacts/03-placement-scheduled

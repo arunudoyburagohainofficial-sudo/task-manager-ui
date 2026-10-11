@@ -12,6 +12,11 @@ import { ScheduledNotificationsScreen } from "../screens/ScheduledNotificationsS
 import { FocusSessionScreen } from "../screens/FocusSessionScreen";
 import { CompletionScreen } from "../screens/CompletionScreen";
 import { ConfirmOrganizeScreen } from "../screens/ConfirmOrganizeScreen";
+import { OnboardingWelcomeScreen } from "../screens/onboarding/OnboardingWelcomeScreen";
+import { OnboardingScreenTimeScreen } from "../screens/onboarding/OnboardingScreenTimeScreen";
+import { OnboardingPermissionsScreen } from "../screens/onboarding/OnboardingPermissionsScreen";
+import { OnboardingPickAppsScreen } from "../screens/onboarding/OnboardingPickAppsScreen";
+import { useOnboarding } from "../state/OnboardingContext";
 import { MainTabs } from "./MainTabs";
 import type { RootStackParamList } from "./types";
 
@@ -19,6 +24,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
   const { user, isLoading, isReady } = useSession();
+  const { finished: onboarded } = useOnboarding();
 
   // Keeps the device's locally scheduled reminders in step with the server's, on sign-in
   // and on every foreground. No-ops while signed out.
@@ -26,7 +32,9 @@ export function RootNavigator() {
 
   // Wait for the persisted session check before deciding Auth vs Main — otherwise a
   // returning user briefly flashes the Auth screen before this resolves.
-  if (isLoading) return null;
+  // Same reasoning as the session check below: deciding before storage has answered would show
+  // onboarding to someone who already finished it.
+  if (isLoading || onboarded === null) return null;
 
   // Covers the one gap the native splash screen can't: a user who just signed in
   // interactively (not a cold launch) has no native splash left to hide behind while
@@ -56,12 +64,24 @@ export function RootNavigator() {
     >
       {!user ? (
         <>
+          {/* Welcome sits before sign-in, so it is the first thing a new install shows. */}
+          {!onboarded ? <Stack.Screen name="OnboardingWelcome" component={OnboardingWelcomeScreen} /> : null}
           <Stack.Screen name="Auth" component={AuthScreen} />
           <Stack.Screen
             name="PhoneSignIn"
             component={PhoneSignInScreen}
             options={{ presentation: "modal", animation: "slide_from_bottom" }}
           />
+        </>
+      ) : !onboarded ? (
+        /*
+          The rest of onboarding needs an account, so it lives on this side of the sign-in gate.
+          Its last step calls finish(), which swaps this branch for the one below.
+        */
+        <>
+          <Stack.Screen name="OnboardingScreenTime" component={OnboardingScreenTimeScreen} />
+          <Stack.Screen name="OnboardingPermissions" component={OnboardingPermissionsScreen} />
+          <Stack.Screen name="OnboardingPickApps" component={OnboardingPickAppsScreen} />
         </>
       ) : (
         <>

@@ -1,0 +1,105 @@
+# 05 · Nudges — the repeated-buzz mechanism, which is a different thing from a reminder.
+#
+# Interval reminders are about *today*, not a due date: their own entity, their own endpoints,
+# their own sheet. Two rules carry the weight and neither is obvious from the UI:
+#
+#  - The window cannot cross midnight. The server refuses startTime >= endTime, while the client
+#    still carries working midnight-crossing code that the server makes unreachable — a
+#    contract mismatch MD/notification-placement-audit.md pinned deliberately rather than "fixing"
+#    on one side. What must be true is that the user is told, in the sheet, not by a raw error.
+#  - The end of the window is inclusive. The final step at the end time is meant to fire; flipping
+#    that bound to exclusive silently removes the last nudge of every window, which is exactly the
+#    kind of change nothing would notice.
+#
+# This flow covers configuration only. Proving a nudge *repeats* needs two firings, and the UI's
+# smallest interval is 5 minutes (NudgeSheet.tsx:172, `min={5}`) even though the server accepts 1
+# — so that proof costs ~11 minutes of wall clock and lives in the runner's delivery check rather
+# than here.
+appId: com.mactora.taskManager
+tags:
+  - fast
+  - nudge
+---
+- launchApp:
+    clearState: false
+- runFlow: ../helpers/sign-in.yaml
+- runFlow: ../helpers/finish-tour.yaml
+
+- runFlow:
+    file: ../helpers/create-task.yaml
+    env:
+      TITLE: "NUDGE chase me"
+      TYPE: "Reminder Task"
+      WHEN: ""
+      REPEAT: ""
+      NOTIFY: ""
+
+- tapOn: "NUDGE chase me"
+- extendedWaitUntil:
+    visible: "TIMING"
+    timeout: 20000
+
+# The three TimingRow pills — SCHEDULED, ONE NUDGE, KEEP NUDGING — are all on screen at once and
+# their action words ("Add", "Change", "Edit", "Pick") collide. Each pill carries its own label,
+# which is why this taps "Add keep nudging" rather than "Add".
+- scrollUntilVisible:
+    element:
+      text: "KEEP NUDGING"
+    direction: DOWN
+    timeout: 20000
+- assertVisible: "Off"
+- tapOn: "Add keep nudging"
+
+- extendedWaitUntil:
+    visible: "Nudge me repeatedly"
+    timeout: 20000
+- assertVisible: "Buzzes on a loop inside a window today — for something you need chasing about, not something with a due date."
+
+# The presets, and the fine control beneath them. 15/30/60 are the offered choices; the stepper
+# goes finer but no lower than 5.
+- assertVisible: "How often"
+- assertVisible: "15 min"
+- assertVisible: "30 min"
+- assertVisible: "60 min"
+- tapOn: "15 min"
+
+# The count sentence is the only place the sheet tells you how much buzzing you just bought, and
+# it is derived from the window and interval together rather than from either alone.
+- assertVisible: ".*About .* nudge.* between .*"
+- takeScreenshot: artifacts/05-nudge-configured
+
+- tapOn: "Start nudging"
+- extendedWaitUntil:
+    visible: "TIMING"
+    timeout: 20000
+
+# The row now states the schedule rather than "Off" — "Every 15 min · 6:00 PM–8:00 PM".
+- scrollUntilVisible:
+    element:
+      text: "KEEP NUDGING"
+    direction: DOWN
+    timeout: 20000
+- assertVisible: ".*Every 15 min.*"
+- takeScreenshot: artifacts/05-nudge-row
+
+# Reopening shows the stored values, not a fresh sheet — an edit that silently discarded the
+# existing window would look identical to a working one until the nudges stopped.
+- tapOn: "Edit keep nudging"
+- extendedWaitUntil:
+    visible: "Edit nudges"
+    timeout: 20000
+- assertVisible: "Stop nudging"
+- assertVisible: "Save nudges"
+- takeScreenshot: artifacts/05-nudge-edit
+
+# Stopping is a real removal, not a mute.
+- tapOn: "Stop nudging"
+- extendedWaitUntil:
+    visible: "TIMING"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "KEEP NUDGING"
+    direction: DOWN
+    timeout: 20000
+- assertVisible: "Off"

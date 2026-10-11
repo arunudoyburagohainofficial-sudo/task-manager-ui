@@ -59,7 +59,7 @@ export function useGoogleSignIn(): GoogleSignIn {
   return {
     isAvailable,
     unavailableReason: isExpoGo
-      ? "Google sign-in needs a development build — it isn't part of Expo Go. Continue as a test user below."
+      ? "Google sign-in needs a development build - it isn't part of Expo Go. Continue as a test user below."
       : !hasClientIds
         ? "Google sign-in isn't configured on this build yet."
         : null,
@@ -72,7 +72,7 @@ export function useGoogleSignIn(): GoogleSignIn {
         const result = await GoogleSignin.signIn();
         if (!isSuccessResponse(result)) return null; // backed out of the picker
         if (!result.data.idToken) {
-          throw new Error("Google didn't return a valid credential — try again.");
+          throw new Error("Google didn't return a valid credential - try again.");
         }
         return result.data.idToken;
       } catch (e) {

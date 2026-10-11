@@ -1,0 +1,32 @@
+# Dismisses the walkthrough so the rest of the suite meets an unobstructed Home.
+#
+# Why this helper has to exist: on a fresh install the tour's Blocker views swallow every touch
+# outside the current spotlight, so any flow that starts tapping before the tour is gone fails in
+# a way that looks like a broken selector. The browser suite sidesteps this by writing
+# localStorage["tour-v1"] = {finished:true} before load (e2e/harness/app.ts:22). On Android that
+# key lives in AsyncStorage's RKStorage SQLite database, which Maestro cannot write — so the tour
+# gets dismissed the way a person would dismiss it, once, and `finish()` persists
+# {"finished":true} (TourContext.tsx:238) for every later flow to inherit.
+#
+# "Skip tour" is on every step except the last, where "Finish" replaces it (TourOverlay.tsx:371).
+# Neither has an accessibility label, so both are matched by visible text.
+#
+# Every branch is conditional: this helper runs at the top of most flows and must be a no-op when
+# the tour is already finished.
+appId: com.mactora.taskManager
+---
+- runFlow:
+    when:
+      visible: "Skip tour"
+    commands:
+      - tapOn: "Skip tour"
+
+- runFlow:
+    when:
+      visible: "Finish"
+    commands:
+      - tapOn: "Finish"
+
+# Nothing from the overlay may remain — if it does, later taps would be swallowed silently.
+- assertNotVisible: "Skip tour"
+- assertVisible: "TO DO"

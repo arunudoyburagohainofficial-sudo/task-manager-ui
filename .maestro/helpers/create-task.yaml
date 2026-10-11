@@ -1,0 +1,91 @@
+# Creates one task through the real UI — capture, Organize, schedule sheet — and returns to Home.
+#
+# This is the workhorse the placement matrix calls once per row, so it is parameterised rather
+# than copied. Every step goes through the controls a person uses; nothing is seeded through the
+# API, because "which screen does this land on" is precisely what must not be short-circuited.
+#
+# env:
+#   TITLE   required. The task's name. Keep it unique per flow — assertions match on it.
+#   TYPE    "Focus Task" (default) | "Reminder Task"
+#   WHEN    "" (skip the sheet entirely) | "No date" | "Today" | "Tomorrow"
+#   REPEAT  "" (leave alone) | "Never" | "Daily" | "Weekly" | "Monthly" | "Yearly"
+#   NOTIFY  "" (silent) | "On the day" | "1 day before" | "1 week before"
+appId: com.mactora.taskManager
+---
+# The docked Ferne button. Labelled "Capture tasks" and role=button; it is NOT a tab, it pushes
+# the Capture route (MainTabs.tsx).
+- tapOn: "Capture tasks"
+- extendedWaitUntil:
+    visible: "Task name"
+    timeout: 20000
+
+# Capture's field and Organize's per-draft field share the accessibility label "Task name", and
+# Capture stays mounted underneath Organize. Here only Capture is on screen, so index 0 is safe.
+- tapOn:
+    text: "Task name"
+    index: 0
+- inputText: "${TITLE}"
+
+# The label carries a count — "Confirm & Organize (1)" — so match on the stable prefix.
+- tapOn:
+    text: "Confirm & Organize.*"
+- extendedWaitUntil:
+    visible: "Organize your tasks"
+    timeout: 20000
+
+- runFlow:
+    when:
+      true: ${TYPE === "Reminder Task"}
+    commands:
+      - tapOn: "Reminder Task"
+
+- runFlow:
+    when:
+      true: ${(WHEN || "") !== "" || (REPEAT || "") !== "" || (NOTIFY || "") !== ""}
+    commands:
+      - tapOn: "Set a schedule"
+      - extendedWaitUntil:
+          visible: "When"
+          timeout: 20000
+
+      - runFlow:
+          when:
+            true: ${(WHEN || "") !== ""}
+          commands:
+            - tapOn: "${WHEN}"
+
+      # Repeat is refused without a day, by design — a rule with nothing to repeat from is
+      # rejected at both create and update. So this only runs when a date was chosen.
+      - runFlow:
+          when:
+            true: ${(REPEAT || "") !== ""}
+          commands:
+            - tapOn: "${REPEAT}"
+
+      # Two spellings: the very first day-of add reads "Notify me" (which is also the card's
+      # eyebrow, hence the index), every other one carries a literal "+ " prefix.
+      - runFlow:
+          when:
+            true: ${(NOTIFY || "") === "On the day"}
+          commands:
+            - tapOn:
+                text: "Notify me"
+                index: 1
+
+      - runFlow:
+          when:
+            true: ${(NOTIFY || "") !== "" && (NOTIFY || "") !== "On the day"}
+          commands:
+            - tapOn: "\\+ ${NOTIFY}"
+
+      - tapOn: "Save schedule"
+      - extendedWaitUntil:
+          visible: "Organize your tasks"
+          timeout: 20000
+
+# "Confirm & Add 1 task" / "Confirm & Add 2 tasks" — match the stable prefix.
+- tapOn:
+    text: "Confirm & Add.*"
+- extendedWaitUntil:
+    visible: "TO DO"
+    timeout: 30000

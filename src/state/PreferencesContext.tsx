@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { FocusMode } from "../api/types";
 
 const STORAGE_KEY = "preferences-v1";
 
@@ -10,6 +11,14 @@ interface Preferences {
    * actual elapsed time), so this is purely a client preference, never sent to the API.
    */
   defaultFocusDurationMinutes: number;
+  /**
+   * Regular or Pomodoro, whichever was picked last on Home's Focus Now card. Client-side for the
+   * same reason as the duration above: the server records what a session actually was, not how
+   * the user likes to work.
+   */
+  defaultFocusMode: FocusMode;
+  /** How many work blocks a Pomodoro sitting runs, when that mode is picked. */
+  defaultPomodoroCycles: number;
   /**
    * Settings → Reminder notifications. Read by the scheduler on every sync
    * (notifications/preference.ts): off means nothing is queued, and whatever was is cleared.
@@ -39,6 +48,8 @@ interface Preferences {
 
 const DEFAULT_PREFERENCES: Preferences = {
   defaultFocusDurationMinutes: 25,
+  defaultFocusMode: "regular",
+  defaultPomodoroCycles: 3,
   notificationsEnabled: true,
   dndDuringFocusEnabled: false,
   blockedAppIds: [],
@@ -46,6 +57,8 @@ const DEFAULT_PREFERENCES: Preferences = {
 
 interface PreferencesContextValue extends Preferences {
   setDefaultFocusDurationMinutes: (minutes: number) => void;
+  setDefaultFocusMode: (mode: FocusMode) => void;
+  setDefaultPomodoroCycles: (cycles: number) => void;
   /** Resolves once the preference is on disk, so a sync started after it reads the new value. */
   setNotificationsEnabled: (enabled: boolean) => Promise<void>;
   setDndDuringFocusEnabled: (enabled: boolean) => void;
@@ -82,6 +95,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     () => ({
       ...prefs,
       setDefaultFocusDurationMinutes: (defaultFocusDurationMinutes) => void persist({ defaultFocusDurationMinutes }),
+      setDefaultFocusMode: (defaultFocusMode) => void persist({ defaultFocusMode }),
+      setDefaultPomodoroCycles: (defaultPomodoroCycles) => void persist({ defaultPomodoroCycles }),
       setNotificationsEnabled: (notificationsEnabled) => persist({ notificationsEnabled }),
       setDndDuringFocusEnabled: (dndDuringFocusEnabled) => void persist({ dndDuringFocusEnabled }),
       setBlockedAppIds: (blockedAppIds) => void persist({ blockedAppIds }),

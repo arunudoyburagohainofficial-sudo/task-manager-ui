@@ -100,7 +100,7 @@ export function deliveryBlockCopy(block: DeliveryBlock, configured: number): Del
         title: "Not available in a browser",
         body:
           "Notifications are scheduled by the phone itself, and a browser can't do it. Your " +
-          "notifications are saved and will work in the app on your phone — there's just no " +
+          "notifications are saved and will work in the app on your phone - there's just no " +
           "device queue to show here.",
         action: null,
       };

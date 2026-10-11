@@ -1,0 +1,63 @@
+# Gets past the development client's launcher and into the actual app.
+#
+# `expo run:android` installs a *development build*, which is a dev client wrapping the JS bundle
+# it fetches from Metro. That client remembers which dev server it last used — and `clearState:
+# true` erases that memory, so a cleared launch lands on the "Development servers" list instead of
+# the app. Worse, that list shows every Metro it can find (8081 and 8082 were both live here) and
+# its order is not stable, so tapping a row by position is exactly the blind-tap failure this repo
+# has hit before.
+#
+# The deep link is deterministic: it names the server rather than picking from a list. 127.0.0.1
+# works from the emulator because the runner sets `adb reverse tcp:8081`, the same tunnel the
+# bundle is fetched through.
+#
+# The alternative is a release build, which embeds the bundle and has no launcher at all — no
+# Metro, no deep link, nothing to shuffle. That is the better shape for CI, and the tradeoff was
+# taken the other way here deliberately: a dev build reloads a flow fix in seconds where a release
+# build costs a full rebuild. If this suite ever moves to CI, switch to `--variant release` and
+# this helper can be deleted.
+appId: com.mactora.taskManager
+---
+- runFlow:
+    when:
+      visible: "DEVELOPMENT SERVERS"
+    commands:
+      - openLink: "exp+task-app://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081"
+
+# The bundle is fetched and evaluated on this path, which is slower than a warm launch.
+#
+# Maestro matches a text selector against the WHOLE string, not as a substring, so anything
+# partial needs explicit `.*` on both sides. Matching "developer menu" alone silently never fires
+# — the node's full text is "This is the developer menu. It gives you access to…".
+- extendedWaitUntil:
+    visible:
+      text: "Continue as test user|TO DO|Welcome|.*developer menu.*"
+    timeout: 120000
+
+# The dev client shows its developer-menu sheet over the app on the first launch after a wipe. It
+# is a separate window, so while it is up the hierarchy contains only the sheet — the app behind it
+# is invisible to every selector, which reads as "the app never loaded".
+#
+# "Continue" is safe unanchored precisely because matching is whole-string: it cannot collide with
+# "Continue with phone", "Continue with Google" or "Continue as test user" on the Auth screen
+# behind this sheet. Under substring matching it would have hit all four.
+- runFlow:
+    when:
+      visible: ".*developer menu.*"
+    commands:
+      - tapOn:
+          text: "Continue"
+
+# Dismissing the intro sheet reveals the dev menu proper — "Connected to: …", TOOLS, Reload, Go
+# home — which is still a window over the app. Two panels, two dismissals; the first only looks
+# like the last one.
+- runFlow:
+    when:
+      visible: "TOOLS"
+    commands:
+      - tapOn: "Close"
+
+- extendedWaitUntil:
+    visible:
+      text: "Continue as test user|TO DO|Welcome"
+    timeout: 60000

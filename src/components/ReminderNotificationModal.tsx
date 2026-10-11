@@ -61,7 +61,7 @@ export function ReminderNotificationModal({
 
           <Meta style={[styles.centered, { color: theme.color.textFaint }]}>
             {isFocusPreStart
-              ? "This is just a nudge — starting the session is still up to you"
+              ? "This is just a nudge - starting the session is still up to you"
               : "Done stops all nudges · Stop keeps the task open"}
           </Meta>
         </View>

@@ -78,7 +78,7 @@ export function GoalEditSheet({ visible, onClose, goal, onSave, onDelete, saving
       : parsedCustom < 1
         ? "Pick at least 1 day."
         : parsedCustom > MAX_TARGET_DAYS
-          ? `Goals cap at ${MAX_TARGET_DAYS} days. Shorter goals are far easier to keep going — and ${MAX_TARGET_DAYS} days of focused work is already a real achievement. Finish this one, then start the next.`
+          ? `Goals cap at ${MAX_TARGET_DAYS} days. Shorter goals are far easier to keep going - and ${MAX_TARGET_DAYS} days of focused work is already a real achievement. Finish this one, then start the next.`
           : null;
 
   const targetIsValid = customMode ? customText !== "" && targetNotice === null : true;
@@ -96,7 +96,7 @@ export function GoalEditSheet({ visible, onClose, goal, onSave, onDelete, saving
       />
 
       <View style={styles.section}>
-        <Meta>Target — days of focused work</Meta>
+        <Meta>Target - days of focused work</Meta>
         <View style={styles.targetRow}>
           {TARGET_PRESETS.map((preset) => {
             const on = !customMode && preset === targetDays;
@@ -160,7 +160,7 @@ export function GoalEditSheet({ visible, onClose, goal, onSave, onDelete, saving
             days already done completes the goal too, so it needs the same warning. */}
         {goal && targetIsValid && goal.totalDaysActive >= effectiveTarget ? (
           <Meta style={{ color: theme.color.textFaint }}>
-            You&rsquo;ve already done {goal.totalDaysActive} days — saving this marks the goal reached.
+            You&rsquo;ve already done {goal.totalDaysActive} days - saving this marks the goal reached.
           </Meta>
         ) : null}
       </View>

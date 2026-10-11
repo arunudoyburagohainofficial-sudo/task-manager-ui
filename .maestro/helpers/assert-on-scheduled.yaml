@@ -1,0 +1,60 @@
+# Asserts which section of the Scheduled tab a task lives in — or that it is absent from all of
+# them.
+#
+# env:
+#   TITLE    the task's name
+#   SECTION  "OVERDUE" | "RECURRING" | "UPCOMING" | "none"
+#
+# The section headings are rendered uppercase (schedulePanels.tsx). "none" is the interesting case:
+# an undated or today-dated one-off belongs on Home and must appear nowhere here.
+#
+# Placement rules this encodes, from src/screens/ScheduledScreen.tsx:131-173 — the screen splits on
+# recurrence FIRST:
+#   recurrenceRule != null  -> RECURRING, and nowhere else on this screen
+#   else overdue            -> OVERDUE
+#   else upcoming           -> UPCOMING
+# A late repeating task therefore stays under RECURRING with an "N late" note and is deliberately
+# NOT counted in OVERDUE. That is the row most easily regressed, and the reason this helper checks
+# the section rather than merely "is it on this screen somewhere".
+#
+# What this helper does NOT prove: that the row sits under *that* heading rather than a different
+# one further down. Maestro's relative selectors need both elements on screen at once, which a
+# scrolled list cannot guarantee. So the two rows where exclusivity carries the weight — a future
+# repeating task must not be in UPCOMING, a late repeating task must not be in OVERDUE — are
+# proven in 03-placement-matrix.yaml by asserting the *rival section does not exist at all*, which
+# is unambiguous when it is the only task of its kind on the account.
+appId: com.mactora.taskManager
+---
+# On Home only the tab carries this string; the ScheduledScreen's own H1 is also exactly
+# "Scheduled" but an inactive tab's subtree is hidden, so it is not in the hierarchy here. Verified
+# against `maestro hierarchy` rather than assumed — if this ever becomes ambiguous the symptom is a
+# tap that lands on the heading instead of the tab.
+- tapOn: "Scheduled"
+- extendedWaitUntil:
+    visible:
+      text: "Scheduled|Nothing scheduled|.*Nothing scheduled.*"
+    timeout: 20000
+
+- runFlow:
+    when:
+      true: ${SECTION === "none"}
+    commands:
+      - assertNotVisible: "${TITLE}"
+
+- runFlow:
+    when:
+      true: ${SECTION !== "none"}
+    commands:
+      # The heading must exist at all — a task "in RECURRING" when there is no RECURRING panel is
+      # a false pass waiting to happen.
+      - scrollUntilVisible:
+          element:
+            text: "${SECTION}"
+          direction: DOWN
+          timeout: 20000
+      - scrollUntilVisible:
+          element:
+            text: "${TITLE}"
+          direction: DOWN
+          timeout: 20000
+          centerElement: false

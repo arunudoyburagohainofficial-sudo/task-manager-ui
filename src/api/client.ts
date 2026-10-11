@@ -147,7 +147,7 @@ export async function apiRequest<T>(
     // screen can show verbatim; anything else (DNS failure, offline) passes through
     // with fetch's own message.
     if ((e as { name?: string })?.name === "AbortError") {
-      throw new ApiError(0, undefined, "Request timed out — check your connection and try again.");
+      throw new ApiError(0, undefined, "Request timed out - check your connection and try again.");
     }
     throw e;
   } finally {

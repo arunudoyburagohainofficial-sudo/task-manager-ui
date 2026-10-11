@@ -45,7 +45,7 @@ export function PhoneSignInScreen() {
       setConfirmation(result);
       setStep("code");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't send a verification code — try again.");
+      setError(e instanceof Error ? e.message : "Couldn't send a verification code - try again.");
     } finally {
       setSubmitting(false);
     }
@@ -58,11 +58,11 @@ export function PhoneSignInScreen() {
     try {
       await confirmPhoneCode(confirmation, code.trim());
       const idToken = await getCurrentFirebaseIdToken();
-      if (!idToken) throw new Error("Signed in with Firebase but couldn't get a token — try again.");
+      if (!idToken) throw new Error("Signed in with Firebase but couldn't get a token - try again.");
       const user = await authApi.verifyToken({ idToken });
       signIn(user);
     } catch (e) {
-      setError(e instanceof ApiError || e instanceof Error ? e.message : "Couldn't verify that code — try again.");
+      setError(e instanceof ApiError || e instanceof Error ? e.message : "Couldn't verify that code - try again.");
     } finally {
       setSubmitting(false);
     }

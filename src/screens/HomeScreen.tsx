@@ -24,7 +24,7 @@ import {
 import { useCurrentFocusSessionQuery } from "../api/queries/useFocusSessions";
 import { useStreakQuery, useTodayProgressQuery } from "../api/queries/useProgress";
 import { useMarkTaskDoneMutation, useRemindersQuery } from "../api/queries/useReminders";
-import { useReopenTaskMutation, useTasksQuery } from "../api/queries/useTasks";
+import { useCreateTaskMutation, useReopenTaskMutation, useTasksQuery } from "../api/queries/useTasks";
 import type { GoalDto, ReminderDto, TaskDto } from "../api/types";
 import {
   GoalEditSheet,
@@ -39,8 +39,7 @@ import {
   HomeTaskRow,
   type HomeRowKind,
   NotificationBlockBanner,
-  RightNowCard,
-  RightNowHeader,
+  FocusNowCard,
   ScreenContainer,
 } from "../components";
 import { syncReminders } from "../notifications/useReminderSync";
@@ -59,6 +58,9 @@ import {
   isToday,
 } from "../utils/format";
 import { readRunningSession, resumeSessionParams } from "../utils/focusSession";
+import { markQuickFocusStub } from "../utils/quickFocusStubs";
+import { useAutoFinishStaleSession } from "../utils/useAutoFinishStaleSession";
+import { useStartFocusSession } from "../utils/useStartFocusSession";
 import { goalsRowLayout } from "../utils/goalsLayout";
 import { POINTS_PER_MINUTE, REMINDER_POINTS } from "../utils/points";
 import { belongsOnHome } from "../utils/schedule";
@@ -210,7 +212,15 @@ export function HomeScreen() {
    * POINTS_PER_MINUTE per full minute actually focused, so this is that rate applied to the
    * length the session will start at. A reminder is worth a flat amount whenever it's finished.
    */
-  const { defaultFocusDurationMinutes, dndDuringFocusEnabled } = usePreferences();
+  const {
+    defaultFocusDurationMinutes,
+    defaultFocusMode,
+    defaultPomodoroCycles,
+    dndDuringFocusEnabled,
+    setDefaultFocusDurationMinutes,
+    setDefaultFocusMode,
+    setDefaultPomodoroCycles,
+  } = usePreferences();
   const projectedFocusPoints = defaultFocusDurationMinutes * POINTS_PER_MINUTE;
 
   // Keyed rather than a boolean per section, so adding a third section later needs no new
@@ -300,6 +310,42 @@ export function HomeScreen() {
     [session, tasksQuery.data]
   );
 
+  // Closes a session that was started and never ended, once it can no longer earn anything.
+  useAutoFinishStaleSession(session);
+
+  const { start: startSession } = useStartFocusSession();
+  const createTaskMutation = useCreateTaskMutation();
+
+  /**
+   * Slide-to-focus: make a task and start on it in one motion.
+   *
+   * A session has to belong to a task — that is how minutes, points, streak and goals are
+   * credited — so "just start focusing" means creating one. It is named by the clock rather than
+   * left blank, because a list of "Untitled" tells you nothing a week later.
+   *
+   * If the session is discarded the task goes with it (see useStartFocusSession): nothing was
+   * credited, so nothing should be left behind.
+   */
+  async function handleQuickFocus() {
+    try {
+      const at = new Date();
+      const task = await createTaskMutation.mutateAsync({
+        name: `Quick focus · ${at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`,
+        taskType: "focus",
+      });
+      await markQuickFocusStub(task.id);
+      await startSession({
+        taskId: task.id,
+        focusMode: defaultFocusMode,
+        blockMinutes: defaultFocusDurationMinutes,
+        cycles: defaultFocusMode === "pomodoro" ? defaultPomodoroCycles : 1,
+        createdTaskId: task.id,
+      });
+    } catch {
+      showToast({ tone: "error", message: `Couldn't start - ${failureHint(null)}` });
+    }
+  }
+
   function handleResumeSession() {
     if (!session) return;
     navigation.navigate(
@@ -339,7 +385,7 @@ export function HomeScreen() {
         action: { label: "Undo", onPress: () => handleUndo(taskId, taskName) },
       });
     } catch (err) {
-      showToast({ tone: "error", message: `Couldn't complete “${taskName}” — ${failureHint(err)}` });
+      showToast({ tone: "error", message: `Couldn't complete “${taskName}” - ${failureHint(err)}` });
     }
   }
 
@@ -348,7 +394,7 @@ export function HomeScreen() {
       await reopenTaskMutation.mutateAsync(taskId);
       showToast({ message: `“${taskName}” put back` });
     } catch (err) {
-      showToast({ tone: "error", message: `Couldn't undo — ${failureHint(err)}` });
+      showToast({ tone: "error", message: `Couldn't undo - ${failureHint(err)}` });
     }
   }
 
@@ -368,7 +414,7 @@ export function HomeScreen() {
         advanceTour("goal");
       }
     } catch (err) {
-      showToast({ tone: "error", message: `Couldn't save “${fields.name}” — ${failureHint(err)}` });
+      showToast({ tone: "error", message: `Couldn't save “${fields.name}” - ${failureHint(err)}` });
     }
     setEditingGoal(null);
     setCreatingGoal(false);
@@ -381,7 +427,7 @@ export function HomeScreen() {
       await deleteGoalMutation.mutateAsync(goal.id);
       showToast({ message: `“${goal.name}” deleted` });
     } catch (err) {
-      showToast({ tone: "error", message: `Couldn't delete “${goal.name}” — ${failureHint(err)}` });
+      showToast({ tone: "error", message: `Couldn't delete “${goal.name}” - ${failureHint(err)}` });
     }
     setEditingGoal(null);
   }
@@ -507,6 +553,39 @@ export function HomeScreen() {
             {/* Silent otherwise: nothing else on Home hints that a reminder won't arrive. */}
             <NotificationBlockBanner />
 
+            {/*
+              One card, two states: slide to start when nothing is running, the live timer when
+              something is. It replaces the old "Right now" block, which only ever existed while a
+              session was open — so starting one had no home on this screen at all.
+            */}
+            <View style={styles.focusNow}>
+              <FocusNowCard
+                minutes={defaultFocusDurationMinutes}
+                mode={defaultFocusMode}
+                cycles={defaultPomodoroCycles}
+                onPick={(m, mode, c) => {
+                  setDefaultFocusDurationMinutes(m);
+                  setDefaultFocusMode(mode);
+                  setDefaultPomodoroCycles(c);
+                }}
+                onStart={handleQuickFocus}
+                running={
+                  session && running
+                    ? {
+                        taskName: runningTask?.name ?? "Focus session",
+                        endsAt:
+                          running.plannedMinutes != null
+                            ? Date.parse(session.startedAt) + running.plannedMinutes * 60_000
+                            : null,
+                        plannedMs: running.plannedMinutes != null ? running.plannedMinutes * 60_000 : null,
+                        onPause: handleResumeSession,
+                        onStop: handleResumeSession,
+                      }
+                    : null
+                }
+              />
+            </View>
+
             <HomeRuleHeader
               label="GOALS"
               ink={theme.color.textLabel}
@@ -525,21 +604,6 @@ export function HomeScreen() {
               <View style={styles.goalsRow}>{goalCards}</View>
             ) : null}
 
-            {/* Exists only while something is running — there's no empty version of it, so with
-                nothing running the list simply starts higher. */}
-            {session && running ? (
-              <>
-                <RightNowHeader />
-                <RightNowCard
-                  title={runningTask?.name ?? "Focus session"}
-                  minutesLeft={running.minutesLeft}
-                  minutesElapsed={running.minutesElapsed}
-                  plannedMinutes={running.plannedMinutes}
-                  fractionLeft={running.fractionLeft}
-                  onResume={handleResumeSession}
-                />
-              </>
-            ) : null}
           </View>
         }
         renderSectionHeader={({ section }) =>
@@ -616,9 +680,13 @@ export function HomeScreen() {
                 advanceTour("start");
                 navigation.navigate("TaskDetail", { taskId: item.id });
               }}
+              // Focus starts the session, rather than opening a screen to press Start on.
+              // The settings that screen offers are the ones most people never change — the
+              // length is already theirs, from Settings — so the middle step was a toll on
+              // every sitting. Tapping the row still opens the task for the times it matters.
               onAction={() => {
                 advanceTour("start");
-                if (isFocus) navigation.navigate("TaskDetail", { taskId: item.id });
+                if (isFocus) void startSession({ taskId: item.id });
                 else handleMarkReminderDone(item.id, item.name);
               }}
             />
@@ -632,7 +700,7 @@ export function HomeScreen() {
               body={
                 isFocus
                   ? undefined
-                  : "Tap Done when you’ve finished it. That’s the whole loop — capture, attach, done."
+                  : "Tap Done when you’ve finished it. That’s the whole loop - capture, attach, done."
               }
             >
               {row}
@@ -669,6 +737,7 @@ export function HomeScreen() {
 
 const makeStyles = (t: Tokens) =>
   StyleSheet.create({
+    focusNow: { paddingHorizontal: px(2), paddingTop: px(18), paddingBottom: px(10) },
     listContent: {
       paddingHorizontal: 18,
       paddingTop: 6,
