@@ -304,6 +304,15 @@ export interface StartFocusSessionRequest {
    * time nobody spent — see FocusSessionService.creditedMinutes.
    */
   plannedMinutes?: number;
+  /**
+   * Pomodoro only: how many work blocks this sitting is split into.
+   *
+   * `plannedMinutes` counts work and excludes breaks, so 2 x 15 is stored as 30 and nothing else
+   * distinguishes it from one unbroken half hour. Without this, reopening a running Pomodoro had
+   * to divide by an assumed 25-minute block, which turned a 15-15 into a single 25-minute round.
+   * Sent at the start so the block length is always `plannedMinutes / numPomodoroCycles`.
+   */
+  numPomodoroCycles?: number;
 }
 
 export interface CompleteFocusSessionRequest {

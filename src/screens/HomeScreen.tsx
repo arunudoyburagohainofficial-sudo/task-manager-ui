@@ -572,13 +572,17 @@ export function HomeScreen() {
                 running={
                   session && running
                     ? {
+                        sessionId: session.id,
                         taskName: runningTask?.name ?? "Focus session",
+                        // Only the fallback now: the card prefers the position the session
+                        // screen writes, which knows about breaks and pauses this cannot.
                         endsAt:
                           running.plannedMinutes != null
                             ? Date.parse(session.startedAt) + running.plannedMinutes * 60_000
                             : null,
                         plannedMs: running.plannedMinutes != null ? running.plannedMinutes * 60_000 : null,
-                        onPause: handleResumeSession,
+                        cycles: session.focusMode === "pomodoro" ? session.numPomodoroCycles ?? 1 : 1,
+                        onOpen: handleResumeSession,
                         onStop: handleResumeSession,
                       }
                     : null

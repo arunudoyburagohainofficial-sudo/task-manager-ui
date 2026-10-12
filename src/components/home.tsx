@@ -156,12 +156,6 @@ export function GoalsAddButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-export function RightNowHeader() {
-  const theme = useTheme();
-  const styles = useThemedStyles(makeStyles);
-  return <HomeRuleHeader label="RIGHT NOW" ink={theme.color.textLabel} gap={10} style={styles.rightNowHeader} />;
-}
-
 /** TO DO / DONE: the label, how many, and the control that folds the section away. */
 export function HomeListHeader({
   label,
@@ -281,90 +275,6 @@ export function GoalRingCard({ goal, width, onPress }: { goal: GoalDto; width?: 
         </Text>
       </View>
     </Pressable>
-  );
-}
-
-/* -------------------------------------------------------------- right now */
-
-const SESSION_RING_R = 22;
-const SESSION_RING_C = 2 * Math.PI * SESSION_RING_R;
-
-/**
- * The session actually running, lifted out of the list.
- *
- * Exists only while something is running — there is no empty version of this card, by design.
- * `minutesLeft` null means the session predates the server recording how long it was meant to
- * run, so it shows how long it has been going instead of counting down to a length it can't know.
- */
-export function RightNowCard({
-  title,
-  minutesLeft,
-  minutesElapsed,
-  plannedMinutes,
-  fractionLeft,
-  onResume,
-}: {
-  title: string;
-  minutesLeft: number | null;
-  minutesElapsed: number;
-  plannedMinutes: number | null;
-  fractionLeft: number | null;
-  onResume: () => void;
-}) {
-  const theme = useTheme();
-  const styles = useThemedStyles(makeStyles);
-  const finished = minutesLeft === 0;
-  const subtitle =
-    minutesLeft == null
-      ? `Running · ${minutesElapsed} min so far`
-      : finished
-        ? `Time's up · ${plannedMinutes} min`
-        : `${minutesLeft} min left of ${plannedMinutes}`;
-
-  return (
-    <View style={styles.sessionCard}>
-      <View style={styles.sessionRing}>
-        <Svg width={48} height={48} viewBox="0 0 52 52" style={StyleSheet.absoluteFill}>
-          <Circle cx={26} cy={26} r={SESSION_RING_R} fill="none" stroke={theme.home.sessionTrack} strokeWidth={5} />
-          {fractionLeft != null && fractionLeft > 0 ? (
-            <Circle
-              cx={26}
-              cy={26}
-              r={SESSION_RING_R}
-              fill="none"
-              stroke={theme.home.sessionRing}
-              strokeWidth={5}
-              strokeLinecap="round"
-              strokeDasharray={SESSION_RING_C}
-              // The ring empties as the session runs down, so it reads as time remaining.
-              strokeDashoffset={SESSION_RING_C * (1 - fractionLeft)}
-              transform="rotate(-90 26 26)"
-            />
-          ) : null}
-        </Svg>
-        <Text style={td(T.badge, { fontSize: 13, letterSpacing: 0, color: theme.home.sessionInk })}>
-          {minutesLeft ?? minutesElapsed}
-        </Text>
-      </View>
-      <View style={styles.sessionText}>
-        <Text style={td(T.bodyLg, { fontWeight: "800", letterSpacing: -0.16, color: theme.color.text })} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text style={td(T.meta, { fontSize: 12, fontWeight: "700", color: theme.home.subtle, marginTop: 2 })}>
-          {subtitle}
-        </Text>
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${finished ? "Finish" : "Resume"}: ${title}`}
-        onPress={onResume}
-        style={styles.sessionAction}
-      >
-        <Text style={td(T.label, { fontSize: 14, fontWeight: "700", color: theme.home.actionInk })}>
-          {finished ? "Finish" : "Resume"}
-        </Text>
-      </Pressable>
-    </View>
   );
 }
 
@@ -579,10 +489,6 @@ const makeStyles = (t: Tokens) =>
       height: 1,
       backgroundColor: t.color.border,
     },
-    rightNowHeader: {
-      marginTop: 16,
-      paddingHorizontal: 2,
-    },
     listHeader: {
       marginTop: 18,
       marginBottom: 9,
@@ -643,36 +549,6 @@ const makeStyles = (t: Tokens) =>
     goalText: {
       flex: 1,
       minWidth: 0,
-    },
-    sessionCard: {
-      marginTop: 7,
-      backgroundColor: t.color.card,
-      borderWidth: 1,
-      borderColor: t.color.border,
-      borderRadius: 16,
-      paddingVertical: 9,
-      paddingHorizontal: 12,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 11,
-      boxShadow: [{ offsetX: 0, offsetY: 2, blurRadius: 12, color: t.home.cardShadow }],
-    },
-    sessionRing: {
-      width: px(48),
-      height: px(48),
-      flexShrink: 0,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    sessionText: {
-      flex: 1,
-      minWidth: 0,
-    },
-    sessionAction: {
-      backgroundColor: t.home.actionBg,
-      borderRadius: 10,
-      paddingVertical: 11,
-      paddingHorizontal: 16,
     },
     row: {
       backgroundColor: t.color.card,

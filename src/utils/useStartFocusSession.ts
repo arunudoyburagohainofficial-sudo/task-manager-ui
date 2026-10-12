@@ -9,6 +9,7 @@ import { queryKeys } from "../api/queryKeys";
 import type { FocusMode } from "../api/types";
 import { usePreferences } from "../state/PreferencesContext";
 import { tasksApi } from "../api";
+import { dropQuickFocusTask } from "./quickFocusStubs";
 import { resumeSessionParams } from "./focusSession";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -68,7 +69,13 @@ export function useStartFocusSession() {
       const plannedMinutes = focusMode === "pomodoro" ? block * cycles : block;
 
       try {
-        const session = await focusSessionsApi.startFocusSession(taskId, { focusMode, plannedMinutes });
+        const session = await focusSessionsApi.startFocusSession(taskId, {
+          focusMode,
+          plannedMinutes,
+          // Sent so the sitting can be picked up exactly as configured; the server ignores it
+          // for a regular session, which is one block by definition.
+          ...(focusMode === "pomodoro" ? { numPomodoroCycles: cycles } : {}),
+        });
         // Home's "Right now" reads this cache entry, so it is written here rather than left for
         // the next refetch — otherwise backing out of a session shows no sign of it running.
         queryClient.setQueryData(queryKeys.currentFocusSession(), session);
@@ -115,7 +122,14 @@ export function useStartFocusSession() {
               onPress: async () => {
                 try {
                   const stuck = await focusSessionsApi.getCurrentSession();
-                  if (stuck) await focusSessionsApi.abandonFocusSession(stuck.id);
+                  if (stuck) {
+                    await focusSessionsApi.abandonFocusSession(stuck.id);
+                    // The stuck session may itself have been a quick focus. Abandoning it
+                    // without this left its task on Home permanently.
+                    if (await dropQuickFocusTask(stuck.taskId)) {
+                      void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+                    }
+                  }
                   queryClient.setQueryData(queryKeys.currentFocusSession(), null);
                 } catch {
                   Alert.alert("Couldn't discard it", "Check your connection and try again.");

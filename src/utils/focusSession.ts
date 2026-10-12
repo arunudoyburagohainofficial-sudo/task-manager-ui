@@ -52,10 +52,18 @@ export function readRunningSession(session: FocusSessionDto, now: number = Date.
  * screen anchors the countdown to when it actually began instead of restarting it — leaving the
  * screen and coming back used to hand the user a fresh full-length timer.
  *
- * A Pomodoro can't be resumed that precisely. The server stores the whole sitting's length, not
- * how it was split into cycles, and a break never auto-starts the next one, so where the user was
- * in the sequence isn't recoverable. It reopens at the start of a block, which is what it did
- * before — and the honest option, since the alternative is inventing a position.
+ * A Pomodoro now records its split at the start (`numPomodoroCycles`), so the block length is
+ * simply the planned total divided by the rounds. Before that it divided by an assumed 25, and a
+ * 15-15 reopened as a single 25-minute round: the user lost both their block length and their
+ * second round on a refresh.
+ *
+ * Only a session started by an older build still has no count, and that one keeps the old
+ * fallback rather than refusing to open.
+ *
+ * Where the user was in the sequence is a separate problem and is not solvable from this data:
+ * a break waits at zero until it is tapped, so the sitting has no fixed length in real time and
+ * the position can't be derived from the clock. `sessionPosition.ts` records it on the device as
+ * it happens; this function supplies the shape of the sitting, not the place in it.
  */
 export function resumeSessionParams(
   session: FocusSessionDto,
@@ -71,20 +79,34 @@ export function resumeSessionParams(
   startedAt?: string;
 } {
   const pomodoro = session.focusMode === "pomodoro";
+  if (!pomodoro) {
+    return {
+      sessionId: session.id,
+      taskId: session.taskId,
+      focusMode: session.focusMode,
+      totalCycles: 1,
+      sessionMinutes: session.plannedMinutes ?? fallbackFocusMinutes,
+      dndEnabled,
+      startedAt: session.startedAt,
+    };
+  }
+
+  const planned = session.plannedMinutes ?? null;
+  // Recorded at the start since 2026-10-13. Older rows fall back to the assumption that used to
+  // be made for every session, which is wrong for any block that isn't 25 but is all they have.
+  const cycles =
+    session.numPomodoroCycles ??
+    (planned ? Math.max(1, Math.round(planned / DEFAULT_POMODORO_MINUTES)) : 4);
+
   return {
     sessionId: session.id,
     taskId: session.taskId,
     focusMode: session.focusMode,
-    // numPomodoroCycles is only written when a session completes, so it's still null on one in
-    // progress; the planned total divided by a standard block is the closest thing on record.
-    totalCycles: pomodoro
-      ? session.numPomodoroCycles ??
-        (session.plannedMinutes ? Math.max(1, Math.round(session.plannedMinutes / DEFAULT_POMODORO_MINUTES)) : 4)
-      : 1,
-    sessionMinutes: pomodoro
-      ? DEFAULT_POMODORO_MINUTES
-      : session.plannedMinutes ?? fallbackFocusMinutes,
+    totalCycles: cycles,
+    // The whole sitting divided by its rounds. Rounded because the two were multiplied to get
+    // here, so this only ever has to undo that; a stored total that doesn't divide cleanly came
+    // from an older build and a whole number of minutes is still the right shape to show.
+    sessionMinutes: planned ? Math.max(1, Math.round(planned / cycles)) : DEFAULT_POMODORO_MINUTES,
     dndEnabled,
-    ...(pomodoro ? {} : { startedAt: session.startedAt }),
   };
 }

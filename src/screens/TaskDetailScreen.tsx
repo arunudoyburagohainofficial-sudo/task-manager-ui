@@ -58,6 +58,7 @@ import { space, textAtDesignSize as td, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { formatClockTime } from "../utils/format";
 import { DEFAULT_POMODORO_MINUTES, resumeSessionParams } from "../utils/focusSession";
+import { dropQuickFocusTask } from "../utils/quickFocusStubs";
 import { describeRecurrence } from "../utils/recurrence";
 import { formatScheduleDate, todayKey } from "../utils/schedule";
 import type { RootStackParamList } from "../navigation/types";
@@ -304,6 +305,8 @@ export function TaskDetailScreen() {
       const session = await focusSessionsApi.startFocusSession(params.taskId, {
         focusMode,
         plannedMinutes,
+        // Records the split, so reopening recovers the block length rather than assuming one.
+        ...(focusMode === "pomodoro" ? { numPomodoroCycles: pomodoroCycles } : {}),
       });
       // Home's "Right now" reads this cache entry, so it's written here rather than left for
       // Home's next refetch — otherwise backing out of a session shows no sign of it running.
@@ -343,7 +346,14 @@ export function TaskDetailScreen() {
                 onPress: async () => {
                   try {
                     const stuck = await focusSessionsApi.getCurrentSession();
-                    if (stuck) await focusSessionsApi.abandonFocusSession(stuck.id);
+                    if (stuck) {
+                      await focusSessionsApi.abandonFocusSession(stuck.id);
+                      // Same reason as the shared hook: a stuck quick focus must not outlive
+                      // the session it was invented for.
+                      if (await dropQuickFocusTask(stuck.taskId)) {
+                        void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+                      }
+                    }
                     queryClient.setQueryData(queryKeys.currentFocusSession(), null);
                   } catch {
                     Alert.alert("Couldn't discard it", "Check your connection and try again.");

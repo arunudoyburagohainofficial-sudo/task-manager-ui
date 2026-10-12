@@ -5,6 +5,7 @@ import type { FocusMode } from "../api/types";
 import { px, textAtDesignSize as ds, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { BottomSheet } from "./BottomSheet";
+import { getSessionPosition, type SessionPosition } from "../utils/sessionPosition";
 
 /** The lengths the chip offers. Anything else is still reachable from Task Detail. */
 export const FOCUS_LENGTHS = [15, 25, 50, 90] as const;
@@ -15,6 +16,9 @@ export const POMODORO_CYCLES = [2, 3, 4, 5] as const;
 /** How far across the track the knob must travel before the slide counts. */
 const COMMIT_FRACTION = 0.72;
 
+/** One rest between rounds, mirroring FocusSessionScreen.BREAK_SECONDS. */
+const BREAK_MS = 5 * 60_000;
+
 function PlayMark({ size, color }: { size: number; color: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
@@ -23,11 +27,18 @@ function PlayMark({ size, color }: { size: number; color: string }) {
   );
 }
 
-function PauseMark({ size, color }: { size: number; color: string }) {
+/** Four corners opening outward: this button opens the session, it does not pause it. */
+function ExpandMark({ size, color }: { size: number; color: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Rect x="8" y="5.5" width="3" height="13" rx="1" fill={color} />
-      <Rect x="13" y="5.5" width="3" height="13" rx="1" fill={color} />
+      <Path
+        d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"
+        fill="none"
+        stroke={color}
+        strokeWidth={2.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </Svg>
   );
 }
@@ -53,8 +64,12 @@ function SlideToStart({ label, onCommit }: { label: string; onCommit: () => void
   const [trackWidth, setTrackWidth] = useState(0);
   const x = useRef(new Animated.Value(0)).current;
   const committed = useRef(false);
-  // Read inside the responder, which is created once and would otherwise close over width 0.
+  // Both read through refs because the responder is built once, on first render, and would
+  // otherwise close over that render's values forever. Width would be stuck at 0; onCommit was
+  // stuck on the first one, so picking Pomodoro and sliding still started a regular session.
   const travelRef = useRef(0);
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
 
   const knob = px(46);
   travelRef.current = Math.max(0, trackWidth - knob - px(8));
@@ -70,7 +85,7 @@ function SlideToStart({ label, onCommit }: { label: string; onCommit: () => void
           committed.current = true;
           // Snap to the end so the control looks resolved while the session is created.
           Animated.timing(x, { toValue: travel, duration: 90, useNativeDriver: true }).start(() => {
-            onCommit();
+            commitRef.current();
             committed.current = false;
             x.setValue(0);
           });
@@ -116,35 +131,81 @@ function SlideToStart({ label, onCommit }: { label: string; onCommit: () => void
  * counted down, so a phone picked back up shows where the clock actually is.
  */
 function RunningSession({
+  sessionId,
   taskName,
   endsAt,
   plannedMs,
-  onPause,
+  cycles,
+  onOpen,
   onStop,
 }: {
+  sessionId: string;
   taskName: string;
   endsAt: number | null;
   plannedMs: number | null;
-  onPause: () => void;
+  /** Work blocks in the sitting; 1 for a regular session. */
+  cycles: number;
+  onOpen: () => void;
   onStop: () => void;
 }) {
   const t = useTheme();
   const s = useThemedStyles(makeStyles);
   const [now, setNow] = useState(() => Date.now());
+  const [position, setPosition] = useState<SessionPosition | null>(null);
+
+  /*
+   * Home used to work its own deadline out as `startedAt + plannedMinutes`, which is the whole
+   * sitting. For a regular session that is right. For a Pomodoro it is a number that matches
+   * nothing the user can see: plannedMinutes counts work and excludes breaks, so a 2 x 15 made
+   * Home count down from 30:00 while the session screen counted the current 15-minute block.
+   * Two clocks, same session, never in agreement.
+   *
+   * The session screen writes where it actually is, so read that instead. It holds a wall-clock
+   * deadline, so it stays correct while nobody is looking at it.
+   */
+  useEffect(() => {
+    let alive = true;
+    void getSessionPosition(sessionId).then((p) => alive && setPosition(p));
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, endsAt]);
+
+  const paused = position?.pausedWithMsLeft != null;
+  const onBreak = position?.phase === "break";
+  // A paused block holds its remaining time; otherwise count to whichever deadline is known.
+  const target = position ? position.deadline : endsAt;
 
   useEffect(() => {
-    if (endsAt == null) return;
+    if (paused || target == null) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [endsAt]);
+  }, [target, paused]);
 
-  const leftMs = endsAt == null ? null : Math.max(0, endsAt - now);
+  const leftMs = paused
+    ? position?.pausedWithMsLeft ?? null
+    : target == null
+      ? null
+      : Math.max(0, target - now);
   const seconds = leftMs == null ? null : Math.ceil(leftMs / 1000);
   const clock =
     seconds == null
       ? "-"
       : `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-  const filled = leftMs == null || !plannedMs ? 0 : Math.max(0, Math.min(1, 1 - leftMs / plannedMs));
+
+  /*
+   * What the number under the clock actually means. Saying "left" over a break, or over a
+   * paused block, would be three different claims wearing the same word.
+   */
+  const clockLabel = paused ? "paused" : onBreak ? "break left" : "left";
+  // Only a session whose shape Home can see gets a round counter; a regular one has one block.
+  const roundLine =
+    cycles > 1 && position ? `Round ${Math.min(position.cycle, cycles)} of ${cycles}` : null;
+
+  // Against the current block when one is known, so the bar and the clock agree.
+  const blockMs = position && plannedMs && cycles > 0 ? plannedMs / cycles : plannedMs;
+  const barBasis = onBreak ? BREAK_MS : blockMs;
+  const filled = leftMs == null || !barBasis ? 0 : Math.max(0, Math.min(1, 1 - leftMs / barBasis));
 
   return (
     <View style={s.card}>
@@ -156,14 +217,22 @@ function RunningSession({
         {taskName}
       </Text>
 
+      {roundLine ? (
+        <Text style={ds(T.meta, { fontSize: 13, color: t.color.textMuted, marginTop: 1 })}>
+          {onBreak ? `${roundLine} · on a break` : roundLine}
+        </Text>
+      ) : null}
+
       <View style={s.runRow}>
         <View style={s.runClockRow}>
           <Text style={ds(T.timer, { fontSize: 42, letterSpacing: -1.6, color: t.color.text })}>{clock}</Text>
-          <Text style={ds(T.meta, { fontSize: 14, color: t.color.textMuted })}>left</Text>
+          <Text style={ds(T.meta, { fontSize: 14, color: t.color.textMuted })}>{clockLabel}</Text>
         </View>
         <View style={s.runControls}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Open session" onPress={onPause} style={s.runButton}>
-            <PauseMark size={px(16)} color={t.color.text} />
+          {/* An expand mark, not a pause mark. This opens the session; pausing lives on that
+              screen, and a glyph that says otherwise sent people there expecting to stop. */}
+          <Pressable accessibilityRole="button" accessibilityLabel="Open session" onPress={onOpen} style={s.runButton}>
+            <ExpandMark size={px(15)} color={t.color.text} />
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="End session" onPress={onStop} style={s.runButton}>
             <StopMark size={px(14)} color={t.color.text} />
@@ -188,12 +257,15 @@ export interface FocusNowCardProps {
   onStart: () => void;
   /** Present while a session is running — the card becomes that session's timer. */
   running?: {
+    sessionId: string;
     taskName: string;
     /** When the planned time is up, epoch ms. Null for an open-ended session. */
     endsAt: number | null;
     /** The whole planned length in ms, for the progress bar. */
     plannedMs: number | null;
-    onPause: () => void;
+    /** Work blocks in the sitting; 1 for a regular session. */
+    cycles: number;
+    onOpen: () => void;
     onStop: () => void;
   } | null;
 }
@@ -211,10 +283,12 @@ export function FocusNowCard({ minutes, mode, cycles, onPick, onStart, running }
   if (running) {
     return (
       <RunningSession
+        sessionId={running.sessionId}
         taskName={running.taskName}
         endsAt={running.endsAt}
         plannedMs={running.plannedMs}
-        onPause={running.onPause}
+        cycles={running.cycles}
+        onOpen={running.onOpen}
         onStop={running.onStop}
       />
     );

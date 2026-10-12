@@ -30,6 +30,8 @@ import { restingLine } from "../theme/companionCopy";
 import { formatMMSS, formatMinutes } from "../utils/format";
 import { lowerShield, raiseShield } from "../utils/focusShield";
 import { forgetQuickFocusStub, isQuickFocusStub } from "../utils/quickFocusStubs";
+import { setSessionPaused } from "../utils/sessionPause";
+import { forgetSessionPosition, getSessionPosition, setSessionPosition } from "../utils/sessionPosition";
 import { usePreferences } from "../state/PreferencesContext";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -135,6 +137,8 @@ export function FocusSessionScreen() {
     async (wasInterrupted: boolean) => {
       setFinishing(true);
       try {
+        void setSessionPaused(sessionId, false);
+        void forgetSessionPosition();
         const completed = await focusSessionsApi.completeFocusSession(sessionId, {
           wasInterrupted,
           // Cycles actually finished. Interrupted mid-work, the current cycle doesn't count; during a
@@ -221,8 +225,70 @@ export function FocusSessionScreen() {
    * one from a foreground event can both observe zero before React has re-rendered with the
    * new phase, and without it that fires finishSession twice.
    */
+  /*
+   * Picking the sitting back up exactly where it was left.
+   *
+   * `startedAt` arithmetic alone can place a regular session, because it runs straight through.
+   * It cannot place a Pomodoro: a break waits at zero until it is tapped, so the same 2 x 15
+   * occupies 35 minutes or three hours depending on the user, and nothing about the start
+   * instant distinguishes round two's work from eight minutes into a break. A pause has the
+   * same problem in either mode, since the server is never told about one.
+   *
+   * So the screen writes its position down as it goes, and reads it back here. A position is
+   * strictly better informed than the arithmetic above, so it wins whenever one exists. When
+   * none does — a fresh install, cleared data, a session started on another device — the
+   * fallback is the start of a block, which is what every reopen used to do.
+   *
+   * The timer is held until this has answered, so a stale deadline can't fire a phase change
+   * against a position that is about to replace it.
+   */
+  const [positionRestored, setPositionRestored] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void getSessionPosition(sessionId).then((pos) => {
+      if (!alive) return;
+      if (pos) {
+        setCurrentCycle(Math.min(Math.max(1, pos.cycle), totalCycles));
+        setPhase(pos.phase);
+        if (pos.pausedWithMsLeft != null) {
+          // Came back to a paused session: hold the remaining time rather than letting the
+          // wall clock eat the time the user deliberately stopped.
+          const at = Date.now();
+          setPausedAt(at);
+          setDeadline(at + pos.pausedWithMsLeft);
+          setSecondsLeft(Math.max(0, Math.ceil(pos.pausedWithMsLeft / 1000)));
+        } else if (pos.deadline != null) {
+          setDeadline(pos.deadline);
+          setSecondsLeft(Math.max(0, Math.ceil((pos.deadline - Date.now()) / 1000)));
+          // Running, so any pause mark left behind is stale and would shield it from cleanup.
+          void setSessionPaused(sessionId, false);
+        }
+      } else {
+        void setSessionPaused(sessionId, false);
+      }
+      setPositionRestored(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, totalCycles]);
+
+  /** Keeps the written position in step with the screen, so a refresh lands back here. */
+  useEffect(() => {
+    if (!positionRestored || phase === "completePrompt") return;
+    void setSessionPosition({
+      sessionId,
+      cycle: currentCycle,
+      phase,
+      deadline: pausedAt === null ? deadline : null,
+      pausedWithMsLeft: pausedAt === null ? null : Math.max(0, deadline - pausedAt),
+    });
+  }, [positionRestored, sessionId, currentCycle, phase, deadline, pausedAt]);
+
   const firedFor = useRef<number | null>(null);
   useEffect(() => {
+    // Until the stored position has answered, `deadline` may still be the mount-time guess.
+    if (!positionRestored) return;
     if (phase === "completePrompt") return;
     if (phase === "working" && paused) return;
 
@@ -253,7 +319,7 @@ export function FocusSessionScreen() {
       clearInterval(interval);
       subscription.remove();
     };
-  }, [phase, paused, deadline, focusMode, totalCycles, finishSession]);
+  }, [positionRestored, phase, paused, deadline, focusMode, totalCycles, finishSession]);
 
   function handleStartNextCycle() {
     setCurrentCycle((c) => c + 1);
@@ -282,6 +348,8 @@ export function FocusSessionScreen() {
     void lowerShield();
     try {
       await focusSessionsApi.abandonFocusSession(sessionId);
+      void setSessionPaused(sessionId, false);
+      void forgetSessionPosition();
       // A task invented purely to carry this session has nothing to show for itself now, and an
       // undated task never leaves Home on its own. Sliding and changing your mind should leave
       // no trace.
@@ -497,9 +565,13 @@ export function FocusSessionScreen() {
           // for an hour left the session's real elapsed time running anyway.
           onPress={() =>
             setPausedAt((at) => {
-              if (at === null) return Date.now();
-              setDeadline((d) => d + (Date.now() - at));
-              return null;
+              const nowPaused = at === null;
+              if (!nowPaused) setDeadline((d) => d + (Date.now() - at));
+              // Recorded on the device so Home's auto-finish knows to leave this alone. The
+              // server never hears about a pause, so without this a long lunch would look
+              // exactly like an abandoned session.
+              void setSessionPaused(sessionId, nowPaused);
+              return nowPaused ? Date.now() : null;
             })
           }
           style={styles.bottomButton}

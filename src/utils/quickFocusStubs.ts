@@ -45,3 +45,24 @@ export async function forgetQuickFocusStub(taskId: string): Promise<void> {
   const ids = await read();
   if (ids.includes(taskId)) await write(ids.filter((id) => id !== taskId));
 }
+
+/**
+ * Deletes a task if — and only if — it was one of these throwaways, and forgets the mark.
+ *
+ * Every place that abandons a session needs this. A session can be discarded from three
+ * different screens, and the two collision dialogs used to abandon the session while leaving
+ * its task behind: pending, undated, and therefore on Home for good.
+ *
+ * Returns true when something was removed, so callers can refresh the list.
+ */
+export async function dropQuickFocusTask(taskId: string): Promise<boolean> {
+  if (!(await isQuickFocusStub(taskId))) return false;
+  await forgetQuickFocusStub(taskId);
+  try {
+    const { tasksApi } = await import("../api");
+    await tasksApi.deleteTask(taskId);
+    return true;
+  } catch {
+    return false;
+  }
+}

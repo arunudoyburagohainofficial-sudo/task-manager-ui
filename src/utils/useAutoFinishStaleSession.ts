@@ -4,17 +4,53 @@ import { focusSessionsApi, tasksApi } from "../api";
 import { queryKeys } from "../api/queryKeys";
 import type { FocusSessionDto } from "../api/types";
 import { forgetQuickFocusStub, isQuickFocusStub } from "./quickFocusStubs";
+import { isSessionPaused } from "./sessionPause";
 
 /** Mirrors FocusSessionService.OVERRUN_GRACE_MINUTES. */
 const OVERRUN_GRACE_MINUTES = 5;
 /** Mirrors FocusSessionService.MAX_CREDITED_MINUTES. */
 const MAX_CREDITED_MINUTES = 240;
 
-/** The last minute a session can still earn anything. Past this, staying open buys nothing. */
-function creditCeilingMinutes(planned: number | null): number {
-  return planned != null && planned > 0
-    ? Math.min(planned + OVERRUN_GRACE_MINUTES, MAX_CREDITED_MINUTES)
-    : MAX_CREDITED_MINUTES;
+/** Each rest between Pomodoro rounds, from FocusSessionScreen.BREAK_SECONDS. */
+const BREAK_MINUTES = 5;
+/**
+ * The break allowance never drops below this many rounds' worth, whatever the session says.
+ *
+ * Sessions did not record their split until 2026-10-13, so this was simply the assumption made
+ * for all of them. Now that the real count is on the row it would be natural to use it and
+ * nothing else — but that would *tighten* the rule, because a break waits at zero until it is
+ * tapped and a user is entitled to take twenty minutes over one. A 2 x 15 would go from roughly
+ * 65 minutes of grace to 45, and anyone who stepped away mid-break would come back to a closed
+ * session.
+ *
+ * So the real count can only ever buy more room, never less. Being late to close an abandoned
+ * session costs nothing. Being early costs someone their work.
+ */
+const MIN_BREAK_ALLOWANCE_CYCLES = 6;
+
+/**
+ * How long a session may run before closing it is safe.
+ *
+ * For a regular session that is simply the point where credit stops: planned + 5.
+ *
+ * Pomodoro needs more, and getting this wrong ends someone's session while they are working.
+ * `plannedMinutes` counts *work* only — a 3 x 25 sitting is stored as 75 — but the sitting also
+ * contains two five-minute breaks, so it occupies 85 minutes of real time. Closing at 80 would
+ * land in the middle of the last round. Breaks also wait at zero until tapped, so the true
+ * length has no fixed upper bound; the allowance is generous on purpose.
+ *
+ * Being late to close an abandoned session costs nothing. Being early costs someone their work.
+ */
+function staleAfterMinutes(session: FocusSessionDto): number {
+  const planned = session.plannedMinutes;
+  if (planned == null || planned <= 0) return MAX_CREDITED_MINUTES;
+
+  const breaks =
+    session.focusMode === "pomodoro"
+      ? Math.max(session.numPomodoroCycles ?? 0, MIN_BREAK_ALLOWANCE_CYCLES) * BREAK_MINUTES
+      : 0;
+
+  return Math.min(planned + breaks + OVERRUN_GRACE_MINUTES, MAX_CREDITED_MINUTES);
 }
 
 /**
@@ -42,21 +78,56 @@ export function useAutoFinishStaleSession(session: FocusSessionDto | null): void
     if (!session || attempted.current === session.id) return;
 
     const elapsedMinutes = (Date.now() - Date.parse(session.startedAt)) / 60_000;
-    if (elapsedMinutes < creditCeilingMinutes(session.plannedMinutes)) return;
+    if (elapsedMinutes < staleAfterMinutes(session)) return;
 
     attempted.current = session.id;
     const { id, taskId } = session;
+    // The device's own calendar day, which is the one the server credits against.
+    const startedOnAnEarlierDay =
+      new Date(session.startedAt).toDateString() !== new Date().toDateString();
 
     void (async () => {
       try {
-        // wasInterrupted: it was. Nobody pressed finish; the clock simply ran out and kept going.
-        await focusSessionsApi.completeFocusSession(id, { wasInterrupted: true });
+        /*
+         * A deliberate pause is the one case where a long-running session is not abandoned.
+         * The server cannot tell — there is no pause endpoint — so the phone records it.
+         *
+         * The hard ceiling still applies: past 240 minutes nothing can be credited whatever
+         * the user intended, and a pause left overnight is not a pause anyone is coming back
+         * to. So a paused session is spared, but not forever.
+         */
+        if (elapsedMinutes < MAX_CREDITED_MINUTES && (await isSessionPaused(id))) {
+          attempted.current = null;
+          return;
+        }
+        if (startedOnAnEarlierDay) {
+          /*
+           * The session was left open overnight, so finishing it now would credit the wrong day.
+           * The server records minutes, points and the streak against the moment a session is
+           * *closed*, not the moment it started — so pressing finish today hands yesterday's
+           * sitting to today's totals, and marks today as a day the user showed up. The streak
+           * is deliberately never reversible, so that one is permanent.
+           *
+           * Nobody was working at 3am. Throwing it away claims nothing, which is the honest
+           * answer, and it still clears the way for the next session to start.
+           */
+          await focusSessionsApi.abandonFocusSession(id);
 
-        // A quick-focus task follows the same rule as a hand-finished one: it earned real time,
-        // so it completes rather than lingering as something still to do.
-        if (await isQuickFocusStub(taskId)) {
-          await forgetQuickFocusStub(taskId);
-          await tasksApi.completeTask(taskId).catch(() => {});
+          // The task existed only to carry that session. Nothing was earned, so nothing is kept.
+          if (await isQuickFocusStub(taskId)) {
+            await forgetQuickFocusStub(taskId);
+            await tasksApi.deleteTask(taskId).catch(() => {});
+          }
+        } else {
+          // wasInterrupted: it was. Nobody pressed finish; the clock ran out and kept going.
+          await focusSessionsApi.completeFocusSession(id, { wasInterrupted: true });
+
+          // A quick-focus task follows the same rule as a hand-finished one: it earned real time,
+          // so it completes rather than lingering as something still to do.
+          if (await isQuickFocusStub(taskId)) {
+            await forgetQuickFocusStub(taskId);
+            await tasksApi.completeTask(taskId).catch(() => {});
+          }
         }
 
         queryClient.setQueryData(queryKeys.currentFocusSession(), null);
