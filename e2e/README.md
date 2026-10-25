@@ -50,10 +50,10 @@ cd task-app && npx playwright test --config=e2e/playwright.config.ts --project=a
 | [14 · Accessibility and rendering](plan/14-accessibility-and-rendering.md) | 8 | Names, Reduce Motion, large text, small screens |
 | [15 · The walkthrough](plan/15-walkthrough.md) | 10 | Five steps coupled to five real controls across four screens |
 | [16 · Visual regression](plan/16-visual-regression.md) | 10 | The design itself — gradients, rings, shadows, the docked bar |
-| 17 · Focus Now | 51 | **Starting work in one motion**, the throwaway tasks that shortcut creates, and a Pomodoro surviving a refresh as itself |
+| 17 · Focus Now | 52 | **Starting work in one motion**, the throwaway tasks that shortcut creates, and a Pomodoro surviving a refresh as itself |
 | 18 · First-run onboarding | 11 | The four screens only a new install sees, which the rest of the suite deliberately skips |
 | 19 · Placement, on the screens | 14 | **Where a task actually appears** - the When × Repeat matrix asserted on Home and Scheduled, not just in the rules |
-| **Total** | **368** | |
+| **Total** | **369** | |
 | [17 · What this can't prove](plan/17-device-only.md) | — | Notification delivery and everything else that needs a real phone |
 
 Two entries are **blocked on the app**, and say so: `DETAIL-18` (no rename control exists yet)

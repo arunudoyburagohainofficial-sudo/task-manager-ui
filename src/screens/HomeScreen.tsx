@@ -381,7 +381,7 @@ export function HomeScreen() {
         ...(mode === "pomodoro" && numPomodoroCycles != null ? { numPomodoroCycles } : {}),
       });
       await setSessionPaused(id, false);
-      await forgetSessionPosition();
+      forgetSessionPosition();
 
       // A quick focus exists only to carry the sitting, so it finishes with it rather than
       // lingering on Home as something still to do.
@@ -417,7 +417,7 @@ export function HomeScreen() {
    */
   async function handleStartNextCycle(nextCycle: number, blockMs: number) {
     if (!session) return;
-    await setSessionPosition({
+    setSessionPosition({
       sessionId: session.id,
       cycle: nextCycle,
       phase: "working",

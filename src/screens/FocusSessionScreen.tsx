@@ -31,7 +31,7 @@ import { formatMMSS, formatMinutes } from "../utils/format";
 import { lowerShield, raiseShield } from "../utils/focusShield";
 import { forgetQuickFocusStub, isQuickFocusStub } from "../utils/quickFocusStubs";
 import { setSessionPaused } from "../utils/sessionPause";
-import { forgetSessionPosition, getSessionPosition, setSessionPosition } from "../utils/sessionPosition";
+import { forgetSessionPosition, readSessionPosition, setSessionPosition } from "../utils/sessionPosition";
 import { usePreferences } from "../state/PreferencesContext";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -138,7 +138,7 @@ export function FocusSessionScreen() {
       setFinishing(true);
       try {
         void setSessionPaused(sessionId, false);
-        void forgetSessionPosition();
+        forgetSessionPosition();
         const completed = await focusSessionsApi.completeFocusSession(sessionId, {
           wasInterrupted,
           // Cycles actually finished. Interrupted mid-work, the current cycle doesn't count; during a
@@ -245,7 +245,7 @@ export function FocusSessionScreen() {
   const [positionRestored, setPositionRestored] = useState(false);
   useEffect(() => {
     let alive = true;
-    void getSessionPosition(sessionId).then((pos) => {
+    void readSessionPosition(sessionId).then((pos) => {
       if (!alive) return;
       if (pos) {
         setCurrentCycle(Math.min(Math.max(1, pos.cycle), totalCycles));
@@ -276,7 +276,7 @@ export function FocusSessionScreen() {
   /** Keeps the written position in step with the screen, so a refresh lands back here. */
   useEffect(() => {
     if (!positionRestored || phase === "completePrompt") return;
-    void setSessionPosition({
+    setSessionPosition({
       sessionId,
       cycle: currentCycle,
       phase,
@@ -349,7 +349,7 @@ export function FocusSessionScreen() {
     try {
       await focusSessionsApi.abandonFocusSession(sessionId);
       void setSessionPaused(sessionId, false);
-      void forgetSessionPosition();
+      forgetSessionPosition();
       // A task invented purely to carry this session has nothing to show for itself now, and an
       // undated task never leaves Home on its own. Sliding and changing your mind should leave
       // no trace.

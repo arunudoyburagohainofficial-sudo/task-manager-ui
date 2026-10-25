@@ -5,7 +5,7 @@ import type { FocusMode } from "../api/types";
 import { px, textAtDesignSize as ds, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { BottomSheet } from "./BottomSheet";
-import { getSessionPosition, type SessionPosition } from "../utils/sessionPosition";
+import { hydrateSessionPosition, isSessionPositionHydrated, useSessionPosition } from "../utils/sessionPosition";
 
 /** The lengths the chip offers. Anything else is still reachable from Task Detail. */
 export const FOCUS_LENGTHS = [15, 25, 50, 90] as const;
@@ -131,31 +131,26 @@ function RunningSession({
   const t = useTheme();
   const s = useThemedStyles(makeStyles);
   const [now, setNow] = useState(() => Date.now());
-  const [position, setPosition] = useState<SessionPosition | null>(null);
-  /** False until the stored position has answered, one way or the other. */
-  const [positionRead, setPositionRead] = useState(false);
 
   /*
+   * Subscribed, not copied.
+   *
    * Home used to work its own deadline out as `startedAt + plannedMinutes`, which is the whole
    * sitting. For a regular session that is right. For a Pomodoro it is a number that matches
    * nothing the user can see: plannedMinutes counts work and excludes breaks, so a 2 x 15 made
    * Home count down from 30:00 while the session screen counted the current 15-minute block.
-   * Two clocks, same session, never in agreement.
    *
-   * The session screen writes where it actually is, so read that instead. It holds a wall-clock
-   * deadline, so it stays correct while nobody is looking at it.
+   * Reading the session screen's position fixed the arithmetic but not the ownership - each
+   * screen still kept its own copy, so a pause on one left the other counting a deadline that
+   * had already been suspended. There is one value now, in `sessionPosition`, and this
+   * subscribes to it: a write there re-renders this card in the same tick.
    */
+  const position = useSessionPosition(sessionId);
+  const [positionRead, setPositionRead] = useState(() => isSessionPositionHydrated());
   useEffect(() => {
-    let alive = true;
-    void getSessionPosition(sessionId).then((p) => {
-      if (!alive) return;
-      setPosition(p);
-      setPositionRead(true);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [sessionId, endsAt]);
+    // Only does anything after a cold start; served from memory every time after that.
+    void hydrateSessionPosition().then(() => setPositionRead(true));
+  }, []);
 
   const paused = position?.pausedWithMsLeft != null;
   const onBreak = position?.phase === "break";
@@ -254,9 +249,8 @@ function RunningSession({
             onPress={async () => {
               if (!moreCyclesToGo) return onFinish();
               await onStartNextCycle(currentCycle + 1, (plannedMs ?? 0) / Math.max(1, cycles));
-              // Nothing on the server changed, so there is no refetch to wait on - the new
-              // position is read straight back to move this card on to the next round.
-              setPosition(await getSessionPosition(sessionId));
+              // No re-read: writing the position notifies this card, which is the whole point
+              // of there being one value rather than two.
               setNow(Date.now());
             }}
             style={({ pressed }) => [s.zeroAction, pressed && s.cardPressed, finishing && s.zeroActionBusy]}
