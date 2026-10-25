@@ -5,6 +5,7 @@ import type { FocusMode } from "../api/types";
 import { px, textAtDesignSize as ds, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { BottomSheet } from "./BottomSheet";
+import { playSlideCommit } from "../utils/slideFeedback";
 import { hydrateSessionPosition, isSessionPositionHydrated, useSessionPosition } from "../utils/sessionPosition";
 
 /** The lengths the chip offers. Anything else is still reachable from Task Detail. */
@@ -74,6 +75,9 @@ function SlideToStart({ label, onCommit, starting }: { label: string; onCommit: 
           // and the label back to "Slide to focus", while two network calls were still in
           // flight - so the control looked like it had refused the gesture. It is released
           // below, once the attempt is over one way or the other.
+          // The tap and tick land now, on the gesture, not when the server answers - waiting
+          // for the round trips would read as lag rather than as acknowledgement.
+          playSlideCommit();
           Animated.timing(x, { toValue: travel, duration: 90, useNativeDriver: true }).start(() => {
             commitRef.current();
           });

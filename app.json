@@ -52,7 +52,9 @@
           ]
         }
       ],
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "expo-audio",
+      "expo-asset"
     ],
     "extra": {
       "eas": {
