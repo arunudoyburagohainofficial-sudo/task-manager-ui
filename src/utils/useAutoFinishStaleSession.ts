@@ -6,7 +6,13 @@ import type { FocusSessionDto } from "../api/types";
 import { forgetQuickFocusStub, isQuickFocusStub } from "./quickFocusStubs";
 import { isSessionPaused } from "./sessionPause";
 
-/** Mirrors FocusSessionService.OVERRUN_GRACE_MINUTES. */
+/**
+ * Slack before a session counts as abandoned.
+ *
+ * Nothing to do with what gets credited any more - the server pays exactly the planned length
+ * and no grace. This is only about *when* to close an open session, and closing one a few
+ * minutes late costs nothing while closing it early costs someone their work.
+ */
 const OVERRUN_GRACE_MINUTES = 5;
 /** Mirrors FocusSessionService.MAX_CREDITED_MINUTES. */
 const MAX_CREDITED_MINUTES = 240;
@@ -31,7 +37,7 @@ const MIN_BREAK_ALLOWANCE_CYCLES = 6;
 /**
  * How long a session may run before closing it is safe.
  *
- * For a regular session that is simply the point where credit stops: planned + 5.
+ * For a regular session that is the point where credit stopped, plus a little slack.
  *
  * Pomodoro needs more, and getting this wrong ends someone's session while they are working.
  * `plannedMinutes` counts *work* only — a 3 x 25 sitting is stored as 75 — but the sitting also
@@ -61,9 +67,9 @@ function staleAfterMinutes(session: FocusSessionDto): number {
  * Quick focus made this easy to hit, because starting is now one motion.
  *
  * It only fires once a session is past the point where it could earn anything more: the server
- * credits at most `planned + 5` minutes, capped at 240. Finishing then costs the user nothing
- * they had not already stopped earning, and it is the same figure they would have got by
- * pressing the button themselves.
+ * credits exactly the planned length, capped at 240. Finishing then costs the user nothing they
+ * had not already stopped earning, and it is the same figure they would have got by pressing the
+ * button themselves.
  *
  * Deliberately NOT a timer. It runs when the app looks at a session — opening Home, coming back
  * to the foreground — because a session nobody is watching does not need closing on a schedule,

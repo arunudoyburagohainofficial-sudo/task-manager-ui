@@ -4,7 +4,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useMarkTaskDoneMutation, useRemindersQuery } from "../api/queries/useReminders";
-import { useReopenTaskMutation, useTasksQuery, useUpdateTaskMutation } from "../api/queries/useTasks";
+import { useDeleteTaskMutation, useReopenTaskMutation, useTasksQuery, useUpdateTaskMutation } from "../api/queries/useTasks";
 import type { ReminderDto, TaskDto } from "../api/types";
 import { countUnfireable } from "../notifications/schedulingLogic";
 import {
@@ -13,6 +13,7 @@ import {
   DateHeading,
   H1,
   Meta,
+  ClearAllOverdueButton,
   MoveAllToTodayButton,
   NotificationBlockBanner,
   OverdueRow,
@@ -63,9 +64,12 @@ export function ScheduledScreen() {
   const markDoneMutation = useMarkTaskDoneMutation();
   const reopenTaskMutation = useReopenTaskMutation();
   const updateTaskMutation = useUpdateTaskMutation();
+  const deleteTaskMutation = useDeleteTaskMutation();
   const { showToast } = useToast();
   const [movingAll, setMovingAll] = useState(false);
   const [moveAllConfirm, setMoveAllConfirm] = useState(false);
+  const [clearAllConfirm, setClearAllConfirm] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
 
   // Mirrors Home's handler — completing a reminder task has to resync the device's
   // scheduled notifications, or a stopped reminder keeps its pending local notification,
@@ -228,6 +232,36 @@ export function ScheduledScreen() {
     }
   }
 
+  /**
+   * Deletes every overdue task.
+   *
+   * Deleted rather than completed, deliberately. Marking them done would credit points for work
+   * that never happened and put rows in DONE claiming otherwise; the whole reason to reach for
+   * this button is that these tasks stopped mattering, which is not the same as finishing them.
+   *
+   * Counted as it goes rather than from overdue.length up front, so a failure part-way through
+   * reports what actually went instead of what was attempted - the same reasoning as the bulk
+   * move above, and it matters more here because this cannot be undone.
+   */
+  async function handleClearAllOverdue() {
+    setClearAllConfirm(false);
+    setClearingAll(true);
+    let removed = 0;
+    try {
+      for (const task of overdue) {
+        await deleteTaskMutation.mutateAsync(task.id);
+        removed += 1;
+      }
+      // Their notifications go with them, and the device's queue is rebuilt from what is left.
+      await syncReminders();
+      showToast({ message: `Deleted ${removed} overdue task${removed === 1 ? "" : "s"}` });
+    } catch (err) {
+      showToast({ tone: "error", message: `Couldn't delete everything - ${failureHint(err)}` });
+    } finally {
+      setClearingAll(false);
+    }
+  }
+
   async function handleRefresh() {
     setRefreshing(true);
     await Promise.all([tasksQuery.refetch(), remindersQuery.refetch()]);
@@ -283,8 +317,16 @@ export function ScheduledScreen() {
             count={overdue.length}
             tone="overdue"
             action={
-              overdue.length > 1 && !movingAll ? (
-                <MoveAllToTodayButton count={overdue.length} onPress={() => setMoveAllConfirm(true)} />
+              /*
+               * Both offered from a single overdue task. Move all used to appear only at two or
+               * more, which left the commonest case - one thing missed - with no bulk action and
+               * no obvious way to deal with it at all.
+               */
+              !movingAll && !clearingAll ? (
+                <View style={styles.panelActions}>
+                  <MoveAllToTodayButton count={overdue.length} onPress={() => setMoveAllConfirm(true)} />
+                  <ClearAllOverdueButton count={overdue.length} onPress={() => setClearAllConfirm(true)} />
+                </View>
               ) : null
             }
           >
@@ -395,6 +437,22 @@ export function ScheduledScreen() {
         onConfirm={handleMoveAllToToday}
         onCancel={() => setMoveAllConfirm(false)}
       />
+
+      {/* Spells out that nothing is kept and nothing comes back, because unlike every other
+          bulk action on this screen this one destroys the tasks rather than moving them. */}
+      <ConfirmModal
+        visible={clearAllConfirm}
+        title="Delete all overdue?"
+        message={`${overdue.length} overdue task${
+          overdue.length === 1 ? "" : "s"
+        } will be removed, along with their notifications. They won't be marked done and they won't count towards anything. This can't be undone.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        destructive
+        loading={clearingAll}
+        onConfirm={handleClearAllOverdue}
+        onCancel={() => setClearAllConfirm(false)}
+      />
     </ScreenContainer>
   );
 }
@@ -412,6 +470,12 @@ const makeStyles = (t: Tokens) =>
     },
     panelSpacing: {
       marginTop: 14,
+    },
+    /** Two bulk actions sit in the slot that used to hold one. */
+    panelActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
     },
     upcomingHeader: {
       flexDirection: "row",

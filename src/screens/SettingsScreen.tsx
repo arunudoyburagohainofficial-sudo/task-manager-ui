@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
@@ -52,6 +52,37 @@ const APPEARANCE_OPTIONS: { value: AppearanceChoice; label: string }[] = [
  * Save is no longer a button in the middle of the page: it lives in a bar pinned above the tab
  * bar for as long as anything is unsaved, so the state can't be scrolled away from.
  */
+/** Where feedback and bug reports go. */
+const SUPPORT_EMAIL = "hello@mactora.com";
+const APP_VERSION = "1.0.0";
+
+/**
+ * Opens the user's mail app with a report already addressed and stubbed out.
+ *
+ * The version and platform are filled in because they are the first two things any bug report
+ * needs and the last two things anyone remembers to include. Nothing else is: the body sits in
+ * the user's own mail app where they can read and edit every word before it is sent, so putting
+ * anything they have not seen in there would be taking a liberty.
+ *
+ * Falls back to an alert naming the address, because a device with no mail app configured would
+ * otherwise just swallow the tap.
+ */
+async function openFeedbackEmail() {
+  const body = [
+    "",
+    "",
+    "---",
+    `App version: ${APP_VERSION}`,
+    `Platform: ${Platform.OS}${Platform.Version ? ` ${Platform.Version}` : ""}`,
+  ].join("\n");
+  const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("FOYG feedback")}&body=${encodeURIComponent(body)}`;
+  try {
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert("Couldn't open your mail app", `Write to us at ${SUPPORT_EMAIL} and we'll pick it up.`);
+  }
+}
+
 export function SettingsScreen() {
   const {
     defaultFocusDurationMinutes,
@@ -393,6 +424,25 @@ export function SettingsScreen() {
           </PanelNote>
         </PanelCard>
 
+        <SectionLabel style={styles.label}>FEEDBACK</SectionLabel>
+        <PanelCard>
+          {/* One row rather than two: a bug and an idea go to the same inbox and read the same
+              way once they arrive, so splitting them only made the user classify their own
+              message before they could send it. */}
+          <PanelRow
+            label="Report a bug or suggest an idea"
+            last
+            onPress={openFeedbackEmail}
+            accessibilityLabel="Report a bug or suggest an idea"
+            right={<Text style={ds(T.meta, { color: theme.color.textFaint })}>›</Text>}
+          />
+          <Hairline />
+          <PanelNote>
+            Opens your email, addressed to {SUPPORT_EMAIL}. Tell us what broke, or what you wish
+            this did - we read every message.
+          </PanelNote>
+        </PanelCard>
+
         <PanelCard style={styles.label}>
           <PanelRow label="Sign out" onPress={signOut} style={styles.rowFlat} />
           <PanelRow
@@ -406,7 +456,7 @@ export function SettingsScreen() {
         </PanelCard>
 
         <Text style={[ds(T.meta, { fontSize: 12, fontWeight: "500", color: theme.color.textFaint }), styles.version]}>
-          Version 1.0.0 · Support &amp; feedback
+          Version {APP_VERSION} · {SUPPORT_EMAIL}
         </Text>
       </ScrollView>
 

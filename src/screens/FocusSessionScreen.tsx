@@ -446,7 +446,10 @@ export function FocusSessionScreen() {
           visible={endConfirmOpen}
           title="End this session early?"
           message="It still counts toward your total time."
-          confirmLabel="End session"
+          // "End", not "End session": the title already says what is ending, and the longer
+          // label truncated to "End sessi..." beside Keep going. Same reasoning as the account
+          // and task delete dialogs, which have always said just "Delete".
+          confirmLabel="End"
           cancelLabel="Keep going"
           onConfirm={handleEndSessionConfirm}
           onCancel={() => setEndConfirmOpen(false)}
@@ -606,7 +609,8 @@ export function FocusSessionScreen() {
         visible={endConfirmOpen}
         title="End this session early?"
         message="It still counts toward your total time."
-        confirmLabel="End session"
+        // "End", not "End session" — see the Pomodoro copy of this dialog above.
+        confirmLabel="End"
         cancelLabel="Keep going"
         onConfirm={handleEndSessionConfirm}
         onCancel={() => setEndConfirmOpen(false)}

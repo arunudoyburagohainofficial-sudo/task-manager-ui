@@ -308,9 +308,8 @@ export function TaskDetailScreen() {
         // Records the split, so reopening recovers the block length rather than assuming one.
         ...(focusMode === "pomodoro" ? { numPomodoroCycles: pomodoroCycles } : {}),
       });
-      // Home's "Right now" reads this cache entry, so it's written here rather than left for
-      // Home's next refetch — otherwise backing out of a session shows no sign of it running.
-      queryClient.setQueryData(queryKeys.currentFocusSession(), session);
+      // Pushed before the cache is written, so Home never paints the running card as the screen
+      // in front - see the same ordering, and the reason for it, in useStartFocusSession.
       navigation.navigate("FocusSession", {
         sessionId: session.id,
         taskId: params.taskId,
@@ -319,6 +318,7 @@ export function TaskDetailScreen() {
         sessionMinutes: focusMode === "pomodoro" ? pomodoroMinutes : regularMinutes,
         dndEnabled: sessionDndEnabled,
       });
+      queryClient.setQueryData(queryKeys.currentFocusSession(), session);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         const current = user ? await focusSessionsApi.getCurrentSession() : null;

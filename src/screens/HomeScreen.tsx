@@ -22,6 +22,9 @@ import {
   useUpdateGoalMutation,
 } from "../api/queries/useGoals";
 import { useCurrentFocusSessionQuery } from "../api/queries/useFocusSessions";
+import { focusSessionsApi, tasksApi } from "../api";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "../api/queryKeys";
 import { useStreakQuery, useTodayProgressQuery } from "../api/queries/useProgress";
 import { useMarkTaskDoneMutation, useRemindersQuery } from "../api/queries/useReminders";
 import { useCreateTaskMutation, useReopenTaskMutation, useTasksQuery } from "../api/queries/useTasks";
@@ -58,7 +61,9 @@ import {
   isToday,
 } from "../utils/format";
 import { readRunningSession, resumeSessionParams } from "../utils/focusSession";
-import { markQuickFocusStub } from "../utils/quickFocusStubs";
+import { forgetQuickFocusStub, isQuickFocusStub, markQuickFocusStub } from "../utils/quickFocusStubs";
+import { setSessionPaused } from "../utils/sessionPause";
+import { forgetSessionPosition, setSessionPosition } from "../utils/sessionPosition";
 import { useAutoFinishStaleSession } from "../utils/useAutoFinishStaleSession";
 import { useStartFocusSession } from "../utils/useStartFocusSession";
 import { goalsRowLayout } from "../utils/goalsLayout";
@@ -125,11 +130,13 @@ export function HomeScreen() {
   const markDoneMutation = useMarkTaskDoneMutation();
   const reopenTaskMutation = useReopenTaskMutation();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const goalsQuery = useGoalsQuery();
   const createGoalMutation = useCreateGoalMutation();
   const updateGoalMutation = useUpdateGoalMutation();
   const deleteGoalMutation = useDeleteGoalMutation();
 
+  const [finishingSession, setFinishingSession] = useState(false);
   const [editingGoal, setEditingGoal] = useState<GoalDto | null>(null);
   const [creatingGoal, setCreatingGoal] = useState(false);
 
@@ -352,6 +359,71 @@ export function HomeScreen() {
       "FocusSession",
       resumeSessionParams(session, defaultFocusDurationMinutes, dndDuringFocusEnabled)
     );
+  }
+
+  /**
+   * Finishing a sitting from Home, once its clock has run out.
+   *
+   * The session screen owns the timer, so when it is not mounted nothing closes a block that
+   * reached zero - the card sat at 00:00 and only auto-finish eventually tidied it up, five
+   * minutes later. This is the same completion the session screen performs, minus the "keep the
+   * task open?" question, which has no meaning here: the clock finished, so the sitting is done.
+   *
+   * `wasInterrupted` is false because it was not - the planned time ran out on its own.
+   */
+  async function handleFinishFromHome() {
+    if (!session || finishingSession) return;
+    setFinishingSession(true);
+    const { id, taskId, focusMode: mode, numPomodoroCycles } = session;
+    try {
+      const completed = await focusSessionsApi.completeFocusSession(id, {
+        wasInterrupted: false,
+        ...(mode === "pomodoro" && numPomodoroCycles != null ? { numPomodoroCycles } : {}),
+      });
+      await setSessionPaused(id, false);
+      await forgetSessionPosition();
+
+      // A quick focus exists only to carry the sitting, so it finishes with it rather than
+      // lingering on Home as something still to do.
+      if (await isQuickFocusStub(taskId)) {
+        await forgetQuickFocusStub(taskId);
+        await tasksApi.completeTask(taskId).catch(() => {});
+      }
+
+      queryClient.setQueryData(queryKeys.currentFocusSession(), null);
+      void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      void queryClient.invalidateQueries({ queryKey: ["todayProgress"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.streak() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.goals() });
+
+      // The figure the server credited, not one worked out here - the cap and the grace are
+      // its rules, and a number from the phone would disagree with the stat strip beneath it.
+      const minutes = Math.round((completed.durationSeconds ?? 0) / 60);
+      showToast({ message: `Session done · +${completed.pointsEarned ?? 0} XP for ${minutes} min` });
+    } catch (err) {
+      showToast({ tone: "error", message: `Couldn't finish the session - ${failureHint(err)}` });
+    } finally {
+      setFinishingSession(false);
+    }
+  }
+
+  /**
+   * Moving a Pomodoro on to its next round without opening the session screen.
+   *
+   * Only the position moves; the session itself is untouched, because the server stores the
+   * whole sitting and never hears about the rounds inside it. Straight into the work block
+   * rather than through the break - tapping this is the user saying they are ready now, and a
+   * break they have to sit through after asking to start would be the app arguing with them.
+   */
+  async function handleStartNextCycle(nextCycle: number, blockMs: number) {
+    if (!session) return;
+    await setSessionPosition({
+      sessionId: session.id,
+      cycle: nextCycle,
+      phase: "working",
+      deadline: Date.now() + blockMs,
+      pausedWithMsLeft: null,
+    });
   }
 
   async function handleRefresh() {
@@ -583,7 +655,9 @@ export function HomeScreen() {
                         plannedMs: running.plannedMinutes != null ? running.plannedMinutes * 60_000 : null,
                         cycles: session.focusMode === "pomodoro" ? session.numPomodoroCycles ?? 1 : 1,
                         onOpen: handleResumeSession,
-                        onStop: handleResumeSession,
+                        onFinish: handleFinishFromHome,
+                        onStartNextCycle: handleStartNextCycle,
+                        finishing: finishingSession,
                       }
                     : null
                 }

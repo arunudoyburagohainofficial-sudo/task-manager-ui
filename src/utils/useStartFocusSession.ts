@@ -76,9 +76,18 @@ export function useStartFocusSession() {
           // for a regular session, which is one block by definition.
           ...(focusMode === "pomodoro" ? { numPomodoroCycles: cycles } : {}),
         });
-        // Home's "Right now" reads this cache entry, so it is written here rather than left for
-        // the next refetch — otherwise backing out of a session shows no sign of it running.
-        queryClient.setQueryData(queryKeys.currentFocusSession(), session);
+        /*
+         * Navigate first, then write the cache.
+         *
+         * The other way round, React committed the running card onto Home and painted it before
+         * the push began - so sliding to focus showed the timer start *on Home*, counting, and
+         * only then slid the session screen over the top of it. Both calls are synchronous and
+         * in the same tick, so doing them in this order lands them in one commit and Home never
+         * renders the card while it is still the screen in front.
+         *
+         * The cache write itself still has to happen here: Home reads this entry, and without it
+         * backing out of the session would show no sign of one running.
+         */
         navigation.navigate("FocusSession", {
           sessionId: session.id,
           taskId,
@@ -87,6 +96,7 @@ export function useStartFocusSession() {
           sessionMinutes: block,
           dndEnabled: dnd,
         });
+        queryClient.setQueryData(queryKeys.currentFocusSession(), session);
         return;
       } catch (e) {
         if (!(e instanceof ApiError) || e.status !== 409) {

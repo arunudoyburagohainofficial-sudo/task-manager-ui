@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Animated, LayoutChangeEvent, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
-import Svg, { Path, Rect } from "react-native-svg";
+import Svg, { Path } from "react-native-svg";
 import type { FocusMode } from "../api/types";
 import { px, textAtDesignSize as ds, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
@@ -23,30 +23,6 @@ function PlayMark({ size, color }: { size: number; color: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path d="M8 5.5v13l11-6.5z" fill={color} />
-    </Svg>
-  );
-}
-
-/** Four corners opening outward: this button opens the session, it does not pause it. */
-function ExpandMark({ size, color }: { size: number; color: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"
-        fill="none"
-        stroke={color}
-        strokeWidth={2.4}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function StopMark({ size, color }: { size: number; color: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Rect x="7" y="7" width="10" height="10" rx="2" fill={color} />
     </Svg>
   );
 }
@@ -137,7 +113,9 @@ function RunningSession({
   plannedMs,
   cycles,
   onOpen,
-  onStop,
+  onFinish,
+  onStartNextCycle,
+  finishing,
 }: {
   sessionId: string;
   taskName: string;
@@ -146,12 +124,16 @@ function RunningSession({
   /** Work blocks in the sitting; 1 for a regular session. */
   cycles: number;
   onOpen: () => void;
-  onStop: () => void;
+  onFinish: () => void;
+  onStartNextCycle: (nextCycle: number, blockMs: number) => Promise<void>;
+  finishing: boolean;
 }) {
   const t = useTheme();
   const s = useThemedStyles(makeStyles);
   const [now, setNow] = useState(() => Date.now());
   const [position, setPosition] = useState<SessionPosition | null>(null);
+  /** False until the stored position has answered, one way or the other. */
+  const [positionRead, setPositionRead] = useState(false);
 
   /*
    * Home used to work its own deadline out as `startedAt + plannedMinutes`, which is the whole
@@ -165,7 +147,11 @@ function RunningSession({
    */
   useEffect(() => {
     let alive = true;
-    void getSessionPosition(sessionId).then((p) => alive && setPosition(p));
+    void getSessionPosition(sessionId).then((p) => {
+      if (!alive) return;
+      setPosition(p);
+      setPositionRead(true);
+    });
     return () => {
       alive = false;
     };
@@ -207,8 +193,39 @@ function RunningSession({
   const barBasis = onBreak ? BREAK_MS : blockMs;
   const filled = leftMs == null || !barBasis ? 0 : Math.max(0, Math.min(1, 1 - leftMs / barBasis));
 
+  /*
+   * The block has run out and nothing is going to move it on.
+   *
+   * The session screen finishes a regular block itself and rolls a Pomodoro into its break, but
+   * only while it is mounted - it owns the timer. From Home the sitting simply sat at 00:00 with
+   * no way to act on it, and the only thing that eventually closed it was auto-finish, five
+   * minutes later. So the card offers the one action that moves things forward.
+   */
+  /*
+   * Gated on the read, not just on the clock. Until the position answers, `target` falls back
+   * to startedAt + the whole sitting - which for a Pomodoro is a different number from the
+   * block the user is actually in, and offering Done against it would end a sitting that still
+   * had rounds to run.
+   */
+  const atZero = positionRead && !paused && leftMs === 0;
+  const currentCycle = position ? Math.min(position.cycle, cycles) : 1;
+  const moreCyclesToGo = cycles > 1 && currentCycle < cycles;
+
   return (
-    <View style={s.card}>
+    /*
+     * The whole card opens the session.
+     *
+     * It used to carry two icon buttons, an expand and a stop. The expand duplicated what
+     * tapping the card should obviously do, and the stop offered the one decision that should
+     * not be a single tap on a screen that cannot show what the session is worth - ending it
+     * belongs where the credit, the cycle and the confirmation live.
+     */
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Open session"
+      onPress={onOpen}
+      style={({ pressed }) => [s.card, pressed && s.cardPressed]}
+    >
       <View style={s.runHead}>
         <View style={s.runDot} />
         <Text style={ds(T.eyebrow, { letterSpacing: 1, color: t.color.success })}>IN SESSION</Text>
@@ -228,22 +245,33 @@ function RunningSession({
           <Text style={ds(T.timer, { fontSize: 42, letterSpacing: -1.6, color: t.color.text })}>{clock}</Text>
           <Text style={ds(T.meta, { fontSize: 14, color: t.color.textMuted })}>{clockLabel}</Text>
         </View>
-        <View style={s.runControls}>
-          {/* An expand mark, not a pause mark. This opens the session; pausing lives on that
-              screen, and a glyph that says otherwise sent people there expecting to stop. */}
-          <Pressable accessibilityRole="button" accessibilityLabel="Open session" onPress={onOpen} style={s.runButton}>
-            <ExpandMark size={px(15)} color={t.color.text} />
+
+        {atZero ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={moreCyclesToGo ? "Start next cycle" : "Done"}
+            disabled={finishing}
+            onPress={async () => {
+              if (!moreCyclesToGo) return onFinish();
+              await onStartNextCycle(currentCycle + 1, (plannedMs ?? 0) / Math.max(1, cycles));
+              // Nothing on the server changed, so there is no refetch to wait on - the new
+              // position is read straight back to move this card on to the next round.
+              setPosition(await getSessionPosition(sessionId));
+              setNow(Date.now());
+            }}
+            style={({ pressed }) => [s.zeroAction, pressed && s.cardPressed, finishing && s.zeroActionBusy]}
+          >
+            <Text style={ds(T.label, { fontSize: 15, fontWeight: "800", color: t.surface.actionInk })}>
+              {moreCyclesToGo ? "Start next cycle" : "Done"}
+            </Text>
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="End session" onPress={onStop} style={s.runButton}>
-            <StopMark size={px(14)} color={t.color.text} />
-          </Pressable>
-        </View>
+        ) : null}
       </View>
 
       <View style={s.progressTrack}>
         <View style={[s.progressFill, { width: `${filled * 100}%` }]} />
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -266,7 +294,10 @@ export interface FocusNowCardProps {
     /** Work blocks in the sitting; 1 for a regular session. */
     cycles: number;
     onOpen: () => void;
-    onStop: () => void;
+    /** The sitting is over: credit it and hand the card back to the slider. */
+    onFinish: () => void;
+    onStartNextCycle: (nextCycle: number, blockMs: number) => Promise<void>;
+    finishing: boolean;
   } | null;
 }
 
@@ -289,7 +320,9 @@ export function FocusNowCard({ minutes, mode, cycles, onPick, onStart, running }
         plannedMs={running.plannedMs}
         cycles={running.cycles}
         onOpen={running.onOpen}
-        onStop={running.onStop}
+        onFinish={running.onFinish}
+        onStartNextCycle={running.onStartNextCycle}
+        finishing={running.finishing}
       />
     );
   }
@@ -459,17 +492,18 @@ const makeStyles = (t: Tokens) =>
 
     runHead: { flexDirection: "row", alignItems: "center", gap: px(7) },
     runDot: { width: px(8), height: px(8), borderRadius: px(4), backgroundColor: t.color.success },
-    runRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    runRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: px(10) },
     runClockRow: { flexDirection: "row", alignItems: "baseline", gap: px(7) },
-    runControls: { flexDirection: "row", gap: px(8) },
-    runButton: {
-      width: px(44),
-      height: px(44),
-      borderRadius: px(14),
-      backgroundColor: t.surface.chipBg,
-      alignItems: "center",
-      justifyContent: "center",
+    /** The one thing to do once the clock has run out, so it reads as the obvious next tap. */
+    zeroAction: {
+      backgroundColor: t.surface.action,
+      borderRadius: px(12),
+      paddingVertical: px(11),
+      paddingHorizontal: px(16),
     },
+    zeroActionBusy: { opacity: 0.5 },
+    // The only affordance left on a running card, so it has to read as tappable on touch.
+    cardPressed: { opacity: 0.7 },
     progressTrack: { height: px(6), borderRadius: 99, backgroundColor: t.surface.segTrack, overflow: "hidden" },
     progressFill: { height: "100%", borderRadius: 99, backgroundColor: t.surface.primary },
   });

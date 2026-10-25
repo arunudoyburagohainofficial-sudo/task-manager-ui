@@ -168,6 +168,33 @@ export function MoveAllToTodayButton({ count, onPress }: { count: number; onPres
   );
 }
 
+/**
+ * Deletes every overdue task in one action.
+ *
+ * Sits beside Move all because the two answers to a backlog are "I'll still do these" and "these
+ * stopped mattering", and only the first one had a bulk action. Working through a list of things
+ * you have already decided against, one screen at a time, is the same punishment Move all exists
+ * to remove.
+ *
+ * Drawn in the danger colour, and its confirmation says the deletion cannot be undone, because
+ * unlike Move all this destroys work rather than rescheduling it.
+ */
+export function ClearAllOverdueButton({ count, onPress }: { count: number; onPress: () => void }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Delete all ${count} overdue task${count === 1 ? "" : "s"}`}
+      onPress={onPress}
+      hitSlop={6}
+      style={styles.panelAction}
+    >
+      <Text style={t(T.badge, { fontSize: 10, letterSpacing: 0.2, color: theme.color.danger })}>CLEAR ALL</Text>
+    </Pressable>
+  );
+}
+
 /** The Overdue panel's expander. Named with the remaining count so the tap is a known quantity. */
 export function ShowMoreButton({ remaining, onPress }: { remaining: number; onPress: () => void }) {
   const theme = useTheme();
