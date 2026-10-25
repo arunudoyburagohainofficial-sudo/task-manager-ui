@@ -34,7 +34,7 @@ function PlayMark({ size, color }: { size: number; color: string }) {
  * one action here that writes to the server and takes over the screen. A slide cannot be fired by
  * a stray tap on the way past, and still costs one motion.
  */
-function SlideToStart({ label, onCommit }: { label: string; onCommit: () => void }) {
+function SlideToStart({ label, onCommit, starting }: { label: string; onCommit: () => void; starting: boolean }) {
   const t = useTheme();
   const s = useThemedStyles(makeStyles);
   const [trackWidth, setTrackWidth] = useState(0);
@@ -50,6 +50,17 @@ function SlideToStart({ label, onCommit }: { label: string; onCommit: () => void
   const knob = px(46);
   travelRef.current = Math.max(0, trackWidth - knob - px(8));
 
+  /*
+   * Released when the attempt ends without a session: a refused start, or a collision the user
+   * cancelled. On the happy path this component unmounts as the card becomes the running timer,
+   * so the knob is never seen returning.
+   */
+  useEffect(() => {
+    if (starting || !committed.current) return;
+    committed.current = false;
+    Animated.spring(x, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+  }, [starting, x]);
+
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -59,11 +70,12 @@ function SlideToStart({ label, onCommit }: { label: string; onCommit: () => void
         const travel = travelRef.current;
         if (travel > 0 && g.dx >= travel * COMMIT_FRACTION && !committed.current) {
           committed.current = true;
-          // Snap to the end so the control looks resolved while the session is created.
+          // Snap to the end and *stay* there. Resetting here put the knob back at the start,
+          // and the label back to "Slide to focus", while two network calls were still in
+          // flight - so the control looked like it had refused the gesture. It is released
+          // below, once the attempt is over one way or the other.
           Animated.timing(x, { toValue: travel, duration: 90, useNativeDriver: true }).start(() => {
             commitRef.current();
-            committed.current = false;
-            x.setValue(0);
           });
           return;
         }
@@ -87,7 +99,9 @@ function SlideToStart({ label, onCommit }: { label: string; onCommit: () => void
       accessibilityActions={[{ name: "activate" }]}
       onAccessibilityAction={onCommit}
     >
-      <Text style={[ds(T.button, { fontSize: 16, color: t.surface.primaryInk }), s.slideLabel]}>{label}</Text>
+      <Text style={[ds(T.button, { fontSize: 16, color: t.surface.primaryInk }), s.slideLabel]}>
+        {starting ? "Starting…" : label}
+      </Text>
       <Text style={[ds(T.button, { fontSize: 15, color: t.surface.primaryInk }), s.slideChevrons]}>›››</Text>
       <Animated.View
         style={[s.slideKnob, { width: knob, height: knob, transform: [{ translateX: x }] }]}
@@ -277,6 +291,8 @@ export interface FocusNowCardProps {
   cycles: number;
   onPick: (minutes: number, mode: FocusMode, cycles: number) => void;
   onStart: () => void;
+  /** True from the moment the slide commits until a session exists, or the attempt fails. */
+  starting?: boolean;
   /** Present while a session is running — the card becomes that session's timer. */
   running?: {
     sessionId: string;
@@ -300,7 +316,7 @@ export interface FocusNowCardProps {
  *
  * One card rather than two: the thing you start and the thing you watch occupy the same spot.
  */
-export function FocusNowCard({ minutes, mode, cycles, onPick, onStart, running }: FocusNowCardProps) {
+export function FocusNowCard({ minutes, mode, cycles, onPick, onStart, starting = false, running }: FocusNowCardProps) {
   const t = useTheme();
   const s = useThemedStyles(makeStyles);
   const [open, setOpen] = useState(false);
@@ -347,7 +363,7 @@ export function FocusNowCard({ minutes, mode, cycles, onPick, onStart, running }
         </Pressable>
       </View>
 
-      <SlideToStart label={slideLabel(minutes, mode, cycles)} onCommit={onStart} />
+      <SlideToStart label={slideLabel(minutes, mode, cycles)} onCommit={onStart} starting={starting} />
 
       {/*
         The picker was inline, and with rounds added it grew to three chip rows plus an
@@ -392,6 +408,7 @@ export function FocusNowCard({ minutes, mode, cycles, onPick, onStart, running }
           {/* Adjust and go, without closing the sheet first. */}
           <SlideToStart
             label={slideLabel(minutes, mode, cycles)}
+            starting={starting}
             onCommit={() => {
               setOpen(false);
               onStart();

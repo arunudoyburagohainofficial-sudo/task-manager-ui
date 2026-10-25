@@ -1,3 +1,4 @@
+import type { FocusSessionDto } from "../api/types";
 import type { NavigatorScreenParams } from "@react-navigation/native";
 
 export type RootStackParamList = {
@@ -25,6 +26,17 @@ export type RootStackParamList = {
      * session instead of starting its clock again. Absent when the session starts here.
      */
     startedAt?: string;
+    /**
+     * The session just created, handed over rather than written to the cache before navigating.
+     *
+     * Writing it on the way out made Home paint its running card in the same commit as the
+     * push, so the timer visibly started on Home and was then slid away. Deferring with
+     * InteractionManager does not work here either: Home runs permanent looping animations
+     * (Ferne, the capture pulse, the background drift) which hold the interaction queue open
+     * for ever, so the callback would never fire. Carrying it in the params means the cache is
+     * written by the screen that is already covering Home.
+     */
+    startedSession?: FocusSessionDto;
   };
   Completion: { taskId: string; taskName: string; durationSeconds: number; pointsEarned: number };
   Capture: undefined;

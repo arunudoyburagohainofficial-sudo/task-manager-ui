@@ -95,8 +95,10 @@ export function useStartFocusSession() {
           totalCycles: cycles,
           sessionMinutes: block,
           dndEnabled: dnd,
+          // Handed over rather than cached here: the session screen writes it once it is
+          // mounted and covering Home, so the timer never appears on Home and slide away.
+          startedSession: session,
         });
-        queryClient.setQueryData(queryKeys.currentFocusSession(), session);
         return;
       } catch (e) {
         if (!(e instanceof ApiError) || e.status !== 409) {

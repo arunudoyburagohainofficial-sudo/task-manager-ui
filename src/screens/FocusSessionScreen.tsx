@@ -242,6 +242,17 @@ export function FocusSessionScreen() {
    * The timer is held until this has answered, so a stale deadline can't fire a phase change
    * against a position that is about to replace it.
    */
+  /*
+   * Home learns the session exists from here, not from whoever started it.
+   *
+   * Written on the way out, it landed in the same React commit as the push, so Home painted
+   * its running card and the slide then played over the top of it - the timer visibly started
+   * on the wrong screen. By the time this runs the session screen is already covering Home.
+   */
+  useEffect(() => {
+    if (params.startedSession) queryClient.setQueryData(queryKeys.currentFocusSession(), params.startedSession);
+  }, [params.startedSession, queryClient]);
+
   const [positionRestored, setPositionRestored] = useState(false);
   useEffect(() => {
     let alive = true;

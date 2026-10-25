@@ -137,6 +137,12 @@ export function HomeScreen() {
   const deleteGoalMutation = useDeleteGoalMutation();
 
   const [finishingSession, setFinishingSession] = useState(false);
+  /*
+   * Quick focus makes the task *and* the session, two round trips, before the screen changes.
+   * Without this the slider reset itself after the first frame and Home sat there looking as
+   * though the slide had been refused.
+   */
+  const [creatingQuickFocus, setCreatingQuickFocus] = useState(false);
   const [editingGoal, setEditingGoal] = useState<GoalDto | null>(null);
   const [creatingGoal, setCreatingGoal] = useState(false);
 
@@ -320,7 +326,7 @@ export function HomeScreen() {
   // Closes a session that was started and never ended, once it can no longer earn anything.
   useAutoFinishStaleSession(session);
 
-  const { start: startSession } = useStartFocusSession();
+  const { start: startSession, starting: startingSession } = useStartFocusSession();
   const createTaskMutation = useCreateTaskMutation();
 
   /**
@@ -334,6 +340,8 @@ export function HomeScreen() {
    * credited, so nothing should be left behind.
    */
   async function handleQuickFocus() {
+    if (creatingQuickFocus) return;
+    setCreatingQuickFocus(true);
     try {
       const at = new Date();
       const task = await createTaskMutation.mutateAsync({
@@ -350,6 +358,8 @@ export function HomeScreen() {
       });
     } catch {
       showToast({ tone: "error", message: `Couldn't start - ${failureHint(null)}` });
+    } finally {
+      setCreatingQuickFocus(false);
     }
   }
 
@@ -641,6 +651,7 @@ export function HomeScreen() {
                   setDefaultPomodoroCycles(c);
                 }}
                 onStart={handleQuickFocus}
+                starting={creatingQuickFocus || startingSession}
                 running={
                   session && running
                     ? {

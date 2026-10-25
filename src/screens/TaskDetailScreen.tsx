@@ -317,8 +317,9 @@ export function TaskDetailScreen() {
         totalCycles: pomodoroCycles,
         sessionMinutes: focusMode === "pomodoro" ? pomodoroMinutes : regularMinutes,
         dndEnabled: sessionDndEnabled,
+        // Written by the session screen on mount - see useStartFocusSession for why.
+        startedSession: session,
       });
-      queryClient.setQueryData(queryKeys.currentFocusSession(), session);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         const current = user ? await focusSessionsApi.getCurrentSession() : null;
