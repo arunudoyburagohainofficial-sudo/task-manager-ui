@@ -5,7 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useMarkTaskDoneMutation, useRemindersQuery } from "../api/queries/useReminders";
 import { useDeleteTaskMutation, useReopenTaskMutation, useTasksQuery, useUpdateTaskMutation } from "../api/queries/useTasks";
-import type { ReminderDto, TaskDto } from "../api/types";
+import type { GoalDto, ReminderDto, TaskDto } from "../api/types";
 import { countUnfireable } from "../notifications/schedulingLogic";
 import {
   Card,
@@ -17,18 +17,22 @@ import {
   MoveAllToTodayButton,
   NotificationBlockBanner,
   OverdueRow,
-  RecurringRow,
   SchedulePanel,
   ScreenContainer,
   ShowMoreButton,
-  UpcomingRow,
+  HomeTaskRow,
+  type HomeRowKind,
 } from "../components";
+import { RepeatIcon } from "../components/icons";
 import { space, text as t, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { syncReminders } from "../notifications/useReminderSync";
 import { useToast } from "../state/ToastContext";
+import { usePreferences } from "../state/PreferencesContext";
+import { useGoalsQuery } from "../api/queries/useGoals";
+import { POINTS_PER_MINUTE, REMINDER_POINTS } from "../utils/points";
 import { formatClockTime } from "../utils/format";
-import { recurrenceLabel } from "../utils/recurrence";
+import { recurrenceShortLabel } from "../utils/recurrence";
 import { bucketFor, formatScheduleDate, groupByScheduledDate, todayKey } from "../utils/schedule";
 import { useTodayKey } from "../utils/useTodayKey";
 import type { RootStackParamList } from "../navigation/types";
@@ -68,6 +72,15 @@ export function ScheduledScreen() {
   const { showToast } = useToast();
   const [movingAll, setMovingAll] = useState(false);
   const [moveAllConfirm, setMoveAllConfirm] = useState(false);
+  /** The upcoming task whose Cancel was tapped, held while the confirmation is open. */
+  const [cancelTarget, setCancelTarget] = useState<TaskDto | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const { defaultFocusDurationMinutes } = usePreferences();
+  const goalsQuery = useGoalsQuery();
+  const goalsById = useMemo(
+    () => new Map((goalsQuery.data ?? []).map((g: GoalDto) => [g.id, g])),
+    [goalsQuery.data]
+  );
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
 
@@ -123,6 +136,55 @@ export function ScheduledScreen() {
    * failing that the closest to it. A row has space for one time, and the day-of is the one a
    * user reads as "when this pings me" — the lead times are warnings about it.
    */
+  /**
+   * Upcoming rows are Home's rows.
+   *
+   * They used to be a thinner thing of their own - a dot, a title and the word "Reminder" -
+   * which made the same task look like two different kinds of object depending on which tab
+   * you were on. Sharing HomeTaskRow means the mark, the meta line and the points pill are
+   * decided in one place and cannot drift apart again.
+   *
+   * The action is the one real difference. Home offers Focus or Done, because today's work is
+   * there to be done. Something scheduled for next week is not, so the only useful thing to
+   * offer is calling it off.
+   */
+  function rowKindOf(task: TaskDto, goal: GoalDto | undefined): HomeRowKind {
+    if (goal) return "goal";
+    if (task.taskType === "focus") return "focus";
+    /*
+     * "reminder" even with no notification set, unlike Home.
+     *
+     * Home's fourth kind, "task", is for an undated scratch item - no day, no time, nothing to
+     * announce. Nothing on this screen is that: every row here has a date. A dated reminder
+     * with no time is still a reminder, and showing it as a plain task with an envelope said
+     * the opposite of what the row was filed under.
+     */
+    return "reminder";
+  }
+
+  /**
+   * "Every day · today" rather than "Repeats every day · next Today".
+   *
+   * The repeat glyph beside the title already says it repeats, so "Repeats" stutters against
+   * it - recurrenceShortLabel exists for exactly this. And "next Today" is the kind of phrase
+   * only a template writes. Both together were pushing every routine's meta onto two lines,
+   * which made this section visibly taller than Upcoming when the point was to match it.
+   */
+  function routineDetail(task: TaskDto, late: boolean): string {
+    const rule = recurrenceShortLabel(task.recurrenceRule);
+    if (!task.scheduledFor) return [rule, "on Home"].filter(Boolean).join(" · ");
+    const when = formatScheduleDate(task.scheduledFor, today);
+    const next = task.scheduledFor === today ? "today" : late ? `was due ${when}` : `next ${when}`;
+    return [rule, next].filter(Boolean).join(" · ");
+  }
+
+  function rowDetailOf(kind: HomeRowKind, goal: GoalDto | undefined, notifyTime: string | undefined) {
+    if (kind === "goal") return goal?.name ?? null;
+    if (kind === "focus") return `${defaultFocusDurationMinutes} min`;
+    if (kind === "reminder") return formatClockTime(notifyTime ?? null);
+    return null;
+  }
+
   function displayReminder(taskId: string): ReminderDto | undefined {
     const list = remindersByTaskId.get(taskId);
     if (!list?.length) return undefined;
@@ -262,6 +324,31 @@ export function ScheduledScreen() {
     }
   }
 
+  /**
+   * Calls one scheduled task off.
+   *
+   * Deleted rather than unscheduled, which is the same answer Clear all gives for the whole
+   * panel - one row and the panel behave alike, so neither needs explaining in terms of the
+   * other. Confirmed because it cannot be undone, and because a tap landing here by accident
+   * would otherwise destroy a task rather than tick one off.
+   */
+  async function handleCancelTask() {
+    const task = cancelTarget;
+    if (!task) return;
+    setCancelling(true);
+    try {
+      await deleteTaskMutation.mutateAsync(task.id);
+      // Its notifications go with it, and the device's queue is rebuilt from what is left.
+      await syncReminders();
+      showToast({ message: task.recurrenceRule ? `“${task.name}” stopped` : `“${task.name}” cancelled` });
+      setCancelTarget(null);
+    } catch (err) {
+      showToast({ tone: "error", message: `Couldn't cancel “${task.name}” - ${failureHint(err)}` });
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   async function handleRefresh() {
     setRefreshing(true);
     await Promise.all([tasksQuery.refetch(), remindersQuery.refetch()]);
@@ -270,18 +357,6 @@ export function ScheduledScreen() {
 
   function openTask(taskId: string) {
     navigation.navigate("TaskDetail", { taskId });
-  }
-
-  /**
-   * The reminder's clock time if it has one, otherwise the task type — one trailing word.
-   * A silent reminder (date, no time) has nothing to show, so it falls through to the type
-   * rather than printing an empty slot.
-   */
-  function trailingFor(task: TaskDto): string {
-    const reminder = displayReminder(task.id);
-    const time = reminder ? formatClockTime(reminder.reminderTime) : null;
-    if (time) return time;
-    return task.taskType === "focus" ? "Focus" : "Reminder";
   }
 
   const visibleOverdue = overdueExpanded ? overdue : overdue.slice(0, OVERDUE_PREVIEW);
@@ -334,8 +409,7 @@ export function ScheduledScreen() {
               const reminder = displayReminder(task.id);
               // Falls back to the task type when there's no clock time to show — a silent
               // schedule (date, no notification) has none, and the old form interpolated that
-              // null into the subtitle as the literal word "null". Same rule as trailingFor
-              // above, which this had drifted away from.
+              // null into the subtitle as the literal word "null".
               const detail =
                 (reminder ? formatClockTime(reminder.reminderTime) : null) ??
                 (task.taskType === "focus" ? "Focus" : "Reminder");
@@ -363,32 +437,56 @@ export function ScheduledScreen() {
           </SchedulePanel>
         ) : null}
 
+        {/*
+          No card around these any more. Overdue keeps one because it is a state you are meant
+          to notice; Recurring and Upcoming are both just lists of what is coming, so they get
+          the same plain heading and the same rows. A box around one and not the other made
+          them look like different kinds of thing.
+        */}
         {recurring.length > 0 ? (
           <View style={styles.panelSpacing}>
-            <SchedulePanel
-              label="RECURRING"
-              count={recurring.length}
-              tone="neutral"
-              // Says how many routines have slipped, where the rows themselves are — the
-              // Overdue badge can't carry this without counting rows it doesn't list.
-              note={lateRecurring > 0 ? `${lateRecurring} late` : undefined}
-            >
+            <View style={styles.upcomingHeader}>
+              <Text style={t(T.eyebrow, { fontSize: 11, letterSpacing: 1.32, color: theme.color.textMuted })}>
+                RECURRING
+              </Text>
+              <View style={styles.upcomingBadge}>
+                <Text style={t(T.badge, { fontSize: 11, letterSpacing: 0, color: theme.schedulePanel.neutral.badgeFg })}>
+                  {recurring.length}
+                </Text>
+              </View>
+              <View style={styles.upcomingRule} />
+              {/* Says how many routines have slipped, where the rows themselves are — the
+                  Overdue badge can't carry this without counting rows it doesn't list. */}
+              {lateRecurring > 0 ? (
+                <Text style={t(T.badge, { fontSize: 11, letterSpacing: 0, color: theme.color.danger })}>
+                  {`${lateRecurring} late`}
+                </Text>
+              ) : null}
+            </View>
+            <View style={styles.dateGroupRows}>
               {recurring.map((task) => {
                 const late = task.scheduledFor != null && task.scheduledFor < today;
-                const next = task.scheduledFor
-                  ? `${late ? "was due" : "next"} ${formatScheduleDate(task.scheduledFor, today)}`
-                  : "on Home";
+                const goal = task.goalId ? goalsById.get(task.goalId) : undefined;
                 return (
-                  <RecurringRow
+                  <HomeTaskRow
                     key={task.id}
+                    kind={rowKindOf(task, goal)}
                     title={task.name}
-                    subtitle={[recurrenceLabel(task.recurrenceRule), next].filter(Boolean).join(" · ")}
-                    subtitleColor={late ? theme.color.danger : undefined}
+                    // The repeat glyph rides beside the title, so the tile stays free to say
+                    // whether this is a focus task, a reminder or a goal.
+                    titleAdornment={<RepeatIcon size={13} color={theme.color.textFaint} />}
+                    detail={routineDetail(task, late)}
+                    detailTone={late ? "danger" : "default"}
+                    showPoints={false}
+                    points={task.taskType === "focus" ? defaultFocusDurationMinutes * POINTS_PER_MINUTE : REMINDER_POINTS}
+                    actionLabel="Cancel"
+                    actionTone="quiet"
                     onPress={() => openTask(task.id)}
+                    onAction={() => setCancelTarget(task)}
                   />
                 );
               })}
-            </SchedulePanel>
+            </View>
           </View>
         ) : null}
 
@@ -412,15 +510,25 @@ export function ScheduledScreen() {
               <View key={dateKey} style={styles.dateGroup}>
                 <DateHeading label={formatScheduleDate(dateKey).toUpperCase()} />
                 <View style={styles.dateGroupRows}>
-                  {tasks.map((task) => (
-                    <UpcomingRow
-                      key={task.id}
-                      title={task.name}
-                      taskType={task.taskType}
-                      trailing={trailingFor(task)}
-                      onPress={() => openTask(task.id)}
-                    />
-                  ))}
+                  {tasks.map((task) => {
+                    const goal = task.goalId ? goalsById.get(task.goalId) : undefined;
+                    const notifyTime = displayReminder(task.id)?.reminderTime ?? undefined;
+                    const kind = rowKindOf(task, goal);
+                    return (
+                      <HomeTaskRow
+                        key={task.id}
+                        kind={kind}
+                        title={task.name}
+                        detail={rowDetailOf(kind, goal, notifyTime)}
+                        points={task.taskType === "focus" ? defaultFocusDurationMinutes * POINTS_PER_MINUTE : REMINDER_POINTS}
+                        showPoints={false}
+                        actionLabel="Cancel"
+                        actionTone="quiet"
+                        onPress={() => openTask(task.id)}
+                        onAction={() => setCancelTarget(task)}
+                      />
+                    );
+                  })}
                 </View>
               </View>
             ))}
@@ -436,6 +544,28 @@ export function ScheduledScreen() {
         cancelLabel="Cancel"
         onConfirm={handleMoveAllToToday}
         onCancel={() => setMoveAllConfirm(false)}
+      />
+
+      {/*
+        A routine gets its own wording. Only one occurrence of a repeating task exists at a
+        time, so the row looks like a single item - but cancelling it ends the series, and
+        there is no later copy to come back. Saying "this task" there would be true of what is
+        on screen and wrong about what happens.
+      */}
+      <ConfirmModal
+        visible={cancelTarget != null}
+        title={cancelTarget?.recurrenceRule ? "Stop this routine?" : "Cancel this task?"}
+        message={
+          cancelTarget?.recurrenceRule
+            ? `“${cancelTarget.name}” repeats, so this stops it for good - this occurrence and every one after it, along with their notifications. It won't be marked done and it won't count towards anything. This can't be undone.`
+            : `“${cancelTarget?.name ?? ""}” will be removed, along with its notifications. It won't be marked done and it won't count towards anything. This can't be undone.`
+        }
+        confirmLabel={cancelTarget?.recurrenceRule ? "Stop it" : "Cancel it"}
+        cancelLabel="Keep it"
+        destructive
+        loading={cancelling}
+        onConfirm={handleCancelTask}
+        onCancel={() => setCancelTarget(null)}
       />
 
       {/* Spells out that nothing is kept and nothing comes back, because unlike every other

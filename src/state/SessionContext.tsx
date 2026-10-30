@@ -154,6 +154,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         import("../notifications/localNotifications")
           .then((m) => m.cancelAll())
           .catch(() => {});
+        // And stop waking up for a user who is no longer here.
+        import("../notifications/backgroundSync")
+          .then((m) => m.stopBackgroundSync())
+          .catch(() => {});
         // Dynamic + best-effort, same reasoning as client.ts's getCurrentFirebaseIdToken:
         // firebaseAuth.ts touches a native module that doesn't exist in plain Expo Go, and
         // this device may only have been signed in via one of the two SDKs anyway

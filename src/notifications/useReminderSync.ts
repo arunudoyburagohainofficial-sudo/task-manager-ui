@@ -7,6 +7,7 @@ import { queryClient } from "../api/queryClient";
 import { queryKeys } from "../api/queryKeys";
 import { useSession } from "../state/SessionContext";
 import { scheduleAll } from "./localNotifications";
+import { startBackgroundSync } from "./backgroundSync";
 
 /**
  * Re-reads reminders from the server and reschedules the device's notifications to match.
@@ -81,6 +82,16 @@ export function useReminderSync(): void {
   useEffect(() => {
     sync();
   }, [sync]);
+
+  /*
+   * Asked for once there is someone to sync for. Registering while signed out would have the
+   * phone waking every quarter hour to make requests it cannot authenticate; stopBackgroundSync
+   * on sign-out is in SessionContext, beside the queue it already clears there.
+   */
+  useEffect(() => {
+    if (!user) return;
+    void startBackgroundSync();
+  }, [user?.id]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state: AppStateStatus) => {

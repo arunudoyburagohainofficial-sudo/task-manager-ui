@@ -322,6 +322,10 @@ export function HomeTaskRow({
   detail,
   points,
   actionLabel,
+  actionTone = "primary",
+  detailTone = "default",
+  titleAdornment,
+  showPoints = true,
   onPress,
   onAction,
 }: {
@@ -332,6 +336,28 @@ export function HomeTaskRow({
   /** What finishing it will earn. */
   points: number;
   actionLabel: string;
+  /**
+   * How much the action should ask for. "primary" is the filled button Home uses, where
+   * Focus and Done are the things you came to do. "quiet" is an outline, for an action that
+   * should be available without being recommended - Scheduled's Cancel destroys a task, and
+   * a column of filled buttons there reads as an instruction to delete things.
+   */
+  actionTone?: "primary" | "quiet";
+  /** "danger" for a routine whose next occurrence has already slipped. */
+  detailTone?: "default" | "danger";
+  /**
+   * Sits immediately after the title. The repeat glyph goes here rather than in the tile,
+   * so a routine keeps the colourful mark that says what kind of task it is - the tile is
+   * how you tell a focus task from a reminder at a glance, and spending it on "this comes
+   * back" made every routine look alike.
+   */
+  titleAdornment?: React.ReactNode;
+  /**
+   * Off on the Scheduled screen. "+25" says what finishing earns, which is motivating next to
+   * today's work and merely noisy next to something due a week from now - and stacked down a
+   * column of routines it crowds out the thing the row is actually for.
+   */
+  showPoints?: boolean;
   onPress: () => void;
   onAction: () => void;
 }) {
@@ -342,25 +368,51 @@ export function HomeTaskRow({
     <Pressable onPress={onPress} accessibilityRole="button" style={styles.row}>
       <View style={[styles.rowTile, { backgroundColor: k.tile }]}>{k.mark}</View>
       <View style={styles.rowText}>
-        <Text style={td(T.bodyLg, { color: theme.color.text })}>{title}</Text>
+        <View style={styles.rowTitleLine}>
+          {/*
+            No numberOfLines here. A long title wraps onto a second line rather than being cut
+            off - clipping it to make room for the adornment traded every row in the app for a
+            glyph only the Scheduled screen uses. HOME-12 is about the wrapping, and VIS-04
+            caught the change because the test only asserts the button isn't pushed off.
+          */}
+          <Text style={[td(T.bodyLg, { color: theme.color.text }), styles.rowTitleText]}>{title}</Text>
+          {titleAdornment}
+        </View>
         <View style={styles.rowMeta}>
-          <Text style={td(T.meta, { fontSize: 12, fontWeight: "700", color: k.ink })}>
+          <Text
+            style={td(T.meta, {
+              fontSize: 12,
+              fontWeight: "700",
+              color: detailTone === "danger" ? theme.color.danger : k.ink,
+            })}
+            numberOfLines={2}
+          >
             {k.label}
-            {detail ? ` · ${detail}` : ""}
+            {detail ? `${k.label ? " · " : ""}${detail}` : ""}
           </Text>
-          <View style={styles.xpTag}>
-            <XpIcon size={11} />
-            <Text style={td(T.badge, { fontSize: 11, letterSpacing: 0, color: theme.home.xpInk })}>+{points}</Text>
-          </View>
+          {showPoints ? (
+            <View style={styles.xpTag}>
+              <XpIcon size={11} />
+              <Text style={td(T.badge, { fontSize: 11, letterSpacing: 0, color: theme.home.xpInk })}>+{points}</Text>
+            </View>
+          ) : null}
         </View>
       </View>
       <Pressable
         onPress={onAction}
         accessibilityRole="button"
         accessibilityLabel={`${actionLabel}: ${title}`}
-        style={styles.rowAction}
+        style={[styles.rowAction, actionTone === "quiet" && styles.rowActionQuiet]}
       >
-        <Text style={td(T.label, { fontSize: 14, fontWeight: "700", color: theme.home.actionInk })}>{actionLabel}</Text>
+        <Text
+          style={td(T.label, {
+            fontSize: 14,
+            fontWeight: "700",
+            color: actionTone === "quiet" ? theme.color.danger : theme.home.actionInk,
+          })}
+        >
+          {actionLabel}
+        </Text>
       </Pressable>
     </Pressable>
   );
@@ -588,11 +640,20 @@ const makeStyles = (t: Tokens) =>
       alignItems: "center",
       gap: 2,
     },
+    rowTitleLine: { flexDirection: "row", alignItems: "center", gap: 6 },
+    /** Shrinks so a wrapping title keeps the adornment beside it rather than pushing it out. */
+    rowTitleText: { flexShrink: 1 },
     rowAction: {
       backgroundColor: t.home.actionBg,
       borderRadius: 10,
       paddingVertical: 11,
       paddingHorizontal: 15,
+    },
+    /** Outline rather than filled: reachable, but not the thing the row is recommending. */
+    rowActionQuiet: {
+      backgroundColor: "transparent",
+      borderWidth: 1,
+      borderColor: t.color.danger,
     },
     doneRow: {
       backgroundColor: t.home.doneBg,

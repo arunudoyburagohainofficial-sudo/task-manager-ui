@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { TaskType } from "../api/types";
 import { px, radius, space, text as t, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
-import { ChevronDownIcon, ChevronRightIcon, RepeatIcon } from "./icons";
+import { ChevronDownIcon, ChevronRightIcon } from "./icons";
 
 /**
  * The Scheduled screen's building blocks.
@@ -216,52 +216,6 @@ export function ShowMoreButton({ remaining, onPress }: { remaining: number; onPr
   );
 }
 
-/**
- * Recurring row — repeat tile, name, "Repeats daily · next Tomorrow".
- *
- * One row per recurring task, never one per future occurrence: this panel is an index of
- * the user's routines, and the next date is a detail of the routine rather than a separate
- * thing to plan around.
- */
-export function RecurringRow({
-  title,
-  subtitle,
-  subtitleColor,
-  onPress,
-}: {
-  title: string;
-  subtitle: string;
-  /** Set when the next occurrence is already overdue, so the row can say so in a warmer tone. */
-  subtitleColor?: string;
-  onPress: () => void;
-}) {
-  const theme = useTheme();
-  const styles = useThemedStyles(makeStyles);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${title}. ${subtitle}`}
-      onPress={onPress}
-      style={[styles.row, styles.recurringRow]}
-    >
-      <View style={styles.repeatTile}>
-        <RepeatIcon size={16} color={theme.schedulePanel.repeatTileFg} />
-      </View>
-      <View style={styles.rowText}>
-        <Text style={t(T.body, { fontSize: 15, fontWeight: "700", color: theme.color.text })} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text
-          style={t(T.meta, { fontSize: 12, color: subtitleColor ?? theme.color.textMuted, marginTop: 2 })}
-          numberOfLines={1}
-        >
-          {subtitle}
-        </Text>
-      </View>
-    </Pressable>
-  );
-}
-
 /** The date sub-heading inside Upcoming — quieter than a panel header, since it's a sub-group. */
 export function DateHeading({ label }: { label: string }) {
   const theme = useTheme();
@@ -273,46 +227,6 @@ export function DateHeading({ label }: { label: string }) {
       </Text>
       <View style={styles.dateRule} />
     </View>
-  );
-}
-
-/**
- * Upcoming row — dot, name, and one trailing word.
- *
- * Single-line on purpose. Under a date heading the day is already established, so the only
- * thing left worth saying is what kind of task it is or what time it fires.
- */
-export function UpcomingRow({
-  title,
-  taskType,
-  trailing,
-  onPress,
-}: {
-  title: string;
-  taskType: TaskType;
-  trailing: string;
-  onPress: () => void;
-}) {
-  const theme = useTheme();
-  const styles = useThemedStyles(makeStyles);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${title}. ${trailing}`}
-      onPress={onPress}
-      style={[styles.row, styles.upcomingRow]}
-    >
-      <TypeDot taskType={taskType} />
-      <Text
-        style={[t(T.body, { fontSize: 15, fontWeight: "700", color: theme.color.text }), styles.upcomingTitle]}
-        numberOfLines={1}
-      >
-        {title}
-      </Text>
-      <Text style={t(T.meta, { fontSize: 12, fontWeight: "700", color: theme.color.textMuted })} numberOfLines={1}>
-        {trailing}
-      </Text>
-    </Pressable>
   );
 }
 
@@ -354,16 +268,9 @@ const makeStyles = (t: Tokens) =>
       alignItems: "center",
       gap: 10,
     },
-    recurringRow: {
-      gap: 11,
-    },
     upcomingRow: {
       paddingVertical: 11,
       paddingHorizontal: 13,
-    },
-    upcomingTitle: {
-      flex: 1,
-      minWidth: 0,
     },
     rowText: {
       flex: 1,
@@ -392,16 +299,6 @@ const makeStyles = (t: Tokens) =>
       width: px(8),
       height: px(8),
       borderRadius: 3,
-      flexGrow: 0,
-      flexShrink: 0,
-    },
-    repeatTile: {
-      width: px(30),
-      height: px(30),
-      borderRadius: 9,
-      backgroundColor: t.schedulePanel.repeatTileBg,
-      alignItems: "center",
-      justifyContent: "center",
       flexGrow: 0,
       flexShrink: 0,
     },

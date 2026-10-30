@@ -42,7 +42,7 @@ cd task-app && npx playwright test --config=e2e/playwright.config.ts --project=a
 | [06 · Recurrence](plan/06-recurrence.md) | 18 | One live occurrence: completion mints the next, undo retracts it |
 | [07 · Focus sessions](plan/07-focus-sessions.md) | 21 | Crediting real work and only real work; sessions that outlive the screen |
 | [08 · Goals](plan/08-goals.md) | 12 | The number behind a twenty-day commitment |
-| [09 · The Scheduled screen](plan/09-scheduled-screen.md) | 15 | Overdue, Recurring, Upcoming — and nothing falling between them |
+| [09 · The Scheduled screen](plan/09-scheduled-screen.md) | 18 | Overdue, Recurring, Upcoming — and nothing falling between them |
 | [10 · Progress, Settings, points](plan/10-progress-settings.md) | 17 | Making the app's numbers reconcile across screens |
 | [11 · Notifications (UI side)](plan/11-notifications-ui.md) | 18 | What the app queues, what it tells you it queued, and when it stops |
 | [12 · Time and timezones](plan/12-time-and-timezone.md) | 15 | The user's day, midnight, DST — where this codebase has lost days before |
@@ -53,7 +53,7 @@ cd task-app && npx playwright test --config=e2e/playwright.config.ts --project=a
 | 17 · Focus Now | 52 | **Starting work in one motion**, the throwaway tasks that shortcut creates, and a Pomodoro surviving a refresh as itself |
 | 18 · First-run onboarding | 11 | The four screens only a new install sees, which the rest of the suite deliberately skips |
 | 19 · Placement, on the screens | 14 | **Where a task actually appears** - the When × Repeat matrix asserted on Home and Scheduled, not just in the rules |
-| **Total** | **369** | |
+| **Total** | **372** | |
 | [17 · What this can't prove](plan/17-device-only.md) | — | Notification delivery and everything else that needs a real phone |
 
 Two entries are **blocked on the app**, and say so: `DETAIL-18` (no rename control exists yet)
