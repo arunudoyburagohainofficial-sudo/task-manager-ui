@@ -320,7 +320,7 @@ export function HomeTaskRow({
   kind,
   title,
   detail,
-  points,
+  points = 0,
   actionLabel,
   actionTone = "primary",
   detailTone = "default",
@@ -333,8 +333,8 @@ export function HomeTaskRow({
   title: string;
   /** Follows the kind on the meta line — the goal's name, a time, a session length. */
   detail?: string | null;
-  /** What finishing it will earn. */
-  points: number;
+  /** What finishing it will earn. Not needed when `showPoints` is off. */
+  points?: number;
   actionLabel: string;
   /**
    * How much the action should ask for. "primary" is the filled button Home uses, where

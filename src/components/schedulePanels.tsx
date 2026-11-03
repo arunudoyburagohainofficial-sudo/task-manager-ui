@@ -1,6 +1,5 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import type { TaskType } from "../api/types";
 import { px, radius, space, text as t, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { ChevronDownIcon, ChevronRightIcon } from "./icons";
@@ -15,20 +14,6 @@ import { ChevronDownIcon, ChevronRightIcon } from "./icons";
  * made each panel three times taller than the design and buried the structure that is the
  * whole point of the screen.
  */
-
-/** Task-type dot — the one bit of colour on an otherwise monochrome row. */
-function TypeDot({ taskType }: { taskType: TaskType }) {
-  const theme = useTheme();
-  const styles = useThemedStyles(makeStyles);
-  return (
-    <View
-      style={[
-        styles.dot,
-        { backgroundColor: taskType === "focus" ? theme.schedulePanel.focusDot : theme.schedulePanel.reminderDot },
-      ]}
-    />
-  );
-}
 
 /**
  * A tinted, titled container. `tone` picks the whole surface treatment at once rather than
@@ -78,68 +63,6 @@ export function SchedulePanel({
       </View>
       <View style={styles.panelBody}>{children}</View>
     </View>
-  );
-}
-
-/**
- * Overdue row — dot, name, why-it-matters line, chevron.
- *
- * The chevron rather than a Focus/Done button: an overdue task usually needs rescheduling
- * or rethinking, not blind completion, and the detail screen is where both are possible.
- */
-export function OverdueRow({
-  title,
-  taskType,
-  subtitle,
-  actionLabel,
-  onPress,
-  onAction,
-}: {
-  title: string;
-  taskType: TaskType;
-  subtitle: string;
-  /** Omit to leave the row open-only — the chevron then stands in for the action. */
-  actionLabel?: string;
-  onPress: () => void;
-  onAction?: () => void;
-}) {
-  const theme = useTheme();
-  const styles = useThemedStyles(makeStyles);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${title}. ${subtitle}`}
-      onPress={onPress}
-      style={[styles.row, { borderColor: theme.schedulePanel.overdue.rowBorder }]}
-    >
-      <TypeDot taskType={taskType} />
-      <View style={styles.rowText}>
-        <Text style={t(T.body, { fontSize: 15, fontWeight: "700", color: theme.color.text })} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text style={t(T.meta, { fontSize: 12, color: theme.color.textMuted, marginTop: 2 })} numberOfLines={1}>
-          {subtitle}
-        </Text>
-      </View>
-      {/* An overdue task is the one thing on this screen that's actionable right now — it
-          was meant to be done already. Making it openable-only meant the screen dedicated to
-          what you're behind on was the one place you couldn't act on it. */}
-      {actionLabel && onAction ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${actionLabel}: ${title}`}
-          onPress={onAction}
-          hitSlop={6}
-          style={styles.rowAction}
-        >
-          <Text style={t(T.meta, { fontSize: 12, fontWeight: "800", color: theme.schedulePanel.overdue.moreText })}>
-            {actionLabel}
-          </Text>
-        </Pressable>
-      ) : (
-        <ChevronRightIcon />
-      )}
-    </Pressable>
   );
 }
 
@@ -257,24 +180,9 @@ const makeStyles = (t: Tokens) =>
       flex: 1,
       height: 1,
     },
-    row: {
-      backgroundColor: t.color.card,
-      borderWidth: 1,
-      borderColor: t.color.border,
-      borderRadius: radius.card,
-      paddingVertical: 10,
-      paddingHorizontal: 12,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-    },
     upcomingRow: {
       paddingVertical: 11,
       paddingHorizontal: 13,
-    },
-    rowText: {
-      flex: 1,
-      minWidth: 0,
     },
     panelAction: {
       paddingVertical: 3,

@@ -16,7 +16,6 @@ import {
   ClearAllOverdueButton,
   MoveAllToTodayButton,
   NotificationBlockBanner,
-  OverdueRow,
   SchedulePanel,
   ScreenContainer,
   ShowMoreButton,
@@ -406,23 +405,32 @@ export function ScheduledScreen() {
             }
           >
             {visibleOverdue.map((task) => {
-              const reminder = displayReminder(task.id);
-              // Falls back to the task type when there's no clock time to show — a silent
-              // schedule (date, no notification) has none, and the old form interpolated that
-              // null into the subtitle as the literal word "null".
-              const detail =
-                (reminder ? formatClockTime(reminder.reminderTime) : null) ??
-                (task.taskType === "focus" ? "Focus" : "Reminder");
+              const goal = task.goalId ? goalsById.get(task.goalId) : undefined;
+              /*
+               * The day it slipped from, and only that.
+               *
+               * Inside a flat panel there is no date heading above the row to carry it, unlike
+               * the grouped upcoming ones. The clock time used to lead here too, but once
+               * something is overdue the hour it would have buzzed at is the least useful fact
+               * on the row - and carrying both pushed every line onto two, leaving this section
+               * visibly bulkier than the two below it.
+               */
+              const detail = `was due ${formatScheduleDate(task.scheduledFor!)}`;
               return (
-                <OverdueRow
+                <HomeTaskRow
                   key={task.id}
+                  kind={rowKindOf(task, goal)}
                   title={task.name}
-                  taskType={task.taskType}
-                  // The day it slipped from — inside a flat panel there's no date heading
-                  // above the row to carry that, unlike the grouped upcoming ones.
-                  subtitle={`${detail} · was due ${formatScheduleDate(task.scheduledFor!)}`}
-                  // A reminder task can be finished outright from here; a focus task opens
-                  // its detail screen, where a session is actually started.
+                  detail={detail}
+                  /*
+                   * Not "danger", unlike a late routine. That one sits in a neutral section
+                   * and has to say so for itself; these are already inside a panel titled
+                   * OVERDUE and tinted for it, and reddening every line as well turns a
+                   * backlog into a wall of alarm.
+                   */
+                  showPoints={false}
+                  // Focus and Done, not Cancel: this is the one section where the useful
+                  // thing is catching up. Removing them in bulk is what Clear all is for.
                   actionLabel={task.taskType === "focus" ? "Focus" : "Done"}
                   onAction={() =>
                     task.taskType === "focus" ? openTask(task.id) : handleMarkDone(task.id, task.name)
