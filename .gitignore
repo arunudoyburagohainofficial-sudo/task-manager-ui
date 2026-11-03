@@ -61,10 +61,18 @@ task-app/design_handoff_focus_capture_app
 task-app/design_handoff_focus_capture_app 2
 
 handoffs
-# Playwright output
+# Playwright output. The suite itself is tracked; only what a run produces is not.
+#
+# `/e2e/` as a whole used to sit here, under this same heading, and it quietly kept 71 files of
+# real test code and every visual baseline out of the repo - the 342 checks this project leans
+# on existed on one laptop's disk and nowhere else. A `git clean -fdx` would have taken them
+# with no prompt. Same lesson as the Firebase config above: ignored here means absent from any
+# clone and from any EAS archive, however present it looks locally.
 /test-results/
 /playwright-report/
-/e2e/
+/e2e/.cache/
+/e2e/test-results/
+/e2e/playwright-report/
 
 # Junk from a script that resolved its output path to the literal string "undefined".
 /undefined/
