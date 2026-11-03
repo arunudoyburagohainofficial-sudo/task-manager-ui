@@ -652,6 +652,13 @@ export function HomeScreen() {
                 }}
                 onStart={handleQuickFocus}
                 starting={creatingQuickFocus || startingSession}
+                /*
+                 * Loud on an empty screen, an outline once there is a list. Every row carries
+                 * its own Focus button, and those credit the sitting to the task you were
+                 * actually working on; this one credits it to a task named after the clock.
+                 * Whichever of the two is louder is the one people reach for.
+                 */
+                quiet={tasks.length > 0}
                 running={
                   session && running
                     ? {

@@ -35,7 +35,18 @@ function PlayMark({ size, color }: { size: number; color: string }) {
  * one action here that writes to the server and takes over the screen. A slide cannot be fired by
  * a stray tap on the way past, and still costs one motion.
  */
-function SlideToStart({ label, onCommit, starting }: { label: string; onCommit: () => void; starting: boolean }) {
+function SlideToStart({
+  label,
+  onCommit,
+  starting,
+  quiet = false,
+}: {
+  label: string;
+  onCommit: () => void;
+  starting: boolean;
+  /** Outlined rather than filled — see FocusNowCardProps.quiet. */
+  quiet?: boolean;
+}) {
   const t = useTheme();
   const s = useThemedStyles(makeStyles);
   const [trackWidth, setTrackWidth] = useState(0);
@@ -93,7 +104,7 @@ function SlideToStart({ label, onCommit, starting }: { label: string; onCommit: 
 
   return (
     <View
-      style={s.slideTrack}
+      style={[s.slideTrack, quiet && s.slideTrackQuiet]}
       onLayout={(e: LayoutChangeEvent) => setTrackWidth(e.nativeEvent.layout.width)}
       accessibilityRole="adjustable"
       accessibilityLabel={label}
@@ -103,15 +114,28 @@ function SlideToStart({ label, onCommit, starting }: { label: string; onCommit: 
       accessibilityActions={[{ name: "activate" }]}
       onAccessibilityAction={onCommit}
     >
-      <Text style={[ds(T.button, { fontSize: 16, color: t.surface.primaryInk }), s.slideLabel]}>
+      {/*
+        Quiet keeps the ordinary text colour rather than the brand one. Terracotta on the dark
+        card reads at about 2.7:1, which is fine for a border and not for a word.
+      */}
+      <Text
+        style={[ds(T.button, { fontSize: 16, color: quiet ? t.color.text : t.surface.primaryInk }), s.slideLabel]}
+      >
         {starting ? "Starting…" : label}
       </Text>
-      <Text style={[ds(T.button, { fontSize: 15, color: t.surface.primaryInk }), s.slideChevrons]}>›››</Text>
+      <Text
+        style={[
+          ds(T.button, { fontSize: 15, color: quiet ? t.surface.primary : t.surface.primaryInk }),
+          s.slideChevrons,
+        ]}
+      >
+        ›››
+      </Text>
       <Animated.View
-        style={[s.slideKnob, { width: knob, height: knob, transform: [{ translateX: x }] }]}
+        style={[s.slideKnob, quiet && s.slideKnobQuiet, { width: knob, height: knob, transform: [{ translateX: x }] }]}
         {...pan.panHandlers}
       >
-        <PlayMark size={px(20)} color={t.surface.primary} />
+        <PlayMark size={px(20)} color={quiet ? t.surface.primaryInk : t.surface.primary} />
       </Animated.View>
     </View>
   );
@@ -297,6 +321,19 @@ export interface FocusNowCardProps {
   onStart: () => void;
   /** True from the moment the slide commits until a session exists, or the attempt fails. */
   starting?: boolean;
+  /**
+   * Step the slider back, because the screen already has work on it.
+   *
+   * Filled, it is the loudest thing on Home - and it is the one control here that credits a
+   * sitting to nothing. Sliding it invents a task named after the clock, so somebody who meant
+   * to work on a task they can see, and reached for the big obvious bar instead, does the work
+   * and watches the goal it belonged to not move. Nothing says so at the time.
+   *
+   * So when there is a list, the list's own Focus buttons are the loud ones and this becomes an
+   * outline: still a slider, still one motion, no longer the thing the eye lands on first. With
+   * an empty list it stays filled, because then it genuinely is the only thing to do.
+   */
+  quiet?: boolean;
   /** Present while a session is running — the card becomes that session's timer. */
   running?: {
     sessionId: string;
@@ -320,7 +357,16 @@ export interface FocusNowCardProps {
  *
  * One card rather than two: the thing you start and the thing you watch occupy the same spot.
  */
-export function FocusNowCard({ minutes, mode, cycles, onPick, onStart, starting = false, running }: FocusNowCardProps) {
+export function FocusNowCard({
+  minutes,
+  mode,
+  cycles,
+  onPick,
+  onStart,
+  starting = false,
+  quiet = false,
+  running,
+}: FocusNowCardProps) {
   const t = useTheme();
   const s = useThemedStyles(makeStyles);
   const [open, setOpen] = useState(false);
@@ -367,7 +413,7 @@ export function FocusNowCard({ minutes, mode, cycles, onPick, onStart, starting 
         </Pressable>
       </View>
 
-      <SlideToStart label={slideLabel(minutes, mode, cycles)} onCommit={onStart} starting={starting} />
+      <SlideToStart label={slideLabel(minutes, mode, cycles)} onCommit={onStart} starting={starting} quiet={quiet} />
 
       {/*
         The picker was inline, and with rounds added it grew to three chip rows plus an
@@ -496,6 +542,17 @@ const makeStyles = (t: Tokens) =>
       paddingHorizontal: px(8),
       overflow: "hidden",
     },
+    /*
+     * Shorter and outlined. The knob keeps its fill, because it is the part you put a finger
+     * on and an outlined knob on an outlined track stops reading as draggable at all.
+     */
+    slideTrackQuiet: {
+      height: px(56),
+      borderRadius: px(28),
+      backgroundColor: "transparent",
+      borderWidth: px(1.5),
+      borderColor: t.surface.primary,
+    },
     slideLabel: { position: "absolute", left: px(68), fontWeight: "800" },
     slideChevrons: { position: "absolute", right: px(20), opacity: 0.65, fontWeight: "800" },
     slideKnob: {
@@ -504,6 +561,12 @@ const makeStyles = (t: Tokens) =>
       alignItems: "center",
       justifyContent: "center",
     },
+    /*
+     * Inverted against the quiet track: the knob is the one filled thing left, so it still
+     * reads as the part you put a finger on. Both ends of this have to flip together - leaving
+     * the near-white fill and only darkening the mark drew a white arrow on a white disc.
+     */
+    slideKnobQuiet: { backgroundColor: t.surface.primary },
 
     runHead: { flexDirection: "row", alignItems: "center", gap: px(7) },
     runDot: { width: px(8), height: px(8), borderRadius: px(4), backgroundColor: t.color.success },
