@@ -136,7 +136,14 @@ export function PanelRow({
       >
         {pending ? <View style={styles.pendingDot} /> : null}
         {icon}
-        <View style={styles.rowMain}>
+        {/*
+          A plain label does not shrink. Labels here are short and authored ("Email", "Phone",
+          "Default focus duration"); the value on the right is the variable part, so that is
+          what should absorb a long one. Letting both shrink in proportion squeezed "Email"
+          into "Ema / il" next to a 40-character address. A row built from `children` keeps the
+          old behaviour, because that content is not guaranteed to be short.
+        */}
+        <View style={[styles.rowMain, label && !children ? styles.rowMainLabelOnly : null]}>
           {eyebrow ? <Text style={t(T.eyebrow, { color: theme.color.textLabel })}>{eyebrow}</Text> : null}
           {label ? (
             <Text style={t(T.body, { fontWeight: "700", color: theme.color.text })} numberOfLines={2}>
@@ -382,9 +389,20 @@ const makeStyles = (t: Tokens) =>
       backgroundColor: t.surface.unsavedDot,
     },
     rowMain: {
-      flex: 1,
+      /*
+       * Grow and shrink, but from the label's own width rather than from zero.
+       *
+       * `flex: 1` sets a basis of 0, so this side had no intrinsic size to defend: a long
+       * unbreakable value on the right (an email address) claimed the whole row and the label
+       * was squeezed first to "Ema / il" and then out of existence. With an auto basis the two
+       * sides shrink in proportion to what they actually contain.
+       */
+      flexGrow: 1,
+      flexShrink: 1,
+      flexBasis: "auto",
       gap: 3,
     },
+    rowMainLabelOnly: { flexShrink: 0 },
     rowRight: {
       flexShrink: 1,
       alignItems: "flex-end",

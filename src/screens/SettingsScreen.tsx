@@ -226,8 +226,11 @@ export function SettingsScreen() {
         <Text style={ds(T.h1, { fontSize: 27, letterSpacing: -0.8, color: theme.color.text })}>Settings</Text>
 
         <SectionLabel style={styles.label}>ACCOUNT</SectionLabel>
-        {/* Only Name is pressable — email and phone are shown for reference but can't be
-            changed, so giving them a tap target would promise an editor that isn't there. */}
+        {/*
+          Email opens the same sheet as Name. It cannot be edited there, but the sheet is where
+          the app says *why* - a row that looks like every other row and does nothing when
+          tapped reads as broken, not as read-only.
+        */}
         <PanelCard>
           <PanelRow
             label="Name"
@@ -237,21 +240,44 @@ export function SettingsScreen() {
           />
           <PanelRow
             label="Email"
+            last={!user.phoneNumber}
+            accessibilityLabel={`Email, ${user.email ?? "not set"}`}
+            onPress={openProfileSheet}
             right={
-              <Text style={ds(T.body, { fontWeight: "600", color: theme.surface.dashInkQuiet })}>
+              <Text
+                style={ds(T.body, { fontWeight: "600", color: theme.surface.dashInkQuiet })}
+                /*
+                 * An address has no spaces, so its minimum width is its full width - it cannot
+                 * shrink, and flexbox squeezed the *label* instead until "Email" wrapped to
+                 * "Ema / il". Truncating gives the row something to give.
+                 */
+                numberOfLines={1}
+              >
                 {user.email ?? "-"}
               </Text>
             }
           />
-          <PanelRow
-            label="Phone"
-            last
-            right={
-              <Text style={ds(T.body, { fontWeight: "600", color: theme.surface.dashInkQuiet })}>
-                {user.phoneNumber ?? "-"}
-              </Text>
-            }
-          />
+          {/*
+            Shown only when there is one. It read "Phone —" for everyone who signed in with
+            Google, which is a row that exists to say nothing. Kept for the phone sign-in path,
+            where that number is the only identifier the account has.
+          */}
+          {user.phoneNumber ? (
+            <PanelRow
+              label="Phone"
+              last
+              accessibilityLabel={`Phone, ${user.phoneNumber}`}
+              onPress={openProfileSheet}
+              right={
+                <Text
+                  style={ds(T.body, { fontWeight: "600", color: theme.surface.dashInkQuiet })}
+                  numberOfLines={1}
+                >
+                  {user.phoneNumber}
+                </Text>
+              }
+            />
+          ) : null}
         </PanelCard>
 
         <SectionLabel
@@ -498,12 +524,16 @@ export function SettingsScreen() {
           <Meta>Email</Meta>
           <Body>{user.email ?? "-"}</Body>
         </View>
-        <View style={styles.readOnlyField}>
-          <Meta>Phone</Meta>
-          <Body>{user.phoneNumber ?? "-"}</Body>
-        </View>
+        {user.phoneNumber ? (
+          <View style={styles.readOnlyField}>
+            <Meta>Phone</Meta>
+            <Body>{user.phoneNumber}</Body>
+          </View>
+        ) : null}
         <Meta style={{ color: theme.color.textFaint }}>
-          Email and phone come from how you signed in and can&rsquo;t be changed here.
+          {user.phoneNumber
+            ? "Email and phone come from how you signed in and can’t be changed here."
+            : "Your email comes from how you signed in and can’t be changed here."}
         </Meta>
 
         {profileError ? <Body style={{ color: theme.color.danger }}>{profileError}</Body> : null}
