@@ -50,8 +50,14 @@ test.describe("completion mints the next", () => {
     await expect.poll(() => section(page, "DONE")).toContain("Water plants");
     expect(await section(page, "TO DO")).not.toContain("Water plants");
 
-    const [next] = await pendingNamed(api, "Water plants");
-    expect(next.scheduledFor).toBe(dateKey(1));
+    /*
+     * Poll the server rather than read it once. Home's Done is optimistic - the row moves into
+     * DONE from onMutate, before the request has landed - and the successor is minted server
+     * side, so right after the tap the original is still the one pending and still dated today.
+     * Every sibling in this file already waits this way; this one was missed, and passed for
+     * months on a quiet machine before a full run was slow enough to lose the race.
+     */
+    await expect.poll(async () => (await pendingNamed(api, "Water plants"))[0]?.scheduledFor).toBe(dateKey(1));
     await openTab(page, "Scheduled");
     await see(page, /RECURRING[\s\S]*Water plants \| Reminder · Every day · next Tomorrow/);
   });
