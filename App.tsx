@@ -9,6 +9,10 @@ import {
   Inter_700Bold,
   Inter_800ExtraBold,
 } from "@expo-google-fonts/inter";
+import {
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_800ExtraBold,
+} from "@expo-google-fonts/plus-jakarta-sans";
 import { NavigationContainer } from "@react-navigation/native";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -25,7 +29,12 @@ import { TourOverlay } from "./src/components/TourOverlay";
 import { RootNavigator } from "./src/navigation/RootNavigator";
 import { navigationRef } from "./src/navigation/navigationRef";
 
-SplashScreen.preventAutoHideAsync();
+/*
+ * Unhandled, this rejects on a reload where the splash has already gone - a warning in the
+ * console and, worse, nothing holding the screen while fonts load. AppContent below is what
+ * actually hides it, once there is something real to show.
+ */
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 /**
  * Rendered inside SessionProvider specifically so it can read isReady — App() itself sits
@@ -58,12 +67,19 @@ function AppContent() {
 export default function App() {
   // 600/700/800 carry most of the UI; 400 is the date under Home's greeting and 500 the quiet
   // body text on Task Detail.
+  //
+  // Plus Jakarta Sans is the splash's alone — two weights, used only by LoadingScreen for the
+  // wordmark and its tagline. It is loaded here with the rest rather than lazily, because the
+  // one screen that needs it is the first screen drawn: asking for it later would show the
+  // wordmark in a fallback face and then reflow it.
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
     Inter_800ExtraBold,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_800ExtraBold,
   });
 
   if (!fontsLoaded) return null;
