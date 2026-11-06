@@ -39,9 +39,18 @@ export const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_C
 /**
  * Controls whether AuthScreen's "Continue as test user" link renders at all — the code
  * itself (signInAsTestUser, the button, its handler) stays intact either way, this only
- * decides whether it's reachable. Defaults on so local `expo start` dev keeps working
- * exactly as before with no setup; eas.json turns it off for the preview and production
- * build profiles specifically, so an installed build meant for anyone but the developer
- * doesn't offer a one-tap way to mint a real, if throwaway, account.
+ * decides whether it's reachable.
+ *
+ * **Off unless something explicitly asks for it.** It used to be the other way round
+ * (`!== "false"`), which meant every build that forgot to say otherwise offered a one-tap
+ * way to mint a real account — and one did: eas.json set the flag on `production` only, so
+ * the preview APK, the build actually handed to people, still showed the link. A default
+ * that has to be remembered is a default that will be forgotten, so the only build with a
+ * test login now is one whose start command says so out loud.
+ *
+ * The browser end-to-end suite is the one thing that still needs it: it signs in by clicking
+ * this very link (e2e/harness/app.ts, `signIn`), so Metro is started with the flag for a test
+ * run and without it the rest of the time. There is no way around that short of exposing the
+ * Firebase SDK on `window`, which would be real dev-only code rather than a hidden control.
  */
-export const SHOW_TEST_LOGIN = process.env.EXPO_PUBLIC_SHOW_TEST_LOGIN !== "false";
+export const SHOW_TEST_LOGIN = process.env.EXPO_PUBLIC_SHOW_TEST_LOGIN === "true";

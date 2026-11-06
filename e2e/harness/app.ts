@@ -66,9 +66,23 @@ export async function openApp(page: Page): Promise<void> {
   await expect(page.getByText("TO DO").first()).toBeVisible({ timeout: 60_000 });
 }
 
+/**
+ * Signs in by clicking the hidden test-user link, which is the only way in without a real
+ * Google account.
+ *
+ * That link is off by default in every build (`SHOW_TEST_LOGIN`, opt-in since the preview APK
+ * was found still offering it), so Metro has to be started with the flag for a test run. Named
+ * explicitly below because the failure without it is a sixty-second timeout on a screen that
+ * looks perfectly healthy - an Auth screen with a Google button and nothing wrong with it.
+ */
 export async function signIn(page: Page): Promise<void> {
   const button = page.getByLabel("Continue as test user");
-  await expect(button.or(page.getByText("TO DO")).first()).toBeVisible({ timeout: 60_000 });
+  await expect(
+    button.or(page.getByText("TO DO")).first(),
+    "Neither the test-user link nor Home appeared. Metro is probably running without the\n" +
+      "flag that reveals the link - restart it with\n" +
+      "  cd task-app && EXPO_PUBLIC_API_HOST=localhost EXPO_PUBLIC_SHOW_TEST_LOGIN=true npx expo start --web"
+  ).toBeVisible({ timeout: 60_000 });
   if (await button.count()) await button.first().click();
 }
 

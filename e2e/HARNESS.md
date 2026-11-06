@@ -43,7 +43,7 @@ What runs, and in what order:
 
 1. Postgres (`task-svc/docker-compose.yml`)
 2. task-svc on `:8080` (`mvn spring-boot:run`) — migrations applied, no test profile, no mocks
-3. Metro web on `:8081` (`EXPO_PUBLIC_API_HOST=localhost npx expo start --web`)
+3. Metro web on `:8081` (`EXPO_PUBLIC_API_HOST=localhost EXPO_PUBLIC_SHOW_TEST_LOGIN=true npx expo start --web`)
 4. Playwright against `http://localhost:8081`
 
 A global setup waits for all three and fails loudly if the backend is the *deployed* one — a

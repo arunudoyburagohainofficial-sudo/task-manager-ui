@@ -6,10 +6,12 @@ import * as WebBrowser from "expo-web-browser";
 import { authApi } from "../api";
 import { ApiError } from "../api/client";
 import { SHOW_TEST_LOGIN } from "../api/config";
-import { isPhoneAuthAvailable, phoneAuthUnavailableReason } from "../api/firebaseAuth";
+// Phone sign-in is commented out below; these come back with it.
+// import { isPhoneAuthAvailable, phoneAuthUnavailableReason } from "../api/firebaseAuth";
 import { signInAsTestUser, signInWithGoogleIdToken } from "../api/firebaseWebAuth";
 import { useGoogleSignIn } from "../auth/googleSignIn";
-import { Body, Button, Ferne, GoogleIcon, H1, Meta, ScreenContainer } from "../components";
+// Button comes back with the commented-out phone block below — it has no other use here.
+import { Body, Ferne, GoogleIcon, H1, Meta, ScreenContainer } from "../components";
 import { useSession } from "../state/SessionContext";
 import { radius, size, space } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
@@ -24,7 +26,8 @@ export function AuthScreen() {
   const theme = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { signIn } = useSession();
-  const navigation = useNavigation<Nav>();
+  // Only the phone block navigated anywhere from here; restore with it.
+  // const navigation = useNavigation<Nav>();
 
   const [submitting, setSubmitting] = useState(false);
   // Separate from `submitting`: that flag also drives the Google button's own spinner, so
@@ -102,14 +105,30 @@ export function AuthScreen() {
         {error ? <Body style={{ color: theme.color.danger }}>{error}</Body> : null}
 
         <View style={styles.actions}>
-          <Button
-            label="Continue with phone"
-            disabled={!isPhoneAuthAvailable || submitting || testUserLoading}
-            onPress={() => navigation.navigate("PhoneSignIn")}
-          />
-          {phoneAuthUnavailableReason ? (
-            <Meta style={[styles.centered, { color: theme.color.textFaint }]}>{phoneAuthUnavailableReason}</Meta>
-          ) : null}
+          {/*
+            Phone sign-in, taken off the screen 2026-11-04 — commented rather than deleted
+            because it is coming back, not being abandoned.
+
+            It needs a development build to work at all (expo-firebase-recaptcha and the native
+            Firebase SDK are both unavailable in Expo Go and on web), so on every build anyone
+            has actually used it rendered disabled under a line of apology — a dead control in
+            the most prominent position on the first screen of the app. Google is the one that
+            works everywhere today.
+
+            To bring it back, uncomment four things, all marked: this block, the
+            isPhoneAuthAvailable / phoneAuthUnavailableReason import, the Button import, and
+            the `navigation` handle. PhoneSignInScreen and its route in RootNavigator are
+            untouched and still wired up, so nothing else has to be rebuilt.
+
+            <Button
+              label="Continue with phone"
+              disabled={!isPhoneAuthAvailable || submitting || testUserLoading}
+              onPress={() => navigation.navigate("PhoneSignIn")}
+            />
+            {phoneAuthUnavailableReason ? (
+              <Meta style={[styles.centered, { color: theme.color.textFaint }]}>{phoneAuthUnavailableReason}</Meta>
+            ) : null}
+          */}
 
           <Pressable
             accessibilityRole="button"
