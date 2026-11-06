@@ -129,7 +129,7 @@ test.describe("the three steps after signing in", () => {
         await see(page, `${title} | ${why}`);
       }
       // The promise that makes the usage permission acceptable to grant.
-      await see(page, "Ferne sees how long apps are open, never what’s inside them.");
+      await see(page, "Foyg sees how long apps are open, never what’s inside them.");
     });
   });
 

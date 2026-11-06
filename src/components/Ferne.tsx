@@ -394,14 +394,19 @@ const POSES: Record<
   nudge: { eyeY: 102, eyeR: 6.0, eyeSquash: 0.85, earTop: 16, earLen: 62, dim: 1 },
 };
 
-/** Ferne carries meaning, so a screen reader gets the state rather than "image". */
+/**
+ * Ferne carries meaning, so a screen reader gets the state rather than "image".
+ *
+ * "Foyg" on screen, Ferne in the code — the character is named for the app everywhere a
+ * user can read it, and keeps her own name everywhere we work on her.
+ */
 const ACCESSIBILITY_LABEL: Record<FerneState, string> = {
-  idle: "Ferne, resting",
-  listening: "Ferne, listening",
-  sorting: "Ferne, thinking",
-  asleep: "Ferne, asleep while you focus",
-  celebrate: "Ferne, celebrating",
-  nudge: "Ferne, waiting for you",
+  idle: "Foyg, resting",
+  listening: "Foyg, listening",
+  sorting: "Foyg, thinking",
+  asleep: "Foyg, asleep while you focus",
+  celebrate: "Foyg, celebrating",
+  nudge: "Foyg, waiting for you",
 };
 
 /* --------------------------------------------------------------- tab icon */

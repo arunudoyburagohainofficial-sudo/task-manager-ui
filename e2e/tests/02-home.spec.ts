@@ -31,7 +31,7 @@ test.describe("what belongs on the list", () => {
     const { page } = app;
     await see(page, "Nothing to do yet");
     await see(page, "GOALS");
-    await expect(control(page, "New goal")).toBeVisible();
+    await expect(control(page, "Create a new goal")).toBeVisible();
     const text = await screenText(page);
     expect(text).not.toContain("| DONE |");
     expect(text).not.toContain("That’s everything");

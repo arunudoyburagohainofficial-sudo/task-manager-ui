@@ -42,7 +42,7 @@ export function WhyPermissionsSheet({ visible, onClose }: { visible: boolean; on
         <View style={s.reassure}>
           <Text style={s.shield}>🛡</Text>
           <Text style={s.reassureInk}>
-            Ferne never reads your messages, photos or what’s on your screen. You can turn any of these off in Settings.
+            Foyg never reads your messages, photos or what’s on your screen. You can turn any of these off in Settings.
           </Text>
         </View>
 

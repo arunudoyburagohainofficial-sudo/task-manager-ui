@@ -145,6 +145,21 @@ export function HomeScreen() {
   const [creatingQuickFocus, setCreatingQuickFocus] = useState(false);
   const [editingGoal, setEditingGoal] = useState<GoalDto | null>(null);
   const [creatingGoal, setCreatingGoal] = useState(false);
+  /*
+   * The goal the next quick sitting counts toward - for that one sitting, and no longer.
+   *
+   * Deliberately not remembered. Goal progress never decreases, so a sitting credited to the
+   * wrong goal cannot be taken back, and a goal that quietly persisted from last Tuesday is
+   * precisely how that happens: you slide without reading the chip and an hour of something
+   * else lands on a goal you had forgotten was selected. Clearing it after each sitting makes
+   * every credit something the user chose that time.
+   *
+   * It costs almost nothing to re-pick, because a goal counts *days*, not sittings - the
+   * second sitting of a day toward the same goal moves it no further (GoalService.recordActivity
+   * returns early once that day is already counted). So the choice only has to be made once on
+   * any day it matters.
+   */
+  const [quickFocusGoalId, setQuickFocusGoalId] = useState<string | null>(null);
 
   // Home is strictly today: unscheduled tasks plus anything dated for today. Both future
   // work and missed work live on the Upcoming/Overdue tab — a task scheduled ahead lands
@@ -165,6 +180,18 @@ export function HomeScreen() {
     [tasksQuery.data, today, session?.taskId]
   );
   const goals = goalsQuery.data ?? [];
+  /*
+   * Resolved against the live list rather than trusted from the id alone. The goal can be
+   * deleted from this very screen while a pick is held, and sending a dead id would have the
+   * server refuse the task - losing the sitting. An unresolvable id reads as no goal, which is
+   * also what the card then says.
+   */
+  const quickFocusGoal = quickFocusGoalId ? goals.find((g) => g.id === quickFocusGoalId) ?? null : null;
+
+  function handlePickQuickFocusGoal(goalId: string | null) {
+    setQuickFocusGoalId(goalId);
+  }
+
   const savingGoal = createGoalMutation.isPending || updateGoalMutation.isPending;
   /**
    * The notification each task fires on the day itself, if it has one — that's the time a row
@@ -347,7 +374,25 @@ export function HomeScreen() {
       const task = await createTaskMutation.mutateAsync({
         name: `Quick focus · ${at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`,
         taskType: "focus",
+        /*
+         * The whole reason the chip exists. A goal only advances when a focus task is
+         * *completed* carrying one, and a quick sitting of a minute or more does complete its
+         * task - so this one field is what makes the ring below the slider move. A sitting
+         * that is discarded, or runs under a minute, deletes the task instead and therefore
+         * credits nothing, which needs no code here.
+         */
+        ...(quickFocusGoal ? { goalId: quickFocusGoal.id } : {}),
       });
+      /*
+       * Spent. The goal is on the task now, in the database, so the chip has nothing left to
+       * describe except the *next* sitting - and that one starts from no goal, by design.
+       *
+       * Cleared here rather than when the session finishes, which is the same thing one step
+       * later: the card shows the running timer instead of the chip for the whole sitting, so
+       * there is no moment where a user could see the difference. Doing it here also means a
+       * discarded sitting needs no cleanup of its own - the chip has already moved on.
+       */
+      setQuickFocusGoalId(null);
       await markQuickFocusStub(task.id);
       await startSession({
         taskId: task.id,
@@ -659,6 +704,9 @@ export function HomeScreen() {
                  * Whichever of the two is louder is the one people reach for.
                  */
                 quiet={tasks.length > 0}
+                goals={goals}
+                goalId={quickFocusGoal?.id ?? null}
+                onPickGoal={handlePickQuickFocusGoal}
                 running={
                   session && running
                     ? {
@@ -739,7 +787,7 @@ export function HomeScreen() {
           section.key === "todo" && section.count === 0 ? (
             <HomeEmptyRow
               title={completedToday.length > 0 ? "All done for today" : "Nothing to do yet"}
-              body="Tap Ferne below to capture something."
+              body="Tap Foyg below to capture something."
             />
           ) : null
         }

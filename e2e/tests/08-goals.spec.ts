@@ -18,7 +18,7 @@ async function goalCardText(page: Page, name: string) {
 
 test("GOAL-01 · a goal created from the + appears at once, empty, in its own colour", async ({ app }) => {
   const { page, api } = app;
-  await control(page, "New goal").click();
+  await control(page, "Create a new goal").click();
   await see(page, "New goal");
   await page.getByPlaceholder("e.g. Interview Prep").locator("visible=true").last().fill("Interview prep");
   await control(page, "30 days").click();

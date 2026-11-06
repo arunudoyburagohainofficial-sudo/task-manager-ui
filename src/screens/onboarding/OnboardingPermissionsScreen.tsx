@@ -26,19 +26,19 @@ const STEPS: Step[] = [
     key: "usageStats",
     title: "Usage access",
     why: "Finds your distracting apps",
-    hint: "Look for Permit usage access on Ferne’s page. Some phones put it under Special app access.",
+    hint: "Look for Permit usage access on FOYG’s page. Some phones put it under Special app access.",
   },
   {
     key: "notificationPolicy",
     title: "Do Not Disturb",
     why: "Silences your phone while you focus",
-    hint: "Find Ferne in the list and allow it to change Do Not Disturb.",
+    hint: "Find FOYG in the list and allow it to change Do Not Disturb.",
   },
   {
     key: "overlay",
     title: "Display over other apps",
     why: "Shows the pause screen",
-    hint: "Switch on Allow display over other apps for Ferne.",
+    hint: "Switch on Allow display over other apps for FOYG.",
   },
 ];
 
@@ -211,7 +211,7 @@ export function OnboardingPermissionsScreen() {
 
         <View style={s.privacy}>
           <Text style={s.privacyGlyph}>🔒</Text>
-          <Meta style={s.privacyInk}>Ferne sees how long apps are open, never what’s inside them.</Meta>
+          <Meta style={s.privacyInk}>Foyg sees how long apps are open, never what’s inside them.</Meta>
         </View>
       </View>
 

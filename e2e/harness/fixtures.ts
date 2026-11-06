@@ -107,7 +107,26 @@ export const test = base.extend<{ app: App }, { account: Account }>({
         if (res.status() === 429) throttled++;
         // Every response, not only the API's - Metro serves this page too, and a 500 from the
         // dev server used to be reported as an API failure with no way to tell them apart.
-        else if (res.status() >= 500) failures.push(`${res.status()} ${res.url()}`);
+        else if (res.status() >= 500) {
+          /*
+           * Only a 5xx that actually came from a server.
+           *
+           * Every full run reported exactly one, always on /done, and the backend logged nothing
+           * for any of them - which looked like a request failing ahead of the dispatcher, and
+           * was chased as a real defect. It was this listener counting HOME-15's own fixture:
+           * that test fulfils the route itself with `{ status: 500, body: "{}" }` to prove a
+           * failed completion comes back with a reason. The response never left the browser.
+           *
+           * serverAddr() is the discriminator and it is exact - a fulfilled response has no
+           * connection behind it and reports null, while a real one carries the address it came
+           * from. Verified both ways against this backend before relying on it.
+           */
+          void res.serverAddr().then((addr) => {
+            if (!addr) return;
+            const at = `${res.status()} ${res.url()}`;
+            failures.push(at);
+          }).catch(() => undefined);
+        }
       });
       await openApp(page);
       assertLocal();

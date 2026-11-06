@@ -1149,3 +1149,121 @@ test.describe("a Pomodoro survives a refresh as itself", () => {
     await expect.poll(async () => (await api.today()).focusMinutes).toBe(8);
   });
 });
+
+/**
+ * Which goal a quick sitting counts toward.
+ *
+ * The slide invents its own task, so unlike a row's Focus button it has no goal to inherit —
+ * and a goal only ever advances when a focus task is *completed* carrying one. Before the chip
+ * existed, every quick sitting counted toward nothing and the ring directly below the slider
+ * sat still while the user watched it, which is the one thing a goal is for.
+ *
+ * The pick lasts exactly one sitting. That is the whole design and most of what these tests
+ * are for: goal progress never decreases, so a selection that quietly survived into next week
+ * would credit an hour of something else to a goal nobody chose that day, with no way back.
+ * Re-picking costs almost nothing, because a goal counts days rather than sittings.
+ */
+test.describe("counting a quick sitting toward a goal", () => {
+  /** Picks a goal through the card's chip. Assumes at least one goal exists. */
+  async function pickGoal(page: Page, name: string) {
+    await control(page, /^Goal for this session/).click();
+    await see(page, "Count toward a goal");
+    await page.getByRole("radio", { name: new RegExp(`^${name}`) }).locator("visible=true").last().click();
+  }
+
+  test("FOCUSNOW-52 · with no goals there is nothing to pick, and nothing offered", async ({ app }) => {
+    const { page } = app;
+    // A control whose only choice is "No goal" is furniture. The card stays as it was.
+    await dontSee(page, /goal for this session/i);
+    await see(page, /Slide to focus/);
+  });
+
+  test("FOCUSNOW-53 · one goal, and the card asks which, rather than reporting none", async ({ app }) => {
+    const { page, api } = app;
+    await api.goal("Learn Spanish");
+    await reload(page);
+    await see(page, /Select a goal for this session/);
+  });
+
+  test("FOCUSNOW-54 · the pick shows on the card, and belongs to the sitting rather than the app", async ({ app }) => {
+    const { page, api } = app;
+    await api.goal("Learn Spanish");
+    await reload(page);
+    await pickGoal(page, "Learn Spanish");
+    await see(page, /Counts toward Learn Spanish/);
+    /*
+     * Deliberately NOT remembered. A pick that outlived the app would be waiting, unread, the
+     * next time someone slid the bar - and a goal credited by accident cannot be uncredited.
+     */
+    await reload(page);
+    await see(page, /Select a goal for this session/);
+  });
+
+  test("FOCUSNOW-55 · a finished quick sitting advances the goal the card named", async ({ app }) => {
+    const { page, api } = app;
+    expect((await api.goal("Learn Spanish")).totalDaysActive).toBe(0);
+    await reload(page);
+    await pickGoal(page, "Learn Spanish");
+    await see(page, /Counts toward Learn Spanish/);
+
+    await slideToFocus(page);
+    await see(page, /End Session/);
+    /*
+     * Worth something before it is ended. A sitting under a minute deletes its task instead of
+     * completing it, and it is completion — not the session — that moves a goal, so a sitting
+     * ended immediately would correctly credit nothing and prove nothing.
+     */
+    db.sessionStartedAgo((await api.currentSession())!.id, "8 minutes 5 seconds");
+    await button(page, /End Session/).click();
+    await see(page, /End this session early\?/);
+    await control(page, "End").click();
+    await see(page, /Task complete/);
+
+    await expect.poll(async () => (await api.goals())[0]?.totalDaysActive, { timeout: 20_000 }).toBe(1);
+  });
+
+  test("FOCUSNOW-56 · the next sitting starts from no goal, so nothing is credited twice over", async ({ app }) => {
+    const { page, api } = app;
+    const goal = await api.goal("Learn Spanish");
+    await reload(page);
+    await pickGoal(page, "Learn Spanish");
+    await slideToFocus(page);
+    await see(page, /End Session/);
+    db.sessionStartedAgo((await api.currentSession())!.id, "8 minutes 5 seconds");
+    await button(page, /End Session/).click();
+    await see(page, /End this session early\?/);
+    await control(page, "End").click();
+    await see(page, /Task complete/);
+
+    await page.goto("/");
+    // Back to asking. The card describes the sitting you are about to start, never the last one.
+    await see(page, /Select a goal for this session/);
+    await slideToFocus(page);
+    await see(page, /End Session/);
+    const second = (await api.currentSession())!;
+    expect((await api.getTask(second.taskId)).goalId).toBeNull();
+    expect(goal.id).toBeTruthy();
+  });
+
+  test("FOCUSNOW-57 · a sitting discarded before it earns anything leaves the goal where it was", async ({ app }) => {
+    const { page, api } = app;
+    await api.goal("Learn Spanish");
+    await reload(page);
+    await pickGoal(page, "Learn Spanish");
+    await slideToFocus(page);
+    await see(page, /End Session/);
+
+    // Long enough to have been worth crediting, so this measures the discard rather than the
+    // under-a-minute rule that would have thrown the task away anyway.
+    db.sessionStartedAgo((await api.currentSession())!.id, "8 minutes 5 seconds");
+    await control(page, "Discard session").click();
+    await see(page, /Discard this session\?/);
+    await control(page, "Discard").click();
+    await see(page, /nothing was counted/);
+
+    // Discarding deletes the throwaway task, and a task that is never completed can never
+    // credit a goal — so this needs no code of its own, only proof that it holds.
+    expect((await api.goals())[0].totalDaysActive).toBe(0);
+    await see(page, /Select a goal for this session/);
+  });
+});

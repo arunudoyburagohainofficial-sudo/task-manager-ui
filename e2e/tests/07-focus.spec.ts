@@ -57,7 +57,7 @@ test.describe("running one", () => {
     await reload(page);
     await startFromDetail(page, "Write");
     await see(page, /Write \| 2[45]:\d\d \| 0% complete \| 25 min session/);
-    await expect(page.getByRole("img", { name: "Ferne, asleep while you focus" })).toBeVisible();
+    await expect(page.getByRole("img", { name: "Foyg, asleep while you focus" })).toBeVisible();
   });
 
   /** A counter that froze when JS was suspended made a locked-phone session run 35 real minutes. */

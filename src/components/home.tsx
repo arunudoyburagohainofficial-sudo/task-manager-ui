@@ -144,14 +144,30 @@ export function HomeRuleHeader({
 }
 
 /**
- * The + that makes a goal. Its own component rather than part of the header, because the
+ * The control that makes a goal. Its own component rather than part of the header, because the
  * walkthrough points at this button specifically and has to be able to wrap it.
+ *
+ * It used to be a bare "+", which is only legible to someone who already knows what the row
+ * below it is for - and the row is at its least legible in exactly the case that matters most,
+ * with no goals under it and nothing to infer from. The glyph stays, because at a glance it is
+ * the part that reads as "makes a new one"; the words are what settle it.
  */
 export function GoalsAddButton({ onPress }: { onPress: () => void }) {
+  const theme = useTheme();
   const styles = useThemedStyles(makeStyles);
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel="New goal" onPress={onPress} style={styles.plusButton}>
-      <PlusMark size={15} />
+    <Pressable
+      accessibilityRole="button"
+      // The words on the button, not a shorter name of our own: a screen reader should
+      // announce what the screen says, or the two describe different controls.
+      accessibilityLabel="Create a new goal"
+      onPress={onPress}
+      style={styles.newGoalButton}
+    >
+      <PlusMark size={13} />
+      <Text numberOfLines={1} style={td(T.meta, { fontSize: 12, fontWeight: "700", color: theme.color.textBody })}>
+        Create a new goal
+      </Text>
     </Pressable>
   );
 }
@@ -549,15 +565,18 @@ const makeStyles = (t: Tokens) =>
       // The pill's tap area comes from hitSlop instead, which is what it needed anyway.
       minHeight: 25,
     },
-    plusButton: {
-      width: px(28),
+    // The same 28pt box the bare "+" occupied, widened for its label - so the header keeps the
+    // vertical rhythm it was drawn with and only the rule beside it gets shorter.
+    newGoalButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: px(6),
       height: px(28),
       borderRadius: 9,
       backgroundColor: t.color.card,
       borderWidth: 1,
       borderColor: t.color.border,
-      alignItems: "center",
-      justifyContent: "center",
+      paddingHorizontal: px(10),
       flexShrink: 0,
     },
     countPill: {

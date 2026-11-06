@@ -332,4 +332,36 @@ test.describe("baselines", () => {
     await shot(page, "vis-10-completion.png");
     expect(userId).toBeTruthy();
   });
+
+  /**
+   * The goal chip under the slider, in both of its states, at the width that breaks things.
+   *
+   * It is one line with numberOfLines={1}, so the only way this fails is silently: copy that
+   * reads perfectly in the source truncates to "...focus sessi..." on a 320pt phone. That is
+   * exactly what the first draft did, and a typecheck cannot see it.
+   */
+  test("VIS-11 · the goal chip says its whole sentence at 320", async ({ app }) => {
+    const { page, api, userId } = app;
+    await seedDesignContent(page, api, userId);
+    await page.setViewportSize({ width: 320, height: 812 });
+    await reload(page);
+
+    const chipBox = async () => (await control(page, /^Goal for this session/).boundingBox())!;
+    const unpicked = await chipBox();
+    await expect(page).toHaveScreenshot("vis-11-goal-chip-none.png", {
+      clip: { x: 0, y: unpicked.y - 6, width: 320, height: unpicked.height + 12 },
+      animations: "disabled",
+    });
+
+    await control(page, /^Goal for this session/).click();
+    await see(page, "Count toward a goal");
+    await page.getByRole("radio", { name: /^Interview/ }).locator("visible=true").last().click();
+    await see(page, /Counts toward Interview/);
+    await page.waitForTimeout(500);
+    const picked = await chipBox();
+    await expect(page).toHaveScreenshot("vis-11-goal-chip-picked.png", {
+      clip: { x: 0, y: picked.y - 6, width: 320, height: picked.height + 12 },
+      animations: "disabled",
+    });
+  });
 });

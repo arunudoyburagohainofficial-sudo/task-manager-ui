@@ -22,7 +22,7 @@ const CARD_ESTIMATED_HEIGHT = 170;
 const COPY: Record<TourStep, { title: string; body: string; waiting?: string }> = {
   goal: {
     title: "Start with a goal",
-    body: "A goal is something you show up for repeatedly. Tap + beside Goals to make your first one.",
+    body: "A goal is something you show up for repeatedly. Tap Create a new goal to make your first one.",
     // Both of the first two steps live on Home, so it's tempting to assume they're always
     // looking at it — but any screen reachable from Home (a task, Settings, Progress) leaves
     // the step running with nothing to point at, and the card then told people to tap a "+"
@@ -31,13 +31,13 @@ const COPY: Record<TourStep, { title: string; body: string; waiting?: string }> 
   },
   capture: {
     title: "Now capture a task",
-    body: "Tap Ferne to jot down whatever you want to work on.",
-    waiting: "Head back to Home and tap Ferne at the bottom of the screen.",
+    body: "Tap Foyg to jot down whatever you want to work on.",
+    waiting: "Head back to Home and tap Foyg at the bottom of the screen.",
   },
   describe: {
     title: "Name your task",
     body: "Type what you want to work on, then tap “Confirm & Organize”.",
-    waiting: "Tap Ferne at the bottom of the screen to name your task.",
+    waiting: "Tap Foyg at the bottom of the screen to name your task.",
   },
   attachGoal: {
     title: "Count it toward your goal",

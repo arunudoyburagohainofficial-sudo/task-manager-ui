@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, freshAccount, phoneContext, test } from "../harness/fixtures";
 import { API, api as apiFor, uidOf, tokenFor } from "../harness/api";
-import { button, control, openTab, screenText, see, signIn, skipFirstRun, stats } from "../harness/app";
+import { button, control, dontSee, openTab, screenText, see, signIn, skipFirstRun, stats } from "../harness/app";
 import { db } from "../harness/db";
 
 /**
@@ -24,7 +24,9 @@ test("AUTH-01 · a new account lands on Home with its starter content, and nothi
   const acct = await freshAccount(browser);
   try {
     const { page } = acct;
-    await see(page, /GOALS \| 0% \| Learn Something New \| 0 of 20 days/);
+    // "Create a new goal" sits between the heading and the first card - the add control used
+    // to be a bare "+" and contributed no text at all.
+    await see(page, /GOALS \| Create a new goal \| 0% \| Learn Something New \| 0 of 20 days/);
     await see(page, "Try scheduling something");
     await see(page, "Try a focus session");
     expect(await stats(page)).toEqual({ streak: 0, points: 0, minutes: 0 });
@@ -115,10 +117,17 @@ test("AUTH-05 · a 401 doesn't strand the user in silence", async ({ browser }) 
 });
 
 /**
- * Phone sign-in is native-only, and on web it used to be offered anyway (fixed 2026-09-19).
- * Google stays on: the web build uses the browser's own OAuth flow, which is a real one.
+ * The screen offers only what it can actually do.
+ *
+ * Phone sign-in was offered on web and simply didn't work (fixed 2026-09-19 by disabling it,
+ * then taken off the screen entirely on 2026-11-04 — it needs a development build, so on every
+ * build anyone has used it was a dead control in the most prominent position on the first
+ * screen). The code is commented out in AuthScreen rather than deleted; this test is what will
+ * fail if it comes back before it works.
+ *
+ * Google stays: the web build uses the browser's own OAuth flow, which is a real one.
  */
-test("AUTH-06 · the sign-in options this build can't do explain themselves", async ({ browser }) => {
+test("AUTH-06 · the sign-in screen offers nothing this build can't do", async ({ browser }) => {
   const { context } = await phoneContext(browser);
   try {
     const page = await context.newPage();
@@ -126,9 +135,10 @@ test("AUTH-06 · the sign-in options this build can't do explain themselves", as
     await skipFirstRun(page);
     await page.goto("/");
     await see(page, "Continue as test user");
-    const phone = page.getByRole("button", { name: "Continue with phone" }).locator("visible=true").last();
-    await expect(phone).toHaveAttribute("aria-disabled", "true", { timeout: 2_000 });
-    await see(page, "Phone sign-in works in the app, not in a browser.");
+    await see(page, "Continue with Google");
+    // Gone, not merely disabled — along with the line that used to apologise for it.
+    await expect(page.getByRole("button", { name: "Continue with phone" })).toHaveCount(0);
+    await dontSee(page, /Phone sign-in works in the app/);
   } finally {
     await context.close();
   }

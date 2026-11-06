@@ -95,7 +95,7 @@ export function OnboardingScreenTimeScreen() {
       </View>
 
       <View style={s.footer}>
-        <Meta style={s.footnote}>Not sure? Ferne measures it once usage access is on.</Meta>
+        <Meta style={s.footnote}>Not sure? Foyg measures it once usage access is on.</Meta>
         <OnboardingAction
           label="Continue"
           onPress={() => {

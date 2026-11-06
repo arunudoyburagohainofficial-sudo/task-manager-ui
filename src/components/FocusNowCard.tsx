@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Animated, LayoutChangeEvent, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import type { FocusMode } from "../api/types";
+import type { FocusMode, GoalDto } from "../api/types";
 import { px, textAtDesignSize as ds, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { BottomSheet } from "./BottomSheet";
+import { GoalPickerSheet } from "./GoalPickerSheet";
 import { playSlideCommit } from "../utils/slideFeedback";
 import { hydrateSessionPosition, isSessionPositionHydrated, useSessionPosition } from "../utils/sessionPosition";
 
@@ -324,16 +325,31 @@ export interface FocusNowCardProps {
   /**
    * Step the slider back, because the screen already has work on it.
    *
-   * Filled, it is the loudest thing on Home - and it is the one control here that credits a
-   * sitting to nothing. Sliding it invents a task named after the clock, so somebody who meant
-   * to work on a task they can see, and reached for the big obvious bar instead, does the work
-   * and watches the goal it belonged to not move. Nothing says so at the time.
+   * Filled, it is the loudest thing on Home - and it is still the one control here that credits
+   * no *task*. Sliding it invents one named after the clock, so somebody who meant to work on a
+   * task they can see, and reached for the big obvious bar instead, finishes with that task
+   * untouched. The goal chip below covers the other half of that problem; nothing can make the
+   * sitting belong to a row the user never picked.
    *
    * So when there is a list, the list's own Focus buttons are the loud ones and this becomes an
    * outline: still a slider, still one motion, no longer the thing the eye lands on first. With
    * an empty list it stays filled, because then it genuinely is the only thing to do.
    */
   quiet?: boolean;
+  /**
+   * The goals a quick sitting can count toward. Empty hides the chip entirely — a control
+   * offering only "No goal" is a row of furniture.
+   */
+  goals?: GoalDto[];
+  /**
+   * Which of them *this* sitting will count toward, or null for none.
+   *
+   * Held for one sitting and then cleared by the owner, never remembered. Goal progress can
+   * never be taken back, so a selection that quietly survived into next week would credit work
+   * to a goal nobody chose that day.
+   */
+  goalId?: string | null;
+  onPickGoal?: (goalId: string | null) => void;
   /** Present while a session is running — the card becomes that session's timer. */
   running?: {
     sessionId: string;
@@ -365,11 +381,21 @@ export function FocusNowCard({
   onStart,
   starting = false,
   quiet = false,
+  goals = [],
+  goalId = null,
+  onPickGoal,
   running,
 }: FocusNowCardProps) {
   const t = useTheme();
   const s = useThemedStyles(makeStyles);
   const [open, setOpen] = useState(false);
+  const [goalOpen, setGoalOpen] = useState(false);
+  /*
+   * Resolved against the live list rather than trusted from the id. A goal can be deleted from
+   * the strip directly below this card while a pick is held, and sending a dead id would have
+   * the server refuse the task outright — losing the sitting to a row that no longer exists.
+   */
+  const pickedGoal = goalId ? goals.find((g) => g.id === goalId) ?? null : null;
 
   if (running) {
     return (
@@ -414,6 +440,72 @@ export function FocusNowCard({
       </View>
 
       <SlideToStart label={slideLabel(minutes, mode, cycles)} onCommit={onStart} starting={starting} quiet={quiet} />
+
+      {/*
+        Under the slider, not beside the length chip in the header. That chip already reads
+        "4 × 25 min · Pomodoro" at its longest, which leaves no room for a second one on a
+        320pt screen — and under the slider the card reads in the order the decision is made:
+        how long, start, what it counts toward.
+
+        Shown before the slide rather than asked for after it. Goal progress never decreases
+        (see the GoalDto contract), so a sitting credited to the wrong goal cannot be taken
+        back — which makes "what is this about to count toward" a thing to read, not a thing to
+        be told afterwards.
+      */}
+      {goals.length > 0 ? (
+        <Pressable
+          accessibilityRole="button"
+          /*
+           * One phrase in front of both states, so a test — or a screen reader user tabbing
+           * past it — finds the same control whether or not a goal is picked.
+           */
+          accessibilityLabel={
+            pickedGoal
+              ? `Goal for this session: ${pickedGoal.name}. Change it.`
+              : "Goal for this session: none. Select one."
+          }
+          onPress={() => setGoalOpen(true)}
+          style={s.chip}
+        >
+          {/*
+            Only once there is a goal to colour. Empty, the square said nothing and took the
+            room the sentence needed — and a value-shaped swatch in front of a prompt reads as
+            though something is already selected.
+          */}
+          {pickedGoal ? <View style={[s.goalSwatch, { backgroundColor: pickedGoal.color ?? t.color.goal }]} /> : null}
+          <Text
+            numberOfLines={1}
+            style={ds(T.meta, {
+              flex: 1,
+              fontSize: 13.5,
+              fontWeight: "700",
+              color: pickedGoal ? t.color.textBody : t.color.textMuted,
+            })}
+          >
+            {/*
+              An invitation, not a status. "Not counting toward a goal" was accurate and
+              useless - it described a state nobody chose, in a place where the only thing to
+              do about it is tap. The picked state stays a statement, because by then there is
+              something true worth reading before the slide.
+
+              "this session", not "focus sessions": the pick lasts one sitting and is gone
+              afterwards, and plural copy would promise a standing choice the card does not
+              keep. It also has to fit one line at 320pt - see VIS-11, which exists because the
+              first draft of this sentence silently truncated to "...focus sessi...".
+            */}
+            {pickedGoal ? `Counts toward ${pickedGoal.name}` : "Select a goal for this session"}
+          </Text>
+          <Text style={ds(T.meta, { fontSize: 12, color: t.color.textMuted })}>⌄</Text>
+        </Pressable>
+      ) : null}
+
+      <GoalPickerSheet
+        visible={goalOpen}
+        onClose={() => setGoalOpen(false)}
+        goals={goals}
+        selectedGoalId={pickedGoal?.id ?? null}
+        onSelect={(id) => onPickGoal?.(id)}
+      />
 
       {/*
         The picker was inline, and with rounds added it grew to three chip rows plus an
@@ -517,6 +609,9 @@ const makeStyles = (t: Tokens) =>
       paddingVertical: px(8),
     },
     chipOpen: { borderColor: t.surface.primary, backgroundColor: t.surface.chipSelBg },
+    // The same 12pt square GoalPickerSheet puts beside each goal, so the chip and the sheet it
+    // opens identify a goal the same way.
+    goalSwatch: { width: px(12), height: px(12), borderRadius: px(3) },
 
     sheetBody: { gap: px(12) },
     pickRow: { flexDirection: "row", gap: px(8) },

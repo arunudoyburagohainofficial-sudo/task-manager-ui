@@ -45,7 +45,7 @@ async function withTour(browser: import("@playwright/test").Browser, body: (page
 }
 
 async function createGoal(page: Page, name: string) {
-  await control(page, "New goal").click();
+  await control(page, "Create a new goal").click();
   await page.getByPlaceholder("e.g. Interview Prep").locator("visible=true").last().fill(name);
   await control(page, "Save").click();
 }
@@ -71,7 +71,7 @@ test("TOUR-02 · step 1 rings the + beside GOALS, and only creating a goal moves
   await withTour(browser, async (page) => {
     await tourSays(page, "1 of 5");
     const ring = (await ringBox(page))!;
-    expect(centreInside((await control(page, "New goal").boundingBox())!, ring)).toBe(true);
+    expect(centreInside((await control(page, "Create a new goal").boundingBox())!, ring)).toBe(true);
     // Editing the starter goal isn't creating one.
     await page.getByRole("button", { name: /^Learn Something New, / }).locator("visible=true").last().click({ force: true }).catch(() => undefined);
     await tourSays(page, "1 of 5");
