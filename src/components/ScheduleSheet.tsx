@@ -411,6 +411,15 @@ export function ScheduleSheet({
    * today is fine — the next occurrence fires — and painting that red taught users to ignore the
    * warnings that do matter. It's now a quiet line, or nothing.
    */
+  /**
+   * The lead times still on offer: the ones this task has a date for, minus the ones already
+   * set. Computed once so the heading above the row and the row itself cannot disagree about
+   * whether there is anything left to add.
+   */
+  const offeredLeadTimes = (hasDate ? LEAD_TIME_PRESETS : LEAD_TIME_PRESETS.slice(0, 1)).filter(
+    (preset) => !notifications.some((n) => n.daysBefore === preset.daysBefore)
+  );
+
   function noteFor(n: NotificationSpec): { text: string; bad: boolean } {
     switch (verdictFor(n)) {
       case "never":
@@ -437,11 +446,16 @@ export function ScheduleSheet({
         // Deliberately not an error: nothing is lost, it simply starts at the next occurrence.
         return { text: "Too late for this one - starts from the next.", bad: false };
       default:
+        // Undated keeps a note because it adds something the lead line doesn't: that it
+        // repeats until the task is finished.
         if (!hasDate) return { text: "Every day until you finish it.", bad: false };
-        return {
-          text: n.daysBefore === 0 ? "On the day." : `${n.daysBefore} day${n.daysBefore === 1 ? "" : "s"} before.`,
-          bad: false,
-        };
+        /*
+         * Nothing. A healthy dated notification already says when it lands, one line above,
+         * in leadLabel - and the note repeated it word for word, so the card read
+         * "On the day / On the day." The note is for what the lead line cannot say: a warning
+         * that will never fire, or one that starts from the next occurrence.
+         */
+        return { text: "", bad: false };
     }
   }
 
@@ -908,6 +922,12 @@ export function ScheduleSheet({
         {/* The time picker, shown for whichever row is being edited. */}
         {editingIndex !== null && notifications[editingIndex] ? (
           <>
+            {/*
+              Both of these rows were unlabelled. Four words in a row and then a large time in
+              a box are perfectly clear to whoever built them, and to a user they are two
+              unexplained controls - one of which looks like a readout rather than a button.
+            */}
+            <Meta style={styles.pickerLabel}>Common times</Meta>
             <View style={styles.subRow}>
               {TIME_PRESETS.map(({ label, hour }) => (
                 <PillChip
@@ -924,8 +944,14 @@ export function ScheduleSheet({
               ))}
             </View>
 
+            <Meta style={styles.pickerLabel}>Or choose your own time</Meta>
             {Platform.OS === "android" ? (
-              <Pressable accessibilityRole="button" onPress={openAndroidTimePicker} style={styles.androidTimeButton}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Choose your own time"
+                onPress={openAndroidTimePicker}
+                style={styles.androidTimeButton}
+              >
                 <Text style={t(T.h2, { color: theme.color.text })}>
                   {clockTime.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                 </Text>
@@ -947,11 +973,17 @@ export function ScheduleSheet({
 
         {/* Adding another. Lead-time options only make sense once there's a date to count
             back from, and only up to the per-task ceiling the server enforces. */}
-        {notifications.length < MAX_NOTIFICATIONS ? (
-          <View style={styles.addRow}>
-            {(hasDate ? LEAD_TIME_PRESETS : LEAD_TIME_PRESETS.slice(0, 1)).map((preset) => {
-              const taken = notifications.some((n) => n.daysBefore === preset.daysBefore);
-              if (taken) return null;
+        {notifications.length < MAX_NOTIFICATIONS && offeredLeadTimes.length > 0 ? (
+          <>
+            {/*
+              Only once something is already set. With nothing set the single button reads
+              "Notify me", which is its own label and does not want a heading over it.
+            */}
+            {notifications.length > 0 ? (
+              <Meta style={styles.pickerLabel}>Add an earlier reminder</Meta>
+            ) : null}
+            <View style={styles.addRow}>
+            {offeredLeadTimes.map((preset) => {
               return (
                 <Pressable
                   key={preset.daysBefore}
@@ -975,12 +1007,13 @@ export function ScheduleSheet({
                 </Pressable>
               );
             })}
-          </View>
-        ) : (
+            </View>
+          </>
+        ) : notifications.length >= MAX_NOTIFICATIONS ? (
           <Meta style={{ color: theme.color.textFaint }}>
             {MAX_NOTIFICATIONS} notifications is the limit for one task.
           </Meta>
-        )}
+        ) : null}
       </View>
 
       {onClear ? <Button label="Clear schedule" variant="destructiveText" onPress={onClear} /> : null}
@@ -1076,6 +1109,8 @@ const makeStyles = (t: Tokens) =>
       borderLeftColor: t.surface.rule,
       gap: space.card,
     },
+    /** Sits tight above the row it names, so the pair reads as one group. */
+    pickerLabel: { marginTop: space.base, marginBottom: 2 },
     subRow: {
       flexDirection: "row",
       alignItems: "center",

@@ -547,10 +547,18 @@ export function FocusNowCard({
               : `One unbroken stretch of ${minutes} min`}
           </Text>
 
-          {/* Adjust and go, without closing the sheet first. */}
+          {/*
+            Adjust and go, without closing the sheet first.
+
+            Takes the card's own `quiet` rather than always being filled. The sheet slides up
+            over Home and stops short of the card, so both sliders are on screen at once - and
+            drawn differently they read as two different controls rather than the same one
+            twice. Whatever the card is wearing, this wears.
+          */}
           <SlideToStart
             label={slideLabel(minutes, mode, cycles)}
             starting={starting}
+            quiet={quiet}
             onCommit={() => {
               setOpen(false);
               onStart();

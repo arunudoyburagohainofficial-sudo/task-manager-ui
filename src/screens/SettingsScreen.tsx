@@ -6,6 +6,7 @@ import type { RootStackParamList } from "../navigation/types";
 import { usersApi } from "../api";
 import { syncReminders } from "../notifications/useReminderSync";
 import { isShieldSupported } from "../../modules/focus-shield";
+import { EXACT_ALARMS_ARE_A_THING, openExactAlarmSettings } from "../notifications/exactAlarms";
 import { ApiError } from "../api/client";
 import {
   ActionPill,
@@ -182,6 +183,23 @@ export function SettingsScreen() {
    * local half stays saved, the goal draft keeps the value the user asked for, and the
    * section stays dirty — so the Save button is still there to retry with.
    */
+  /**
+   * Opens Android's "Alarms & reminders" screen, or says plainly that it couldn't.
+   *
+   * No success message. If the screen opens, the user is looking at it and does not need to
+   * be told; and because the app cannot read the permission back (see exactAlarms.ts), any
+   * "done!" afterwards would be a claim rather than a fact.
+   */
+  async function handleOpenExactAlarmSettings() {
+    const opened = await openExactAlarmSettings();
+    if (!opened) {
+      Alert.alert(
+        "Couldn't open that screen",
+        "Look for Alarms & reminders under Special app access in Android's settings, and make sure FOYG is allowed."
+      );
+    }
+  }
+
   async function handleSavePreferences() {
     if (!user || savingPreferences) return;
     setSavingPreferences(true);
@@ -299,6 +317,28 @@ export function SettingsScreen() {
             onPress={() => navigation.navigate("ScheduledNotifications")}
             right={<Text style={ds(T.body, { color: theme.surface.chevron })}>›</Text>}
           />
+          {/*
+            A route, not a diagnosis.
+
+            Android will only ring a reminder at the exact minute if the app holds permission
+            to; without it the alarm is batched and can arrive an hour late, which is what a
+            9:45 reminder turning up at 10:15 is. app.json declares both permissions that grant
+            it, and on a current phone one of them is given on install - so for almost everyone
+            this row has nothing to fix.
+
+            It is here for the two cases that leaves: an Android 12 or 13 phone where the user
+            revoked it, and the day Google ever objects to the second permission and it has to
+            come out. The app cannot read the current state to tell the two apart (the version
+            of expo-notifications that SDK 54 pins exposes no such API), so the row never claims
+            anything is wrong - it offers the screen and lets the user see for themselves.
+          */}
+          {EXACT_ALARMS_ARE_A_THING ? (
+            <PanelRow
+              label="Reminder timing"
+              onPress={handleOpenExactAlarmSettings}
+              right={<Text style={ds(T.body, { color: theme.surface.chevron })}>›</Text>}
+            />
+          ) : null}
           <PanelRow
             label="Default focus duration"
             pending={focusDirty}

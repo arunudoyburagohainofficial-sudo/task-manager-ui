@@ -3,6 +3,7 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../harness/fixtures";
 import type { Api } from "../harness/api";
 import { button, control, dateKey, exact, openTab, reload, see } from "../harness/app";
+import { openSchedule, seedAndOpen, sheetButton } from "../harness/sheet";
 import { db } from "../harness/db";
 
 /**
@@ -331,6 +332,70 @@ test.describe("baselines", () => {
     await see(page, "Task complete");
     await shot(page, "vis-10-completion.png");
     expect(userId).toBeTruthy();
+  });
+
+  /**
+   * Both sliders at once, which is the only way to see that they match.
+   *
+   * The card's slide-to-focus is outlined once Home has a list, so the list's own Focus
+   * buttons are the loud ones. The sheet carries a second copy of the same control, and it
+   * was always filled - the sheet stops short of the card, so the two sat on screen together
+   * in different clothes and read as two different buttons.
+   */
+  test("VIS-13 · the sheet's slider is dressed like the card's", async ({ app }) => {
+    const { page, api } = app;
+    await api.task({ name: "Something to do", taskType: "reminder" });
+    await reload(page);
+    await control(page, /^Session length and mode/).click();
+    await see(page, /How long\?/);
+    await page.waitForTimeout(600);
+    await expect(page).toHaveScreenshot("vis-13-both-sliders.png", {
+      mask: [page.getByText(/^Good (morning|afternoon|evening),/), page.getByText(/^User_/i)],
+      maxDiffPixelRatio: 0.01,
+      animations: "disabled",
+    });
+  });
+
+  /**
+   * The Notify me editor, with a notification open for editing.
+   *
+   * It had no visual coverage at all, and it is the densest part of the sheet: a notification
+   * card, a row of time presets, a time button and the add row, four controls deep. Two of
+   * them carried no label until now - four words in a row, then a large time in a box - and
+   * the card printed "On the day" twice, once from the lead line and once from a note saying
+   * the same thing.
+   *
+   * The gap under "Or choose your own time" in this baseline is the web build, not a bug: the
+   * native time picker renders nothing in react-native-web (see harness/sheet.ts), so on a
+   * phone the button sits there and here it does not.
+   */
+  test("VIS-12 · the notify editor labels what each control is for", async ({ app }) => {
+    const { page, api } = app;
+    // seedAndOpen rather than a bare task + reload: ten days out puts it on Scheduled, not
+    // Home, and the helper already knows to go and find it there.
+    await seedAndOpen(page, api, { name: "Warned task", scheduledFor: dateKey(10) });
+    await openSchedule(page, "Warned task");
+    await sheetButton(page, "Notify me").click();
+    await see(page, "Common times");
+    await see(page, "Or choose your own time");
+    /*
+     * Scrolled to the foot of the sheet first. The editor is four controls deep and the last
+     * two sit below the fold on a 375-tall viewport, so an unscrolled shot would frame exactly
+     * the half that already had labels.
+     */
+    await see(page, "Add an earlier reminder");
+    await page.mouse.move(187, 600);
+    await page.mouse.wheel(0, 400);
+    await page.waitForTimeout(500);
+    // Anchored on a label this test just asserted exists, rather than on the section eyebrow -
+    // "NOTIFY ME" is drawn with letter-spacing and does not match as exact text.
+    const anchor = page.getByText("Common times", { exact: true }).locator("visible=true").last();
+    const box = (await anchor.boundingBox())!;
+    await page.waitForTimeout(600);
+    await expect(page).toHaveScreenshot("vis-12-notify-editor.png", {
+      clip: { x: 0, y: Math.max(0, box.y - 150), width: 375, height: 430 },
+      animations: "disabled",
+    });
   });
 
   /**
