@@ -1,0 +1,43 @@
+# The fast gate. Runs on every push and every pull request.
+#
+# Only the checks that need nothing but this repository: a typecheck, and the scheduling
+# arithmetic, which talks to no server and no browser. Both finish in well under a minute, so
+# there is no reason for them not to run on everything.
+#
+# The suite that drives the real app lives in full-suite.yml, because it needs Postgres, the
+# backend, Metro and real Firebase tokens, and takes half an hour.
+name: check
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  typecheck-and-logic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # `npm ci` rather than `npm install`: it installs exactly what package-lock.json pins and
+      # fails if the two have drifted, which is the whole point of having a lock file in CI.
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # The browsers are only needed for the Playwright runner itself; the `logic` project opens
+      # no page. --with-deps because a bare runner has none of Chromium's shared libraries.
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Scheduling arithmetic
+        run: npx playwright test --config=e2e/playwright.config.ts --project=logic

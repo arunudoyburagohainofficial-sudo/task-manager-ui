@@ -76,3 +76,9 @@ handoffs
 
 # Junk from a script that resolved its output path to the literal string "undefined".
 /undefined/
+
+# The Google Play service account EAS Submit uploads with. A real credential: it can publish
+# releases to your listing. Never commit it - in CI it arrives as a secret and is written to
+# this path at run time, then thrown away with the runner.
+play-service-account.json
+*play-service-account*.json

@@ -1,0 +1,76 @@
+# Build the store artifact, and optionally send it to Play.
+#
+# Deliberately manual. Nothing here fires on a push: a release is a decision, and the one thing
+# worse than a slow release is one that happened because somebody merged.
+#
+# Building and submitting are two separate answers on the same form. The default is to build
+# only, so you can take the .aab, look at it, install it, and come back to submit the same
+# build rather than a rebuilt one.
+#
+# Secrets this needs, set under Settings > Secrets and variables > Actions:
+#
+#   EXPO_TOKEN                   a robot access token from expo.dev > Account > Access tokens.
+#                                A robot, not a personal token, so revoking it costs nothing.
+#   PLAY_SERVICE_ACCOUNT_JSON    the whole JSON key for a Google Play service account that has
+#                                "Release to testing tracks" on this app. Only needed to submit.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: "Also upload to Play (internal track, as a draft)"
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # The same gate check.yml runs. Repeated here rather than assumed, because this job can be
+      # started from any branch and a release must not be the first time these are run.
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Scheduling arithmetic
+        run: npx playwright test --config=e2e/playwright.config.ts --project=logic
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # --wait, so the job's result is the build's result. Without it the workflow goes green
+      # the moment the build is queued, which tells you nothing.
+      - name: Build the app bundle
+        run: eas build --platform android --profile production --non-interactive --wait
+
+      # Written from the secret and never committed; .gitignore refuses the path anyway. The
+      # runner is destroyed afterwards, so there is nothing to clean up.
+      - name: Write the Play service account key
+        if: ${{ inputs.submit }}
+        run: printf '%s' '${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}' > play-service-account.json
+
+      # --latest picks the build this job just made. It lands as a draft on the internal track,
+      # so Play has it but nothing is live until you press the button in the console.
+      - name: Submit to Play
+        if: ${{ inputs.submit }}
+        run: eas submit --platform android --profile production --latest --non-interactive
+
+      - name: Shred the key
+        if: ${{ always() && inputs.submit }}
+        run: rm -f play-service-account.json
