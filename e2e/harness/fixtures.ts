@@ -1,6 +1,6 @@
 import { chromium, expect, test as base, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { api, tokenFor, uidOf, type Api } from "./api";
-import { openApp, reload } from "./app";
+import { openApp, reload, untilHomeIsCurrent } from "./app";
 import { db } from "./db";
 
 /**
@@ -87,8 +87,7 @@ export async function sameAccountIn(app: App, timezoneId: string): Promise<{ pag
   const storageState = await app.context.storageState({ indexedDB: true });
   const { context, assertLocal } = await phoneContext(browser, timezoneId, { storageState });
   const page = await context.newPage();
-  await page.goto("/");
-  await expect(page.getByText("TO DO").first()).toBeVisible({ timeout: 60_000 });
+  await untilHomeIsCurrent(page, () => page.goto("/"));
   assertLocal();
   return { page, close: () => context.close() };
 }

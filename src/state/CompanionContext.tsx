@@ -19,7 +19,7 @@ interface CompanionSettings {
  * worth keeping for whenever a tone control comes back.
  */
 const COMPANION: CompanionSettings = {
-  name: "Fern",
+  name: "Foyg",
   tone: "gentle",
 };
 

@@ -68,7 +68,7 @@ async function finishOnboarding(page: Page) {
 test.describe("before an account exists", () => {
   test("ONBOARD-01 · a new install opens on Ferne's welcome, not the sign-in screen", async ({ browser }) => {
     await freshInstall(browser, async (page) => {
-      await see(page, "Hi, I’m Fern. I’ll help you focus and keep your phone away.");
+      await see(page, "Hi, I’m Foyg. I’ll help you focus and keep your phone away.");
       await see(page, "Get started");
       await see(page, "I already have an account");
       // The sign-in screen is behind it, not instead of it.

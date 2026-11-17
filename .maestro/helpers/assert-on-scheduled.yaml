@@ -3,16 +3,18 @@
 #
 # env:
 #   TITLE    the task's name
-#   SECTION  "OVERDUE" | "RECURRING" | "UPCOMING" | "none"
+#   SECTION  "OVERDUE" | "RECURRING" | "UPCOMING" | "ANYTIME" | "none"
 #
 # The section headings are rendered uppercase (schedulePanels.tsx). "none" is the interesting case:
-# an undated or today-dated one-off belongs on Home and must appear nowhere here.
+# a one-off dated today belongs on Home and must appear nowhere here. An undated task is no
+# longer a "none": it is listed under ANYTIME (ScheduledScreen.tsx, the fourth panel).
 #
 # Placement rules this encodes, from src/screens/ScheduledScreen.tsx:131-173 — the screen splits on
 # recurrence FIRST:
 #   recurrenceRule != null  -> RECURRING, and nowhere else on this screen
 #   else overdue            -> OVERDUE
 #   else upcoming           -> UPCOMING
+#   else no date at all     -> ANYTIME
 # A late repeating task therefore stays under RECURRING with an "N late" note and is deliberately
 # NOT counted in OVERDUE. That is the row most easily regressed, and the reason this helper checks
 # the section rather than merely "is it on this screen somewhere".

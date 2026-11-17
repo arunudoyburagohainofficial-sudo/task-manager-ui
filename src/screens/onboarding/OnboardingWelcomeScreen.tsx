@@ -19,7 +19,7 @@ export function OnboardingWelcomeScreen() {
         <View>
           <View style={s.bubble}>
             <Text style={s.bubbleInk}>
-              Hi, I’m Fern. I’ll help you <Text style={[s.bubbleInk, s.accent]}>focus</Text> and keep your phone away.
+              Hi, I’m Foyg. I’ll help you <Text style={[s.bubbleInk, s.accent]}>focus</Text> and keep your phone away.
             </Text>
           </View>
           {/* The tail is a rotated square poking out of the bubble's bottom edge. */}

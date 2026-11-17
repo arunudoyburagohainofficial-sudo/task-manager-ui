@@ -7,15 +7,15 @@ import { useThemedStyles, type Tokens } from "../state/ThemeContext";
 const ROWS = [
   {
     title: "Usage access",
-    body: "Sees which apps you open and for how long, so Fern can suggest what to pause.",
+    body: "Sees which apps you open and for how long, so Foyg can suggest what to pause.",
   },
   {
     title: "Do Not Disturb",
-    body: "Lets Fern silence your phone for the length of a session, and hand it back after.",
+    body: "Lets Foyg silence your phone for the length of a session, and hand it back after.",
   },
   {
     title: "Display over other apps",
-    body: "Shows Fern’s pause screen on top of a paused app.",
+    body: "Shows Foyg’s pause screen on top of a paused app.",
   },
 ];
 

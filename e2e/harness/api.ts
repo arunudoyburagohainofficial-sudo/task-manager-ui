@@ -138,7 +138,20 @@ export function api(token: string, zone: string = ZONE) {
       const open = await self.currentSession();
       if (open) await self.discardSession(open.id).catch(() => undefined);
       for (const status of ["pending", "completed"] as const) {
-        for (const task of await self.tasks(status)) await self.remove(task.id).catch(() => undefined);
+        /*
+         * Asked again until the list comes back empty, rather than once.
+         *
+         * The server answers one request with at most a ceiling's worth - 1,000 outstanding
+         * tasks, 200 finished ones - so a single pass over a longer list left its tail behind.
+         * RES-20 seeds 1,050, and the fifty a single pass missed were sitting in the next
+         * test's account: A11Y-01 ran with fifty rows it had not made. Bounded, so a task
+         * the server refuses to delete cannot spin this for ever.
+         */
+        for (let pass = 0; pass < 12; pass++) {
+          const batch = await self.tasks(status);
+          if (batch.length === 0) break;
+          for (const task of batch) await self.remove(task.id).catch(() => undefined);
+        }
       }
       for (const goal of await self.goals()) await self.removeGoal(goal.id).catch(() => undefined);
     },

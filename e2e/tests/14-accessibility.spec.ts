@@ -279,9 +279,13 @@ test("A11Y-07 · the known contrast gap is the only one", async ({ app }) => {
 test("A11Y-08 · long content never hides the primary action", async ({ app }) => {
   const { page, api } = app;
   const goal = await api.goal("A goal whose name goes on for rather a long time", 20);
-  await api.task({ name: "A task whose name goes on and on and on for well over a line or two of text", goalId: goal.id });
-  for (let i = 1; i <= 20; i++) await api.task({ name: `Filler ${i}`, taskType: "reminder" });
+  // All given today's date. Home shows only the newest five of the tasks that have no day, so
+  // twenty-one undated ones would leave this row off Home altogether; TO DO is the list that
+  // has no ceiling, and so the one that can actually grow long.
+  await api.task({ name: "A task whose name goes on and on and on for well over a line or two of text", goalId: goal.id, scheduledFor: dateKey(0) });
+  for (let i = 1; i <= 20; i++) await api.task({ name: `Filler ${i}`, taskType: "reminder", scheduledFor: dateKey(0) });
   await reload(page);
+  await see(page, /TO DO \| 21 \|/);
   const focus = control(page, "Focus: A task whose name goes on and on and on for well over a line or two of text");
   // It's at the far end of a list that only renders what's near the screen — scroll to it.
   for (let i = 0; i < 20 && !(await focus.count()); i++) {

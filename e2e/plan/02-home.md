@@ -177,3 +177,63 @@ Rebuilt 2026-09-16 from the Docked Ferne design; the visual side is in
   - **Proves:** morning / afternoon / evening, and the date line reads "Wednesday 26 August" in
     that order regardless of locale.
   - **Why:** the date format is assembled by hand precisely so the phone's region can't reorder it.
+
+## The four sections (added 2026-11-16)
+
+Home stopped being one list. It is TO DO (dated today), OVERDUE (a one-off whose day has passed,
+three shown), ANYTIME (no day at all, the newest five shown) and DONE. The entries below are the
+ones that came with that change, and with the pre-release pass that followed it.
+
+- [ ] **HOME-30 — An overdue row says how late it is, and says it in red**
+  - **Does:** a one-off whose day was moved nine days into the past, beside one due today.
+  - **Proves:** the late row reads "was due" and its date, in the danger colour, in place of its
+    clock time; the one for today still reads as today.
+  - **Why:** the row used to print the same line as a task due today, so nine days late and due
+    in an hour looked identical.
+
+- [ ] **HOME-31 — Overdue is its own section, capped, with the rest on Scheduled**
+  - **Does:** five late tasks and two for today.
+  - **Proves:** the late ones are under OVERDUE and not mixed into TO DO; three are drawn; the
+    heading still counts all five; a line names how many more are on Scheduled.
+  - **Why:** mixed into one list, the backlog buries today's work. Uncapped, it pushes it off the
+    screen.
+
+- [ ] **HOME-32 — Undated work is its own section, capped, and says how long it has waited**
+  - **Does:** seven undated tasks, plus one made to look five weeks old.
+  - **Proves:** five rows, newest first, the count showing all of them, and "added 5 weeks ago" on
+    the old one.
+  - **Why:** capture makes every task undated and nothing ever ages one out, so this is the
+    section that grows for ever if nothing holds it.
+
+- [ ] **HOME-33 — An undated row keeps what it said about itself, and adds its age to it**
+  - **Does:** an old focus task, an old goal task and an old timed reminder, plus a new focus task.
+  - **Proves:** each row still shows its session length, goal name or hour, with the age after it,
+    on Home and on Scheduled.
+  - **Why:** the age label first arrived as a replacement for that line, which took the detail
+    off most rows in a real account. **Seen to fail** against that version.
+
+- [ ] **HOME-34 — TO DO's empty line never says there is nothing to do while other sections have work**
+  - **Does:** every combination of overdue work, undated work and finished work, with TO DO empty.
+  - **Proves:** the line under TO DO is chosen from what the other sections hold.
+  - **Why:** "Nothing to do yet" printed directly above five undated tasks told the person their
+    captures had not counted. **Seen to fail** before the fix.
+
+- [ ] **HOME-35 — The closing line stays away while a section is hiding rows**
+  - **Does:** exactly five undated tasks, then a sixth.
+  - **Proves:** "That's everything for today" shows at five and is gone at six.
+  - **Why:** it used to sit directly under "1 more in Scheduled", two lines disagreeing with each
+    other. **Seen to fail** before the fix.
+
+- [ ] **HOME-36 — ANYTIME and OVERDUE fold on their own, count kept, footer gone with the rows**
+  - **Does:** fold and unfold each of the two capped sections.
+  - **Proves:** the heading keeps its count while folded, and the "N more in Scheduled" line
+    leaves with the rows.
+  - **Why:** a link to the rest of a list that is not showing reads as belonging to the section
+    above it.
+
+- [ ] **HOME-37 — The "more in Scheduled" line at the very bottom can be tapped, and leads to the rest**
+  - **Does:** enough tasks that ANYTIME's link is the last thing on the screen; scroll to it and
+    tap it.
+  - **Proves:** the docked capture button does not cover it, and it opens Scheduled.
+  - **Why:** it is the only way from Home to the rest of the list, and it lands exactly where the
+    capture button sits.

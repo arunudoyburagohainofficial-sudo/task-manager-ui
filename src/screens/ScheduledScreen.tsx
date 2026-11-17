@@ -25,14 +25,14 @@ import {
 import { RepeatIcon } from "../components/icons";
 import { space, text as t, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
-import { syncReminders } from "../notifications/useReminderSync";
+import { syncReminders, withReminderSyncHeld } from "../notifications/useReminderSync";
 import { useToast } from "../state/ToastContext";
 import { usePreferences } from "../state/PreferencesContext";
 import { useGoalsQuery } from "../api/queries/useGoals";
 import { POINTS_PER_MINUTE, REMINDER_POINTS } from "../utils/points";
-import { formatClockTime } from "../utils/format";
+import { formatAge, formatClockTime } from "../utils/format";
 import { recurrenceShortLabel } from "../utils/recurrence";
-import { bucketFor, formatScheduleDate, groupByScheduledDate, todayKey } from "../utils/schedule";
+import { bucketFor, formatScheduleDate, groupByScheduledDate, newestFirst, todayKey } from "../utils/schedule";
 import { useTodayKey } from "../utils/useTodayKey";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -41,12 +41,27 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 /**
  * How many overdue rows show before the panel folds the rest behind "N more".
  *
- * Overdue is the one section here that grows without bound — nothing pushes a missed task
- * back off the list the way a passing day moves an upcoming one along — so it's the only
- * one that needs a cap. Recurring is naturally bounded by how many routines a person keeps,
- * and Upcoming spreads itself across date headings rather than piling up in one column.
+ * Overdue grows without bound — nothing pushes a missed task back off the list the way a
+ * passing day moves an upcoming one along — so it needs a cap. Recurring is naturally bounded
+ * by how many routines a person keeps, and Upcoming spreads itself across date headings rather
+ * than piling up in one column.
  */
 const OVERDUE_PREVIEW = 5;
+
+/**
+ * The same for Anytime, which is the other list here that only grows.
+ *
+ * An undated task has no day to arrive on, so it stays until somebody deals with it, and this
+ * is a plain scrolling screen: every row shown is a row drawn. With the list unfolded, opening
+ * the tab on a backlog of a thousand drew thirteen thousand page elements where Home, which
+ * only draws what is near the screen, stays at about three hundred and fifty.
+ *
+ * Thirty rather than Overdue's five because this is where Home's "N more in Scheduled" leads:
+ * somebody arriving from there has already seen five and came for the rest, so the fold has to
+ * sit well past what they left. It is also the last thing on the screen, so a long list here
+ * pushes nothing else down.
+ */
+const ANYTIME_PREVIEW = 30;
 
 /**
  * Everything that isn't today's work: what slipped, what repeats, and what's booked ahead.
@@ -61,6 +76,7 @@ export function ScheduledScreen() {
   const navigation = useNavigation<Nav>();
   const [refreshing, setRefreshing] = useState(false);
   const [overdueExpanded, setOverdueExpanded] = useState(false);
+  const [anytimeExpanded, setAnytimeExpanded] = useState(false);
 
   const tasksQuery = useTasksQuery("pending");
   const remindersQuery = useRemindersQuery();
@@ -193,7 +209,7 @@ export function ScheduledScreen() {
   // One "today" for the whole pass, and re-derived when the day actually rolls over — so the
   // panels move a task from Upcoming to Overdue on their own rather than at the next refetch.
   const today = useTodayKey();
-  const { overdue, recurring, lateRecurring, upcomingGroups, upcomingCount } = useMemo(() => {
+  const { overdue, recurring, lateRecurring, anytime, upcomingGroups, upcomingCount } = useMemo(() => {
     const pending = tasksQuery.data ?? [];
 
     /**
@@ -213,6 +229,20 @@ export function ScheduledScreen() {
       .sort((a, b) => (a.scheduledFor! < b.scheduledFor! ? 1 : -1));
 
     const upcoming = oneOff.filter((task) => bucketFor(task, today) === "upcoming");
+
+    /*
+     * Everything captured without a day.
+     *
+     * These had no home but Home: bucketFor reads a null date as "today", so they were in
+     * neither Overdue nor Upcoming and this screen never showed them at all. That was tolerable
+     * while Home listed every one of them, and stopped being so once Home capped the list -
+     * "N more in Scheduled" has to lead somewhere that actually has them.
+     *
+     * Newest first, in the same order Home draws its five (see newestFirst), so the rows Home
+     * shows are the top of this list and "N more" continues from where Home stopped. Each row
+     * carries its own age so the old ones say so rather than just sinking.
+     */
+    const anytime = oneOff.filter((task) => task.scheduledFor == null).sort(newestFirst);
 
     // Soonest next occurrence first — the routine you'll hit again first reads first.
     const repeatsSorted = [...repeats].sort((a, b) => {
@@ -236,6 +266,7 @@ export function ScheduledScreen() {
       overdue: overdueTasks,
       recurring: repeatsSorted,
       lateRecurring,
+      anytime,
       upcomingGroups: groupByScheduledDate(upcoming),
       upcomingCount: upcoming.length,
     };
@@ -265,18 +296,22 @@ export function ScheduledScreen() {
     let moved = 0;
     let silenced = 0;
     try {
-      for (const task of overdue) {
-        await updateTaskMutation.mutateAsync({
-          taskId: task.id,
-          request: { scheduledFor: targetDay },
-        });
-        moved += 1;
-        // The whole set, judged against the day it just moved to rather than the day it came
-        // from. Counted by the shared helper so this can't drift from how the sheet judges the
-        // same thing.
-        silenced += countUnfireable(remindersByTaskId.get(task.id) ?? [], targetDay);
-      }
-      await syncReminders();
+      // One sync for the whole move, after the last task, whether or not it got that far: a
+      // move that failed half-way has still re-dated the first half, and their notifications
+      // have to follow them.
+      await withReminderSyncHeld(async () => {
+        for (const task of overdue) {
+          await updateTaskMutation.mutateAsync({
+            taskId: task.id,
+            request: { scheduledFor: targetDay },
+          });
+          moved += 1;
+          // The whole set, judged against the day it just moved to rather than the day it came
+          // from. Counted by the shared helper so this can't drift from how the sheet judges
+          // the same thing.
+          silenced += countUnfireable(remindersByTaskId.get(task.id) ?? [], targetDay);
+        }
+      });
       showToast({
         message:
           `Moved ${moved} task${moved === 1 ? "" : "s"} to today` +
@@ -309,12 +344,18 @@ export function ScheduledScreen() {
     setClearingAll(true);
     let removed = 0;
     try {
-      for (const task of overdue) {
-        await deleteTaskMutation.mutateAsync(task.id);
-        removed += 1;
-      }
-      // Their notifications go with them, and the device's queue is rebuilt from what is left.
-      await syncReminders();
+      /*
+       * Their notifications go with them, and the device's queue is rebuilt from what is left -
+       * once, at the end. Each delete asks for a rebuild of its own, which is right for one
+       * task and was four requests per task here: sixty overdue tasks made about 240 requests,
+       * and the server, which allows 200 a minute, began refusing the deletes themselves.
+       */
+      await withReminderSyncHeld(async () => {
+        for (const task of overdue) {
+          await deleteTaskMutation.mutateAsync(task.id);
+          removed += 1;
+        }
+      });
       showToast({ message: `Deleted ${removed} overdue task${removed === 1 ? "" : "s"}` });
     } catch (err) {
       showToast({ tone: "error", message: `Couldn't delete everything - ${failureHint(err)}` });
@@ -360,7 +401,9 @@ export function ScheduledScreen() {
 
   const visibleOverdue = overdueExpanded ? overdue : overdue.slice(0, OVERDUE_PREVIEW);
   const hiddenOverdue = overdue.length - visibleOverdue.length;
-  const isEmpty = overdue.length === 0 && recurring.length === 0 && upcomingCount === 0;
+  const visibleAnytime = anytimeExpanded ? anytime : anytime.slice(0, ANYTIME_PREVIEW);
+  const hiddenAnytime = anytime.length - visibleAnytime.length;
+  const isEmpty = overdue.length === 0 && recurring.length === 0 && upcomingCount === 0 && anytime.length === 0;
 
   return (
     <ScreenContainer>
@@ -542,6 +585,76 @@ export function ScheduledScreen() {
             ))}
           </>
         ) : null}
+
+        {/*
+          Last, and unboxed like Upcoming.
+
+          Last because nothing here is due: a task with no day cannot be late and cannot be
+          next, so putting it above either would be claiming an urgency the user declined to
+          give it. It is the pile you dip into, not the pile that is coming at you.
+
+          Every row says how long it has been sitting, which is the whole reason this section
+          is worth having - Home shows only the newest few, and the old ones were sinking out
+          of sight with nothing to say for themselves.
+        */}
+        {anytime.length > 0 ? (
+          <>
+            <View style={styles.upcomingHeader}>
+              <Text style={t(T.eyebrow, { fontSize: 11, letterSpacing: 1.32, color: theme.color.textMuted })}>
+                ANYTIME
+              </Text>
+              <View style={styles.upcomingBadge}>
+                <Text style={t(T.badge, { fontSize: 11, letterSpacing: 0, color: theme.schedulePanel.neutral.badgeFg })}>
+                  {anytime.length}
+                </Text>
+              </View>
+              <View style={styles.upcomingRule} />
+            </View>
+            <View style={styles.dateGroupRows}>
+              {visibleAnytime.map((task) => {
+                const goal = task.goalId ? goalsById.get(task.goalId) : undefined;
+                const notifyTime = displayReminder(task.id)?.reminderTime ?? undefined;
+                /*
+                 * A plain "task" when it has no day and nothing to announce - the one kind
+                 * rowKindOf never returns, because every other row on this screen has a date.
+                 * These are the same rows Home lists under ANYTIME, and the same task reading
+                 * "Task" there and "Reminder" here looked like two different things.
+                 */
+                const kind: HomeRowKind =
+                  goal || task.taskType === "focus" || notifyTime ? rowKindOf(task, goal) : "task";
+                // What the row says on Home, then how long it has waited: the goal, the
+                // session length or the hour it rings at is still true without a day.
+                const detail =
+                  [rowDetailOf(kind, goal, notifyTime), formatAge(task.createdAt)].filter(Boolean).join(" · ") || null;
+                return (
+                  <HomeTaskRow
+                    key={task.id}
+                    kind={kind}
+                    title={task.name}
+                    detail={detail}
+                    points={task.taskType === "focus" ? defaultFocusDurationMinutes * POINTS_PER_MINUTE : REMINDER_POINTS}
+                    showPoints={false}
+                    actionLabel="Cancel"
+                    actionTone="quiet"
+                    onPress={() => openTask(task.id)}
+                    onAction={() => setCancelTarget(task)}
+                  />
+                );
+              })}
+            </View>
+            {/* The heading above still counts all of them; this is only how many are drawn. */}
+            {hiddenAnytime > 0 ? (
+              <View style={styles.anytimeMore}>
+                <ShowMoreButton
+                  remaining={hiddenAnytime}
+                  what="anytime tasks"
+                  tone="neutral"
+                  onPress={() => setAnytimeExpanded(true)}
+                />
+              </View>
+            ) : null}
+          </>
+        ) : null}
       </ScrollView>
 
       <ConfirmModal
@@ -602,6 +715,15 @@ const makeStyles = (t: Tokens) =>
       paddingTop: space.sm,
       paddingBottom: 24,
       flexGrow: 1,
+    },
+    /*
+     * Room under the Anytime expander. It is centred and it is the last thing on the screen,
+     * which is exactly where the docked mascot rises out of the tab bar: with only the page's
+     * own bottom padding the pill came to rest touching her circle, on the one control the
+     * reader had scrolled down here to press.
+     */
+    anytimeMore: {
+      paddingBottom: 28,
     },
     title: {
       marginBottom: 12,

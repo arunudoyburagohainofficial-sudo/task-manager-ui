@@ -118,22 +118,40 @@ export function ClearAllOverdueButton({ count, onPress }: { count: number; onPre
   );
 }
 
-/** The Overdue panel's expander. Named with the remaining count so the tap is a known quantity. */
-export function ShowMoreButton({ remaining, onPress }: { remaining: number; onPress: () => void }) {
+/**
+ * The expander under a folded list. Named with the remaining count so the tap is a known quantity.
+ *
+ * Overdue's by default, which is where it started. Anytime folds too now, and it sits on the
+ * plain page rather than inside the tinted Overdue panel, so `tone` gives it the neutral border
+ * and ink the Recurring panel uses - a terracotta pill there read as a second Overdue.
+ */
+export function ShowMoreButton({
+  remaining,
+  onPress,
+  what = "overdue tasks",
+  tone = "overdue",
+}: {
+  remaining: number;
+  onPress: () => void;
+  /** What the hidden rows are, for the spoken label: "Show 12 more overdue tasks". */
+  what?: string;
+  tone?: "overdue" | "neutral";
+}) {
   const theme = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const ink = tone === "neutral" ? theme.schedulePanel.neutral.label : theme.schedulePanel.overdue.moreText;
   return (
     <View style={styles.moreWrap}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Show ${remaining} more overdue tasks`}
+        accessibilityLabel={`Show ${remaining} more ${what}`}
         onPress={onPress}
-        style={styles.morePill}
+        style={[styles.morePill, tone === "neutral" && styles.morePillNeutral]}
       >
-        <Text style={t(T.meta, { fontSize: 12, fontWeight: "800", color: theme.schedulePanel.overdue.moreText })}>
+        <Text style={t(T.meta, { fontSize: 12, fontWeight: "800", color: ink })}>
           {remaining} more
         </Text>
-        <ChevronDownIcon />
+        <ChevronDownIcon color={ink} />
       </Pressable>
     </View>
   );
@@ -225,6 +243,9 @@ const makeStyles = (t: Tokens) =>
       paddingVertical: 7,
       paddingHorizontal: 14,
       boxShadow: [{ offsetX: 0, offsetY: 3, blurRadius: 8, spreadDistance: -5, color: "rgba(140,80,55,.45)" }],
+    },
+    morePillNeutral: {
+      borderColor: t.schedulePanel.neutral.border,
     },
     dateHeading: {
       flexDirection: "row",

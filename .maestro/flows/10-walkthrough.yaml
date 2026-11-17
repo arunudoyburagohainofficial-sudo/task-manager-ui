@@ -43,7 +43,8 @@ tags:
     timeout: 30000
 
 # ── Step 2 · capture ──────────────────────────────────────────────────────────────────────────
-- assertVisible: ".*Tap Ferne to jot down whatever you want to work on.*"
+# The mascot is "Foyg" to the user since 2026-11 (TourOverlay.tsx:34); "Ferne" is internal only.
+- assertVisible: ".*Tap Foyg to jot down whatever you want to work on.*"
 - takeScreenshot: artifacts/10-tour-step2
 
 - tapOn: "Capture tasks"

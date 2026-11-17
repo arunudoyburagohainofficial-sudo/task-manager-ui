@@ -109,3 +109,10 @@ the rest of the app does.
   - **Proves:** its row shows no points pill, and today's total doesn't include a made-up 5.
   - **Why:** the figure is stored at completion precisely so history can't be rewritten by a
     later change to the rate.
+
+- [ ] **PROG-08 — A streak that has lapsed reads as zero, not as what it once was**
+  - **Does:** a stored streak of twelve whose last active day was a week ago.
+  - **Proves:** Home shows zero; Progress shows a current streak of zero and still shows twelve
+    as the longest. A streak with one missed day and its grace unspent is still alive.
+  - **Why:** the stored count only changes when focus work is finished, and it used to be shown
+    as stored. Stop for a week and Home still said twelve.

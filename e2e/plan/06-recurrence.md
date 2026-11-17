@@ -130,3 +130,33 @@ be re-anchored rather than copied.
     rather than as a date left behind — which is the whole reason lead times are stored as
     `daysBefore`, and the difference between a routine that keeps warning you and one that warned
     you once.
+
+## Added since
+
+- [ ] **RECUR-19 — Re-saving a month-end occurrence in a short month keeps it on the last day**
+  - **Does:** a "31st of the month" task sitting on 30 November; open the sheet, add a
+    notification, save.
+  - **Proves:** the rule still says the 31st.
+  - **Why:** the server re-anchors a monthly rule to the task's date on every save, so an
+    unrelated edit in a short month turned a month-end series into a 30th series for good.
+
+- [ ] **RECUR-20 — Moving a repeating task's date keeps how many are left**
+  - **Does:** an every-two-months task with three left; move it one day.
+  - **Proves:** the interval and the count survive, and the anchor follows the new day.
+  - **Why:** the move used to rebuild the rule as a bare monthly one that repeated for ever.
+
+- [ ] **RECUR-21 — Moving a 29 February yearly task follows the move**
+  - **Does:** a yearly task on leap day, moved to 10 March.
+  - **Proves:** the next occurrence is 10 March the following year.
+  - **Why:** a rule that kept pointing at the 29th would skip three years out of four.
+
+- [ ] **RECUR-22 — Weeks of finishing a routine leave the phone with one occurrence's notifications**
+  - **Does:** a daily routine with three notifications and a nudge, finished twenty times; then
+    reload the app and count what it downloads; then undo the last finish.
+  - **Proves:** the server lists three notifications and one nudge, all on the live occurrence;
+    the app downloads exactly those; undo brings the finished occurrence's own back, switched on.
+  - **Why:** finishing a task switches its notifications off but keeps them, so undo can restore
+    them, and nothing removes them later. The list the phone downloads on every sync used to
+    include all of them, so it grew by four rows per finish for as long as the account existed.
+    **Seen to fail** before the fix: 63 rows where 3 were expected. The same claim is checked at
+    the API by `notifications-probe.js` section 8.

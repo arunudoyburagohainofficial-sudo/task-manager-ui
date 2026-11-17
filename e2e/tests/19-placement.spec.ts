@@ -1,7 +1,24 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "../harness/fixtures";
 import type { Api } from "../harness/api";
-import { button, control, dateKey, deviceClockAt, exact, openTab, reload, screenText, section, see } from "../harness/app";
+import {
+  button,
+  control,
+  dateKey,
+  deviceClockAt,
+  dontSee,
+  exact,
+  openTab,
+  panel,
+  reload,
+  SCHEDULED_PANELS,
+  type ScheduledPanel,
+  screenText,
+  scrollHomeToBottom,
+  section,
+  see,
+  tab,
+} from "../harness/app";
 import { choice, openSchedule, saveAndClose } from "../harness/sheet";
 import { db } from "../harness/db";
 
@@ -17,13 +34,20 @@ import { db } from "../harness/db";
  * So the gap this closes is the one that matters to a user: a task they made is on the screen
  * they would go looking for it on, exactly once, and not on any other.
  *
- * Two rows carry most of the value, because both are easy to get wrong by reasoning and neither
- * was asserted on screen anywhere before this file:
+ * Home is four lists and Scheduled is four panels, and they answer different questions. Home is
+ * "what is mine to do now": TO DO (dated today, plus any routine that slipped), OVERDUE (one-offs
+ * whose day has passed), ANYTIME (no day at all) and DONE. Scheduled is the index of everything
+ * with a plan or without one: OVERDUE, RECURRING, UPCOMING and ANYTIME.
+ *
+ * Three rows carry most of the value, because each is easy to get wrong by reasoning:
  *
  *   - A *future repeating* task is on Recurring and nowhere else. Not Upcoming, where its date
  *     would suggest, and not Home, where "it's a routine" would suggest.
- *   - A *late repeating* task is on Home and in Recurring, but is deliberately NOT counted in
- *     the Overdue badge, because that badge must count exactly what its own panel lists.
+ *   - A *late repeating* task is in Home's TO DO and in Recurring, but is deliberately NOT in
+ *     either Overdue list, because a routine that slipped is still today's routine and the
+ *     Overdue badge must count exactly what its own panel lists.
+ *   - An *undated* task is under ANYTIME on both screens. It used to sit in TO DO and be absent
+ *     from Scheduled altogether, which is how a backlog buried the day's actual work.
  */
 
 /** A one-off or routine that slipped: the API refuses past dates, so the day is set directly. */
@@ -33,41 +57,36 @@ async function slipped(api: Api, name: string, daysAgo: number, recurrenceRule?:
   return t;
 }
 
-/** The text of one Scheduled panel, from its label to the next panel's. */
-async function panel(page: Page, label: "OVERDUE" | "RECURRING" | "UPCOMING"): Promise<string> {
-  const text = await screenText(page);
-  const start = text.indexOf(`${label} |`);
-  if (start < 0) return "";
-  const rest = text.slice(start + label.length + 2);
-  const ends = ["OVERDUE |", "RECURRING |", "UPCOMING |"].map((l) => rest.indexOf(l)).filter((i) => i > 0);
-  return (ends.length ? rest.slice(0, Math.min(...ends)) : rest).trim();
-}
+/** Home's lists of unfinished work, in the order the screen draws them. */
+const HOME_LISTS = ["TO DO", "OVERDUE", "ANYTIME"] as const;
+type HomeList = (typeof HOME_LISTS)[number];
 
 /**
- * One row of the matrix. `home` is whether it belongs on Home; `section` is where it belongs on
- * the Scheduled tab, or null for nowhere on that screen.
+ * One row of the matrix. `home` is the Home list it belongs in, or null for not on Home at all;
+ * `where` is its panel on the Scheduled tab, or null for nowhere on that screen.
  */
 interface Row {
   name: string;
-  home: boolean;
-  where: "OVERDUE" | "RECURRING" | "UPCOMING" | null;
+  home: HomeList | null;
+  where: ScheduledPanel | null;
 }
 
 const MATRIX: Row[] = [
-  // When: none. A backlog item is actionable now, so it reads as today and never files by date.
-  { name: "Undated one-off", home: true, where: null },
-  // When: today.
-  { name: "Today one-off", home: true, where: null },
-  { name: "Today daily", home: true, where: "RECURRING" },
-  { name: "Today weekly", home: true, where: "RECURRING" },
-  { name: "Today monthly", home: true, where: "RECURRING" },
-  // When: past. Missed work stays on Home so it isn't silent *and* invisible.
-  { name: "Missed one-off", home: true, where: "OVERDUE" },
-  { name: "Missed daily", home: true, where: "RECURRING" },
-  // When: future. Neither of these belongs on Home.
-  { name: "Tomorrow one-off", home: false, where: "UPCOMING" },
-  { name: "Next week one-off", home: false, where: "UPCOMING" },
-  { name: "Tomorrow daily", home: false, where: "RECURRING" },
+  // When: none. Actionable any time, so it is on Home - but under its own heading, not today's.
+  { name: "Undated one-off", home: "ANYTIME", where: "ANYTIME" },
+  // When: today. A plain task for today is nobody's "schedule", so Scheduled leaves it out.
+  { name: "Today one-off", home: "TO DO", where: null },
+  { name: "Today daily", home: "TO DO", where: "RECURRING" },
+  { name: "Today weekly", home: "TO DO", where: "RECURRING" },
+  { name: "Today monthly", home: "TO DO", where: "RECURRING" },
+  // When: past. A one-off that slipped is overdue on both screens; a routine that slipped is
+  // still today's routine, so it stays in TO DO and is never counted as overdue.
+  { name: "Missed one-off", home: "OVERDUE", where: "OVERDUE" },
+  { name: "Missed daily", home: "TO DO", where: "RECURRING" },
+  // When: future. None of these belongs on Home.
+  { name: "Tomorrow one-off", home: null, where: "UPCOMING" },
+  { name: "Next week one-off", home: null, where: "UPCOMING" },
+  { name: "Tomorrow daily", home: null, where: "RECURRING" },
 ];
 
 /** Seeds every row of the matrix into one account, so the panels are checked against each other. */
@@ -85,18 +104,33 @@ async function seedMatrix(api: Api) {
 }
 
 test.describe("the placement matrix, on the screens", () => {
-  test("PLACE-01 · Home holds exactly today's work, the undated, and the missed", async ({ app }) => {
+  test("PLACE-01 · each Home list holds exactly its own, and no task is in two", async ({ app }) => {
     const { page, api } = app;
     await seedMatrix(api);
     await reload(page);
+    // Home only draws what is near the screen, so the lower lists exist only once it is scrolled.
+    await see(page, /TO DO \| 5 \|/);
+    await scrollHomeToBottom(page);
+    await see(page, /ANYTIME \| 1 \|/);
 
-    const todo = await section(page, "TO DO");
+    const lists = {
+      "TO DO": await section(page, "TO DO"),
+      OVERDUE: await section(page, "OVERDUE"),
+      ANYTIME: await section(page, "ANYTIME"),
+    } as const;
+
     for (const row of MATRIX) {
-      if (row.home) expect(todo, `${row.name} should be on Home`).toContain(row.name);
-      else expect(todo, `${row.name} should NOT be on Home`).not.toContain(row.name);
+      for (const label of HOME_LISTS) {
+        const expected = row.home === label;
+        expect(lists[label].includes(row.name), `${row.name} in Home's ${label}: expected ${expected}`).toBe(expected);
+      }
     }
-    // And the count agrees with the rows, rather than being computed from a different filter.
-    expect(todo).toMatch(/^7 \|/);
+    // And each count agrees with its rows, rather than being computed from a different filter.
+    expect(lists["TO DO"]).toMatch(/^5 \|/);
+    expect(lists.OVERDUE).toMatch(/^1 \|/);
+    expect(lists.ANYTIME).toMatch(/^1 \|/);
+    // The tab's badge is the same one-off, counted once: the late routine is not in it.
+    await expect(tab(page, "Scheduled")).toHaveAccessibleName("Scheduled, 1 overdue");
   });
 
   test("PLACE-02 · each Scheduled panel holds exactly its own, and nothing is in two", async ({ app }) => {
@@ -104,16 +138,17 @@ test.describe("the placement matrix, on the screens", () => {
     await seedMatrix(api);
     await reload(page);
     await openTab(page, "Scheduled");
-    await see(page, /OVERDUE[\s\S]*RECURRING[\s\S]*UPCOMING/);
+    await see(page, /OVERDUE[\s\S]*RECURRING[\s\S]*UPCOMING[\s\S]*ANYTIME/);
 
     const panels = {
       OVERDUE: await panel(page, "OVERDUE"),
       RECURRING: await panel(page, "RECURRING"),
       UPCOMING: await panel(page, "UPCOMING"),
+      ANYTIME: await panel(page, "ANYTIME"),
     } as const;
 
     for (const row of MATRIX) {
-      for (const label of ["OVERDUE", "RECURRING", "UPCOMING"] as const) {
+      for (const label of SCHEDULED_PANELS) {
         const expected = row.where === label;
         expect(panels[label].includes(row.name), `${row.name} in ${label}: expected ${expected}`).toBe(expected);
       }
@@ -146,7 +181,7 @@ test.describe("the placement matrix, on the screens", () => {
    * one-off tasks, so counting late routines in it would print a number the user cannot
    * reconcile with the rows underneath it.
    */
-  test("PLACE-04 · the Overdue badge counts one-offs only, and Recurring says 'late' separately", async ({ app }) => {
+  test("PLACE-04 · both Overdue lists count one-offs only, and a late routine stays in TO DO", async ({ app }) => {
     const { page, api } = app;
     await slipped(api, "Missed one-off", 1);
     await slipped(api, "Late routine A", 2, "FREQ=DAILY");
@@ -156,21 +191,36 @@ test.describe("the placement matrix, on the screens", () => {
 
     expect(await panel(page, "OVERDUE")).toMatch(/^1 \|/);
     expect(await panel(page, "RECURRING")).toMatch(/^2 \| 2 late \|/);
-    // All three are still on Home, which is the point of keeping missed work there.
+
+    // Home draws the same line in the same place: the one-off under OVERDUE, and both routines
+    // under TO DO, because a routine that slipped is still the thing to do today.
     await openTab(page, "Home");
+    await see(page, /OVERDUE \| 1 \|/);
+    const overdue = await section(page, "OVERDUE");
     const todo = await section(page, "TO DO");
-    for (const n of ["Missed one-off", "Late routine A", "Late routine B"]) expect(todo).toContain(n);
+    expect(overdue).toContain("Missed one-off");
+    expect(todo).not.toContain("Missed one-off");
+    for (const n of ["Late routine A", "Late routine B"]) {
+      expect(todo).toContain(n);
+      expect(overdue).not.toContain(n);
+    }
   });
 
-  test("PLACE-05 · an undated task is on Home and nowhere on Scheduled at all", async ({ app }) => {
+  test("PLACE-05 · an undated task is under ANYTIME on both screens, and in no dated panel", async ({ app }) => {
     const { page, api } = app;
     await api.task({ name: "No date at all", taskType: "reminder" });
     await reload(page);
-    expect(await section(page, "TO DO")).toContain("No date at all");
+    await see(page, /ANYTIME \| 1 \|/);
+    expect(await section(page, "ANYTIME")).toContain("No date at all");
+    expect(await section(page, "TO DO")).not.toContain("No date at all");
+
     await openTab(page, "Scheduled");
-    // Not merely absent from the panels - the screen reads as empty, with no panel headers.
-    await see(page, "Nothing scheduled");
-    expect(await screenText(page)).not.toContain("No date at all");
+    await see(page, /ANYTIME \| 1 \|/);
+    expect(await panel(page, "ANYTIME")).toContain("No date at all");
+    // It is the only thing on the screen, so no other panel is drawn at all - and the screen
+    // does not also claim to be empty above the one task it is showing.
+    const text = await screenText(page);
+    for (const label of ["OVERDUE |", "RECURRING |", "UPCOMING |", "Nothing scheduled"]) expect(text).not.toContain(label);
   });
 });
 
@@ -197,12 +247,13 @@ test.describe("created through the UI, not seeded", () => {
     await see(page, /TO DO/);
   }
 
-  test("PLACE-06 · one captured with no date is on Home immediately", async ({ app }) => {
+  test("PLACE-06 · one captured with no date is under ANYTIME on both screens immediately", async ({ app }) => {
     const { page } = app;
     await captureReminder(page, "Captured undated");
-    expect(await section(page, "TO DO")).toContain("Captured undated");
+    await expect.poll(() => section(page, "ANYTIME")).toContain("Captured undated");
+    expect(await section(page, "TO DO")).not.toContain("Captured undated");
     await openTab(page, "Scheduled");
-    await see(page, "Nothing scheduled");
+    await expect.poll(() => panel(page, "ANYTIME")).toContain("Captured undated");
   });
 
   test("PLACE-07 · one given today stays on Home; one given tomorrow leaves it", async ({ app }) => {
@@ -223,6 +274,10 @@ test.describe("created through the UI, not seeded", () => {
     await openTab(page, "Home");
     await expect.poll(() => section(page, "TO DO")).toContain("For today");
     expect(await section(page, "TO DO")).not.toContain("For tomorrow");
+
+    // Dated now, so neither is an "anytime" task any more.
+    const anytime = await section(page, "ANYTIME");
+    for (const n of ["For today", "For tomorrow"]) expect(anytime).not.toContain(n);
 
     await openTab(page, "Scheduled");
     expect(await panel(page, "UPCOMING")).toContain("For tomorrow");
@@ -323,11 +378,12 @@ test.describe("tasks moving between the screens on their own", () => {
   });
 
   /**
-   * Clearing a date is not the same as deleting the task. An undated task reads as today, so it
-   * has to come back to Home rather than fall off both screens - which is exactly what a bucket
-   * of "upcoming with no date" would have done.
+   * Clearing a date is not the same as deleting the task. An undated task can be done any time,
+   * so it has to come back to Home under ANYTIME and stay listed on Scheduled under the same
+   * heading, rather than fall off both screens - which is exactly what a bucket of "upcoming
+   * with no date" would have done.
    */
-  test("PLACE-13 · clearing a future date brings the task back to Home, not nowhere", async ({ app }) => {
+  test("PLACE-13 · clearing a future date moves the task to ANYTIME on both screens, not nowhere", async ({ app }) => {
     const { page, api } = app;
     const t = await api.task({ name: "Someday", taskType: "reminder", scheduledFor: dateKey(5) });
     await reload(page);
@@ -342,7 +398,94 @@ test.describe("tasks moving between the screens on their own", () => {
 
     expect((await api.getTask(t.id)).scheduledFor).toBeNull();
     await openTab(page, "Home");
-    await expect.poll(() => section(page, "TO DO")).toContain("Someday");
+    await expect.poll(() => section(page, "ANYTIME")).toContain("Someday");
+    expect(await section(page, "TO DO")).not.toContain("Someday");
+    await openTab(page, "Scheduled");
+    expect(await panel(page, "ANYTIME")).toContain("Someday");
+    expect(await panel(page, "UPCOMING")).not.toContain("Someday");
+  });
+
+  /**
+   * The other way an undated task leaves ANYTIME is by being finished. Undo then has to put it
+   * back where it came from. It has no day, so "back" is ANYTIME - not TO DO, which is where a
+   * reopened task would land if undo quietly treated it as today's.
+   */
+  test("PLACE-14 · finishing an undated task clears it from ANYTIME on both screens, and undo returns it there", async ({ app }) => {
+    const { page, api } = app;
+    await api.task({ name: "Loose end", taskType: "reminder" });
+    await api.task({ name: "Stays loose", taskType: "reminder" });
+    await reload(page);
+    await see(page, /ANYTIME \| 2 \|/);
+
+    await control(page, "Done: Loose end").click();
+    await expect.poll(() => section(page, "DONE")).toContain("Loose end");
+    expect(await section(page, "ANYTIME")).toMatch(/^1 \|/);
+    expect(await section(page, "ANYTIME")).not.toContain("Loose end");
+
+    // Undo is offered on the message that follows Done, so it is taken before leaving the screen.
+    await button(page, "Undo").click();
+    await expect.poll(() => section(page, "ANYTIME")).toContain("Loose end");
+    expect(await section(page, "ANYTIME")).toMatch(/^2 \|/);
+    expect(await section(page, "TO DO")).not.toContain("Loose end");
+    await openTab(page, "Scheduled");
+    await see(page, /ANYTIME \| 2 \|/);
+
+    // And finished for good, it is gone from Scheduled's list as well as Home's.
+    await openTab(page, "Home");
+    await control(page, "Done: Stays loose").click();
+    await expect.poll(() => section(page, "DONE")).toContain("Stays loose");
+    await openTab(page, "Scheduled");
+    await see(page, /ANYTIME \| 1 \|/);
+    const anytime = await panel(page, "ANYTIME");
+    expect(anytime).toContain("Loose end");
+    expect(anytime).not.toContain("Stays loose");
+  });
+
+  /**
+   * The way out of Overdue that is not "finish it" or "delete it": decide to do it today. It
+   * has to leave both Overdue lists and the tab's badge together, because a task counted as
+   * late on one screen and as today's on the other is the disagreement PLACE-04 guards against.
+   */
+  test("PLACE-15 · an overdue task given today's date returns to TO DO and leaves both Overdue lists", async ({ app }) => {
+    const { page, api } = app;
+    await slipped(api, "Finally today", 4);
+    await slipped(api, "Still late", 2);
+    await reload(page);
+    await see(page, /OVERDUE \| 2 \|/);
+    await expect(tab(page, "Scheduled")).toHaveAccessibleName("Scheduled, 2 overdue");
+
+    await openSchedule(page, "Finally today");
+    await choice(page, "Today").click();
+    await saveAndClose(page);
+    await control(page, "Back").click();
+
+    await expect.poll(() => section(page, "TO DO")).toContain("Finally today");
+    const overdue = await section(page, "OVERDUE");
+    expect(overdue).toMatch(/^1 \|/);
+    expect(overdue).not.toContain("Finally today");
+    await expect(tab(page, "Scheduled")).toHaveAccessibleName("Scheduled, 1 overdue");
+
+    await openTab(page, "Scheduled");
+    const late = await panel(page, "OVERDUE");
+    expect(late).toMatch(/^1 \|/);
+    expect(late).toContain("Still late");
+    expect(late).not.toContain("Finally today");
+  });
+
+  /**
+   * Finishing the last overdue task has to take the whole section away, heading included, and
+   * the badge with it - an empty "OVERDUE 0" left on Home would be a small permanent accusation.
+   */
+  test("PLACE-16 · finishing the last overdue task removes the section and the badge", async ({ app }) => {
+    const { page, api } = app;
+    await slipped(api, "Last late thing", 3);
+    await reload(page);
+    await see(page, /OVERDUE \| 1 \|/);
+
+    await control(page, "Done: Last late thing").click();
+    await expect.poll(() => section(page, "DONE")).toContain("Last late thing");
+    await dontSee(page, /OVERDUE \|/);
+    await expect(tab(page, "Scheduled")).toHaveAccessibleName("Scheduled");
     await openTab(page, "Scheduled");
     await see(page, "Nothing scheduled");
   });

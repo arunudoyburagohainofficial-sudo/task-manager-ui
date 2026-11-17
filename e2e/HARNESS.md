@@ -90,6 +90,25 @@ UPDATE focus_sessions
 
 The seed module should own this conversion so no test has to remember it.
 
+### Seeding at size
+
+A test about a backlog needs a backlog: a thousand undated tasks, two hundred late ones, a year
+of finished history. Through the API that is one request per task, which is a thousand requests
+of setup for one assertion and enough on its own to trip the limiter. `db.bulkTasks`,
+`db.bulkOverdue` and `db.bulkCompleted` write the whole pile in a single SQL statement instead.
+
+Three things to know before using them:
+
+- **Rows are named `<prefix> <n>` and `1` is the newest.** Each row's creation time is a minute
+  earlier than the one before it, so "the newest thirty" and "the oldest one" are particular rows
+  a test can name, rather than whichever the database happened to write first.
+- **The app does not know they exist until it asks again.** They went in behind the API's back,
+  so nothing told the app's saved copy. Call `reload(page)` after seeding.
+- **Remove them yourself, in a `finally`.** `db.removeBulk(userId, prefix)` deletes by prefix in
+  one statement. Leaving them for the next test's clean-up means that test spends its own time
+  deleting them one request at a time, and once left a different file failing for no reason it
+  could explain.
+
 ## Controlling time
 
 - **The clock**: Playwright's clock API installs a fake `Date`/timer set in the page, so
@@ -119,6 +138,33 @@ Where a name is genuinely ambiguous, add a `testID` in the app rather than reach
 class. It becomes `data-testid` on web and a resource id on native, so it carries over to a
 future device suite. Class names and DOM structure are never selectors: react-native-web
 generates both.
+
+### Which copy is in front
+
+On web, a screen you have left is still in the page. A screen pushed over another sits after it
+in the page, so the harness takes the *last visible* match and gets the one on top.
+
+Tabs break that rule. A tab you have visited stays drawn underneath the others and still counts
+as visible, and Scheduled comes after Home in the page. Since an undated task is listed on both
+(under ANYTIME on each), once Scheduled had been opened a row on Home resolved to the Scheduled
+copy, and the click landed on whatever part of Home was covering it. The navigator marks every
+tab that isn't on display with `aria-hidden="true"`, so the harness's `front()` leaves out
+anything inside one. Use the harness's finders (`control`, `see`, `panel`, `section`) rather than
+a bare `page.getByText`, which knows none of this.
+
+### "Home is showing" is not "Home is current"
+
+The app keeps a saved copy of its data and draws from it when the server is slow to answer.
+Every request waits for Google to confirm the sign-in first, and if that takes more than four
+seconds the splash gives up and Home is drawn from the saved copy, with the real answer filling
+in whenever it arrives. So a test that reloads and waits only for "TO DO" to be visible can go on
+to read the *previous* test's screen.
+
+`reload(page)` therefore waits for two things: Home on screen, and this launch's own request for
+the task list to have come back. If you relaunch some other way (a fresh `goto`, a sign-in), wrap
+it in `untilHomeIsCurrent(page, go)` to get the same wait. A failed request counts as an answer,
+so a test that relaunches with the network off is not held up. `RES-23` is the deliberate test
+of the slow path itself.
 
 ## Rate limiting
 

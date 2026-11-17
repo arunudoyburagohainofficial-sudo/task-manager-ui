@@ -35,6 +35,10 @@ surfaces produce a stable frame.
   - **Does:** component shots of all four open row kinds, a finished row, and an empty-state row.
   - **Proves:** tile colours, mark geometry, meta colours, the points pill and the action button.
   - **Why:** four kinds sharing one component is where a colour quietly gets used twice.
+  - **Note:** every seeded row is dated today, because the design draws all four under TO DO.
+    When Home gained its ANYTIME section, the undated focus and goal rows moved below the frame,
+    and a refresh of the baselines would have quietly dropped them from the picture. Dating them
+    brought back the original baseline, which passes unchanged.
 
 - [ ] **VIS-05 — The goal card across the palette**
   - **Does:** one card per preset colour plus the default, at 0%, 57% and 100%.
@@ -74,3 +78,17 @@ surfaces produce a stable frame.
     reshape a screen nobody was looking at.
   - **Why:** the Home rebuild touched shared components — the theme, the icons, the wash, the
     container. Everything downstream of those needs a baseline.
+
+- [ ] **VIS-11 — The goal chip says its whole sentence at 320**
+  - **Why:** it is a single line that truncates silently on a narrow phone, and a typecheck
+    cannot see that.
+
+- [ ] **VIS-12 — The notify editor labels what each control is for**
+  - **Why:** the densest part of the sheet had no visual coverage, and two of its controls
+    carried no label.
+
+- [ ] **VIS-13 — The sheet's slider is dressed like the card's**
+  - **Why:** the two slide-to-focus controls sat on screen together in different colours and read
+    as two different buttons.
+  - **Note:** uses the same mask as the other shots, which covers today's date. It used to leave
+    the date in the picture, so the shot differed a little every day it was not written on.

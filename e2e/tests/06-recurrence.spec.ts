@@ -1,3 +1,5 @@
+import type { Response } from "@playwright/test";
+
 import { expect, test } from "../harness/fixtures";
 import type { Api } from "../harness/api";
 import { button, control, dateKey, exact, openTab, reload, screenText, section, see } from "../harness/app";
@@ -350,5 +352,66 @@ test.describe("where the next one lands", () => {
     expect(await storedNotifications(api, next!.id)).toEqual(["20:00/1", "07:00/0"]);
     const oldOnes = (await api.reminders()).filter((r) => r.isActive && r.taskId !== next!.id);
     expect(oldOnes).toHaveLength(0);
+  });
+});
+
+test.describe("a routine kept for a long time", () => {
+  /**
+   * Finishing an occurrence leaves that day's notifications on the server, switched off, so that
+   * undo can switch them back on. Nothing removes them afterwards. The phone asks for the whole
+   * list on every sync — each launch, each return to the app, each finish — and saves what it
+   * gets, so if finished work is included the list grows by a few rows a day for every routine
+   * for as long as the account exists. All of that to ring for the one occurrence still to do.
+   */
+  test("RECUR-22 · weeks of finishing a routine leave the phone with one occurrence's notifications, not all of them", async ({ app }) => {
+    const { page, api } = app;
+    const ROUNDS = 20;
+    const first = await api.task({
+      name: "Stretch",
+      taskType: "reminder",
+      scheduledFor: dateKey(0),
+      recurrenceRule: "FREQ=DAILY",
+      notifications: [
+        { time: "07:00:00", daysBefore: 0 },
+        { time: "12:00:00", daysBefore: 0 },
+        { time: "21:00:00", daysBefore: 0 },
+      ],
+    });
+    await api.nudgeWindow(first.id, "09:00:00", "11:00:00", 30);
+
+    let live = first.id;
+    let lastFinished = first.id;
+    for (let i = 0; i < ROUNDS; i++) {
+      lastFinished = live;
+      live = (await completeLive(api, "Stretch"))!.id;
+    }
+    expect(await completedNamed(api, "Stretch")).toHaveLength(ROUNDS);
+
+    // What the server hands over: the live occurrence's three, and its one nudge. Nothing else.
+    expect((await api.reminders()).map((r) => r.taskId)).toEqual([live, live, live]);
+    expect((await api.intervals()).map((i) => i.taskId)).toEqual([live]);
+
+    // And that is what the app itself downloads when it opens.
+    const downloaded: Record<string, number> = {};
+    const count = async (r: Response) => {
+      const which = /\/api\/(reminders|interval-reminders)$/.exec(r.url())?.[1];
+      if (!which || r.request().method() !== "GET") return;
+      downloaded[which] = ((await r.json().catch(() => [])) as unknown[]).length;
+    };
+    page.on("response", count);
+    try {
+      await reload(page);
+      await expect.poll(() => downloaded).toEqual({ reminders: 3, "interval-reminders": 1 });
+    } finally {
+      page.off("response", count);
+    }
+
+    // The finished ones are kept for undo, so undo has to still find them: the occurrence
+    // comes back with all three switched on, and the one made to replace it is withdrawn.
+    await api.reopen(lastFinished);
+    const back = await api.reminders();
+    expect(back.map((r) => r.taskId)).toEqual([lastFinished, lastFinished, lastFinished]);
+    expect(back.every((r) => r.isActive)).toBe(true);
+    expect((await api.intervals()).map((i) => [i.taskId, i.isActive])).toEqual([[lastFinished, true]]);
   });
 });

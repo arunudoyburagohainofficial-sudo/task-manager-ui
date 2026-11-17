@@ -72,3 +72,8 @@ focused work moves it, only once a day, and it never goes backwards.
   - **Proves:** the same goals, the same day counts, the same order on both screens after a change.
   - **Why:** two screens reading one server figure through different components is exactly where
     a stale cache shows up.
+
+- [ ] **GOAL-13 — Four goals on Progress stay readable instead of being squeezed**
+  - **Proves:** each goal card keeps a usable width and its name is on screen.
+  - **Why:** seen on a phone. Four goals divided the screen between them, about 70 points each,
+    and the goal's name disappeared completely.

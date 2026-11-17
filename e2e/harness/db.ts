@@ -125,6 +125,97 @@ export const db = {
   scheduledFor: (taskId: string, dateKey: string) =>
     sql(`UPDATE tasks SET scheduled_for = '${dateKey}' WHERE id = ${uuid(taskId)}`),
 
+  /**
+   * Ages a task, so its "added N weeks ago" label can be tested without waiting weeks.
+   *
+   * The interval is written straight into SQL, so it takes only the shapes Postgres already
+   * understands ("40 days", "3 weeks") and nothing a caller composed from user input.
+   */
+  createdAgo: (taskId: string, interval: string) => {
+    if (!/^\d+ (day|days|week|weeks|month|months|hour|hours|minute|minutes)$/.test(interval)) {
+      throw new Error(`createdAgo takes a plain interval like "40 days", not "${interval}"`);
+    }
+    return sql(`UPDATE tasks SET created_at = now() - INTERVAL '${interval}' WHERE id = ${uuid(taskId)}`);
+  },
+
+  /**
+   * Seeds a pile of undated pending tasks in one statement.
+   *
+   * Through the API this would be one request per task, and the list that needs proving is the
+   * one past the server's 1,000-row unpaged ceiling - a thousand round trips to set up a single
+   * assertion. generate_series does it in a single round trip.
+   *
+   * created_at is staggered so the ordering the app relies on (newest first) is deterministic,
+   * and so "the oldest one" is a real, identifiable row rather than whichever the database
+   * happened to write first.
+   */
+  bulkTasks: (userId: string, count: number, prefix: string) => {
+    if (!Number.isInteger(count) || count < 1 || count > 5000) throw new Error(`silly count: ${count}`);
+    if (!/^[A-Za-z0-9 ]+$/.test(prefix)) throw new Error(`prefix must be plain text, got "${prefix}"`);
+    return sql(
+      `INSERT INTO tasks (id, user_id, name, task_type, status, created_at, updated_at)
+       SELECT gen_random_uuid(), ${uuid(userId)}, '${prefix} ' || i, 'reminder', 'pending',
+              now() - (i * INTERVAL '1 minute'), now()
+       FROM generate_series(1, ${count}) AS i`
+    );
+  },
+
+  /**
+   * Seeds a pile of late one-off tasks, each due on `dateKey` (a past YYYY-MM-DD).
+   *
+   * The API refuses a past date, and a bulk action is only worth testing at a size where doing
+   * one request per row would start to matter - which is also the size nobody would seed by hand.
+   */
+  bulkOverdue: (userId: string, count: number, prefix: string, dateKey: string) => {
+    if (!Number.isInteger(count) || count < 1 || count > 5000) throw new Error(`silly count: ${count}`);
+    if (!/^[A-Za-z0-9 ]+$/.test(prefix)) throw new Error(`prefix must be plain text, got "${prefix}"`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) throw new Error(`not a date key: ${dateKey}`);
+    return sql(
+      `INSERT INTO tasks (id, user_id, name, task_type, status, scheduled_for, created_at, updated_at)
+       SELECT gen_random_uuid(), ${uuid(userId)}, '${prefix} ' || i, 'reminder', 'pending', '${dateKey}',
+              now() - (i * INTERVAL '1 minute'), now()
+       FROM generate_series(1, ${count}) AS i`
+    );
+  },
+
+  /**
+   * Seeds a pile of tasks finished long ago: the first `daysAgo` days back, each one after it a
+   * further minute into the past.
+   *
+   * This is the history a year of real use leaves behind. No screen shows it - Home wants today
+   * and Progress wants this week - so the only thing it can do is be downloaded, and the test
+   * that uses this counts how much of it is.
+   */
+  bulkCompleted: (userId: string, count: number, prefix: string, daysAgo: number) => {
+    if (!Number.isInteger(count) || count < 1 || count > 5000) throw new Error(`silly count: ${count}`);
+    if (!/^[A-Za-z0-9 ]+$/.test(prefix)) throw new Error(`prefix must be plain text, got "${prefix}"`);
+    if (!Number.isInteger(daysAgo) || daysAgo < 0 || daysAgo > 3650) throw new Error(`silly age: ${daysAgo}`);
+    const finished = serverNow(`- INTERVAL '${daysAgo} days' - (i * INTERVAL '1 minute')`);
+    return sql(
+      `INSERT INTO tasks (id, user_id, name, task_type, status, points_earned, created_at, updated_at, completed_at)
+       SELECT gen_random_uuid(), ${uuid(userId)}, '${prefix} ' || i, 'reminder', 'completed', 5,
+              ${finished}, ${finished}, ${finished}
+       FROM generate_series(1, ${count}) AS i`
+    );
+  },
+
+  /**
+   * Deletes everything a bulk seed made, by the prefix it was made with.
+   *
+   * A test that seeds a thousand rows cannot leave them for the next test's `api.clear()` to
+   * remove one request at a time: that is a thousand requests of somebody else's time budget,
+   * and when the old single-pass clear stopped at the server's 1,000-row ceiling the leftovers
+   * broke a test in a different file entirely.
+   */
+  removeBulk: (userId: string, prefix: string) => {
+    if (!/^[A-Za-z0-9 ]+$/.test(prefix)) throw new Error(`prefix must be plain text, got "${prefix}"`);
+    return sql(`DELETE FROM tasks WHERE user_id = ${uuid(userId)} AND name LIKE '${prefix} %'`);
+  },
+
+  /** How many of an account's tasks are in a given state - for checking a bulk action against the database. */
+  countTasks: (userId: string, status: "pending" | "completed") =>
+    Number(sql(`SELECT count(*) FROM tasks WHERE user_id = ${uuid(userId)} AND status = '${status}'`)[0]?.[0] ?? 0),
+
   /** A recurrence rule this build can't parse — written as a newer app version would. */
   rawRule: (taskId: string, rule: string) =>
     sql(`UPDATE tasks SET recurrence_rule = '${rule.replace(/'/g, "")}', is_recurring = true WHERE id = ${uuid(taskId)}`),

@@ -37,8 +37,9 @@ tags:
 - runFlow: ../helpers/finish-tour.yaml
 
 # ── Row 1 · undated, silent → Home only ───────────────────────────────────────────────────────
-# The deliberate case: no date means "today" rather than "upcoming", because an undated task is a
-# backlog item you should still see.
+# No day at all. It is on Home (under ANYTIME there, since Home became four sections) and it is
+# listed on Scheduled too, in the Anytime panel, which is where the ones Home has no room for
+# are found. Before 2026-11 this row asserted it was on Scheduled nowhere at all.
 - runFlow:
     file: ../helpers/create-task.yaml
     env:
@@ -52,7 +53,7 @@ tags:
     env: { TITLE: "MX undated silent", PRESENT: "true" }
 - runFlow:
     file: ../helpers/assert-on-scheduled.yaml
-    env: { TITLE: "MX undated silent", SECTION: "none" }
+    env: { TITLE: "MX undated silent", SECTION: "ANYTIME" }
 
 # ── Row 2 · today, silent → Home only ─────────────────────────────────────────────────────────
 - runFlow:

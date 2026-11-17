@@ -41,10 +41,13 @@ async function seedDesignContent(page: Page, api: Api, userId: string, withSessi
   const first = Math.max(2, Math.min(120, sinceMidnight - 1));
   db.completedAt(done1.id, { ago: `${first} minutes` }); // always the older, so it lists first as drawn
   db.completedAt(done2.id, { ago: `${Math.min(60, first - 1)} minutes` });
-  await api.task({ name: "Walk 20 minutes", taskType: "reminder", goalId: gym.id });
+  // Every row below is dated today, because the design draws all four under TO DO. Left undated,
+  // Home now files a task under ANYTIME, further down - the focus row and the goal row fell out
+  // of VIS-04's frame that way, and its baseline was rewritten without them before anyone noticed.
+  await api.task({ name: "Walk 20 minutes", taskType: "reminder", goalId: gym.id, scheduledFor: dateKey(0) });
   await api.task({ name: "Email Priya the draft", taskType: "reminder", scheduledFor: dateKey(0) });
   await api.task({ name: "Set a reminder for something", taskType: "reminder", scheduledFor: dateKey(0), notifications: [{ time: "23:45:00", daysBefore: 0 }] });
-  const focus = await api.task({ name: "Try a focus session" });
+  const focus = await api.task({ name: "Try a focus session", scheduledFor: dateKey(0) });
   db.streak(userId, { current: 4, longest: 4, lastActivity: dateKey(0) });
   if (withSession) {
     const s = await api.startSession(focus.id, { plannedMinutes: 25 });
@@ -344,13 +347,17 @@ test.describe("baselines", () => {
    */
   test("VIS-13 · the sheet's slider is dressed like the card's", async ({ app }) => {
     const { page, api } = app;
-    await api.task({ name: "Something to do", taskType: "reminder" });
+    // Dated today so it sits under TO DO, where the baseline has it. Undated, it moves down to
+    // ANYTIME and the screen behind the sheet changes for reasons that have nothing to do with it.
+    await api.task({ name: "Something to do", taskType: "reminder", scheduledFor: dateKey(0) });
     await reload(page);
     await control(page, /^Session length and mode/).click();
     await see(page, /How long\?/);
     await page.waitForTimeout(600);
     await expect(page).toHaveScreenshot("vis-13-both-sliders.png", {
-      mask: [page.getByText(/^Good (morning|afternoon|evening),/), page.getByText(/^User_/i)],
+      // The shared mask, which also covers today's date under the greeting. This one used to mask
+      // only the greeting and the name, so the date was in the picture and differed every day.
+      mask: dynamic(page),
       maxDiffPixelRatio: 0.01,
       animations: "disabled",
     });

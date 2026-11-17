@@ -60,7 +60,7 @@ test("RES-02 · an action taken offline fails loudly and puts things back", asyn
   await noNetwork(page);
   await control(page, "Done: Offline tap").click();
   await see(page, "Couldn't complete “Offline tap” - check your connection.");
-  await expect.poll(() => section(page, "TO DO")).toContain("Offline tap");
+  await expect.poll(() => section(page, "ANYTIME")).toContain("Offline tap");
 });
 
 /** A queued write that fires much later could complete a task since rescheduled or deleted. */
@@ -296,7 +296,10 @@ test("RES-11 · an odd or unexpected response doesn't blank the screen", async (
   const { page, api } = app;
   await api.task({ name: "Ordinary row", taskType: "reminder" });
   await reload(page);
-  await page.route(/\/api\/tasks\?status=pending$/, async (r) => {
+  // The list is fetched a page at a time, so its address carries a page now. The odd rows go
+  // onto the first one only: a second page, if one were ever asked for, passes straight through.
+  await page.route(/\/api\/tasks\?status=pending&/, async (r) => {
+    if (!/[?&]offset=0(&|$)/.test(r.request().url())) return r.fallback();
     const res = await r.fetch();
     const rows = await res.json();
     const base = rows[0];
@@ -316,6 +319,11 @@ test("RES-11 · an odd or unexpected response doesn't blank the screen", async (
   // An unnameable rule reduces to the bare word "Repeats", after the kind label - the row
   // still says it comes back without pretending to describe how.
   await see(page, /Future rule \| Reminder · Repeats/);
+  // The undated ones are listed on this screen too now, the nameless one among them, and a
+  // row with no name must not take the section down with it.
+  await see(page, /ANYTIME \| 4 \|/);
+  await see(page, "No points field");
+  await see(page, "Future type");
 });
 
 test("RES-12 · an empty account and a very full one both render and stay usable", async ({ app }) => {
@@ -324,7 +332,10 @@ test("RES-12 · an empty account and a very full one both render and stay usable
   await see(page, "Nothing to do yet");
 
   for (let i = 0; i < 10; i++) await api.goal(`Goal ${i}`, 20);
-  for (let i = 0; i < 200; i++) await api.task({ name: `Task ${String(i).padStart(3, "0")}`, taskType: "reminder" });
+  // Dated today, so they all land in TO DO - the one section that draws every row it has.
+  for (let i = 0; i < 200; i++) {
+    await api.task({ name: `Task ${String(i).padStart(3, "0")}`, taskType: "reminder", scheduledFor: dateKey(0) });
+  }
   const finished = await api.tasks("pending");
   for (const t of finished.slice(0, 50)) await api.complete(t.id);
   const started = Date.now();
@@ -340,4 +351,171 @@ test("RES-12 · an empty account and a very full one both render and stay usable
   await see(page, /DONE \| 50 \|/);
   await expect(control(page, "Capture tasks")).toBeVisible();
   await stayAbsent(page, /Couldn't|error/i, 1_000);
+});
+
+/**
+ * More outstanding tasks than one unpaged request returns.
+ *
+ * The app derives everything - every section, every count, the tab badge - from a single
+ * "pending" fetch, and that fetch used to be unpaged. The server answers an unpaged request
+ * with at most 1,000 rows, newest first, and silently drops the rest, logging a warning nothing
+ * surfaces. The ones dropped are the oldest: exactly the backlog somebody has forgotten about
+ * and would never notice missing.
+ *
+ * So the seed has to clear 1,000, or the test proves nothing - at 250 the old code returned
+ * everything too. Seeded straight into Postgres in one statement, because a thousand API calls
+ * to set up one assertion is its own kind of wrong.
+ */
+test("RES-20 · a backlog past the unpaged ceiling comes back whole, oldest included", async ({ app }) => {
+  test.setTimeout(180_000);
+  const { page, api, userId } = app;
+
+  const made = 1_050;
+  db.bulkTasks(userId, made, "Bulk");
+  try {
+    // Through the app's own client, which is where the paging lives.
+    await reload(page);
+    await see(page, new RegExp(`ANYTIME[\\s\\S]*${made}`), 60_000);
+
+    // "Bulk 1050" is the oldest - created_at is staggered a minute apart - and it is the row an
+    // unpaged fetch would have dropped off the end. Scheduled draws the newest thirty and keeps
+    // the rest behind one press, so the press is part of reaching it.
+    await openTab(page, "Scheduled");
+    await see(page, new RegExp(`ANYTIME \\| ${made} \\|`), 60_000);
+    await control(page, `Show ${made - 30} more anytime tasks`).click();
+    await see(page, `Bulk ${made}`, 60_000);
+
+    const pending = await api.tasks("pending");
+    expect(new Set(pending.map((t) => t.id)).size, "nothing came back twice").toBe(pending.length);
+  } finally {
+    // In one statement, here, rather than left for the next test's set-up to delete a thousand
+    // rows one request at a time - which is how fifty of them once ended up in the next test.
+    db.removeBulk(userId, "Bulk");
+  }
+});
+
+/** The page each request for a list asked for, as its starting row. */
+const offsetsOf = (urls: string[]) => [...new Set(urls.map((u) => Number(/[?&]offset=(\d+)/.exec(u)?.[1] ?? -1)))].sort((a, b) => a - b);
+
+/**
+ * The edges of a page, where a paging loop is most likely to be one row out.
+ *
+ * Exactly one full page is the awkward case: a full page cannot tell the app whether there is
+ * more, so it has to ask once more and get nothing back. One over and exactly two pages are its
+ * neighbours. Each is checked for the count on Home, for the oldest row being reachable, and
+ * for the app having asked for exactly the pages it needed.
+ */
+test("RES-22 · exactly a page, one over, and exactly two pages all come back whole", async ({ app }) => {
+  test.setTimeout(240_000);
+  const { page, api, userId } = app;
+
+  for (const [made, pages] of [[200, [0, 200]], [201, [0, 200]], [400, [0, 200, 400]]] as const) {
+    db.bulkTasks(userId, made, "Edge");
+    try {
+      const asked = counting(page, "GET", /\/api\/tasks\?status=pending&/);
+      await reload(page);
+      await see(page, new RegExp(`ANYTIME \\| ${made} \\|`), 60_000);
+      expect(offsetsOf(asked), `${made} tasks`).toEqual([...pages]);
+
+      await openTab(page, "Scheduled");
+      await see(page, new RegExp(`ANYTIME \\| ${made} \\|`), 60_000);
+      // "Edge <made>" is the oldest, so it is the last row of the last page - and past the
+      // thirty this screen draws before being asked for the rest.
+      await control(page, `Show ${made - 30} more anytime tasks`).click();
+      await see(page, `Edge ${made} |`, 60_000);
+      await see(page, "Edge 1 |");
+      expect((await api.tasks("pending")).length).toBe(made);
+      await openTab(page, "Home");
+    } finally {
+      db.removeBulk(userId, "Edge");
+    }
+  }
+});
+
+/**
+ * Finished tasks are never deleted, so that list only ever grows - and nothing on any screen
+ * reads further back than this week. Home lists what was finished today; Progress counts this
+ * week's seven days. Paging through all of it made every launch download the whole history to
+ * draw one short list: three requests for six hundred finished tasks, thirty for six thousand.
+ *
+ * So the app stops once a page reaches back past anything it shows. Two halves, because a rule
+ * that stops early is only right if it also does not stop *too* early.
+ */
+test("RES-21 · a long history of finished tasks is not downloaded to show today's", async ({ app }) => {
+  test.setTimeout(240_000);
+  const { page, api, userId } = app;
+  const finishedPages = /\/api\/tasks\?status=completed&/;
+
+  // 1. Old history only: 450 finished six weeks ago, which is three pages' worth.
+  db.bulkCompleted(userId, 450, "History", 40);
+  try {
+    const today = await api.task({ name: "Finished today", taskType: "reminder" });
+    await api.complete(today.id);
+
+    const asked = counting(page, "GET", finishedPages);
+    await reload(page);
+    await see(page, /DONE \| 1 \|/, 60_000);
+    expect(await section(page, "DONE")).toContain("Finished today");
+    expect(await section(page, "DONE")).not.toContain("History");
+    // The newest two hundred already reach back six weeks, so one page answered it.
+    expect(offsetsOf(asked), "pages of finished tasks asked for").toEqual([0]);
+
+    // 2. A busy week: 250 more finished two days ago. The first page is now entirely inside
+    // the week the app reads, so stopping there would lose fifty of them. It has to go on to
+    // the second page, and that page reaches the old history, so it stops there.
+    db.bulkCompleted(userId, 250, "Recent", 2);
+    const askedAgain = counting(page, "GET", finishedPages);
+    await reload(page);
+    await see(page, /DONE \| 1 \|/, 60_000);
+    expect(offsetsOf(askedAgain), "pages of finished tasks asked for").toEqual([0, 200]);
+    expect(await section(page, "DONE")).not.toContain("Recent");
+  } finally {
+    db.removeBulk(userId, "History");
+    db.removeBulk(userId, "Recent");
+  }
+});
+
+/**
+ * Nothing the app asks the server is sent until Google has confirmed the sign-in, and that is a
+ * call across the internet the app does not control. Usually it takes a third of a second. When
+ * it doesn't, the app has two ways to go wrong: sit on the splash until Google answers, or open
+ * on its saved copy and never notice the real answer arriving.
+ *
+ * It does neither. It holds the splash for four seconds at most (SessionContext), opens on what
+ * this phone last saved, and redraws itself when the answer lands - with nobody touching it.
+ *
+ * Found by this suite's own flakiness, 2026-11-16: on a slow answer the old harness read the
+ * saved copy as if it were fresh, and tests failed on the previous test's data.
+ */
+test("RES-23 · when the sign-in check is slow, the app opens on what it last saved and then catches up", async ({ app }) => {
+  const { api } = app;
+  const HOLD = 12_000;
+  await api.task({ name: "Already on this phone" });
+  const phone = await sameAccountIn(app, "Asia/Kolkata");
+  try {
+    // The saved copy is written a moment after the data arrives; wait until it really is saved.
+    await expect
+      .poll(() => phone.page.evaluate(() => localStorage.getItem("task-app-query-cache-v1")?.includes("Already on this phone") ?? false))
+      .toBe(true);
+    // Made elsewhere after this phone last looked, so only a fresh answer can put it on screen.
+    await api.task({ name: "Made since it last looked" });
+
+    await phone.page.route(/identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com/, async (route) => {
+      await new Promise((done) => setTimeout(done, HOLD));
+      await route.continue().catch(() => undefined);
+    });
+    const started = Date.now();
+    await phone.page.reload();
+
+    // 1. Home is up, from the saved copy, while Google still hasn't answered.
+    await expect(phone.page.getByText("Already on this phone", { exact: true }).locator("visible=true").first()).toBeVisible({ timeout: HOLD });
+    expect(Date.now() - started, "Home appeared only after Google answered").toBeLessThan(HOLD);
+    expect(await section(phone.page, "ANYTIME")).not.toContain("Made since it last looked");
+
+    // 2. The answer arrives and the screen follows it, without a tap or a reload.
+    await expect.poll(() => section(phone.page, "ANYTIME"), { timeout: 30_000 }).toContain("Made since it last looked");
+    expect(await section(phone.page, "ANYTIME")).toContain("Already on this phone");
+  } finally {
+    await phone.close();
+  }
 });

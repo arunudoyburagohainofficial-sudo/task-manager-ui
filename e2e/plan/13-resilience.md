@@ -91,3 +91,35 @@ Everything here is driven by intercepting the API: fail it, delay it, or take th
     times out.
   - **Why:** the completed list grows forever, and the paging that exists to contain it is
     invisible until a heavy account hits it.
+
+## Size, and a slow sign-in (added 2026-11-16)
+
+- [ ] **RES-20 — A backlog past the unpaged ceiling comes back whole, oldest included**
+  - **Does:** 1,050 undated tasks seeded straight into the database.
+  - **Proves:** Home counts 1,050, the oldest one is reachable on Scheduled, and nothing came
+    back twice.
+  - **Why:** the app used to ask for the whole list in one request, and the server answers such a
+    request with at most 1,000 rows and silently drops the oldest.
+
+- [ ] **RES-21 — A long history of finished tasks is not downloaded to show today's**
+  - **Does:** 450 tasks finished six weeks ago; then 250 more finished two days ago.
+  - **Proves:** with only old history the app asks for one page and stops. With a busy week on
+    top, the first page is entirely recent, so it goes on to the second and stops there.
+  - **Why:** finished tasks are never deleted. Paging through all of them made every launch
+    download the entire history to draw one short list. **Seen to fail** before the fix.
+
+- [ ] **RES-22 — Exactly a page, one over, and exactly two pages all come back whole**
+  - **Does:** 200, 201 and 400 undated tasks, one after the other.
+  - **Proves:** the right count on both screens, the oldest row reachable, and exactly the pages
+    needed asked for.
+  - **Why:** the edges of a page are where a paging loop is most likely to be one row out. A full
+    page cannot tell the app whether there is more, so it has to ask once more and get nothing.
+
+- [ ] **RES-23 — When the sign-in check is slow, the app opens on what it last saved and then catches up**
+  - **Does:** add a task from elsewhere after the app last looked, then reload the app with
+    Google's answer to the sign-in check held back for twelve seconds.
+  - **Proves:** Home is up from the saved copy before Google answers, without the new task; when
+    the answer arrives the new task appears, with nobody touching the screen.
+  - **Why:** nothing is asked of the server until Google confirms the sign-in. Found through this
+    suite's own flakiness: on a slow answer the harness read the saved copy as if it were fresh.
+    **Seen to fail** with the catch-up removed.

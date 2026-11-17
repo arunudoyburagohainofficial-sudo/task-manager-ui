@@ -27,12 +27,22 @@ at nothing or points at the wrong thing, on the very first screen a new user eve
   - **Why:** one step spans two screens (attach a goal is reachable from both), and the copy
     differs per screen — step 5 says "Focus" on a focus row and "Done" on a reminder row.
 
-- [ ] **TOUR-05 — The waiting state appears when the target isn't on screen**
-  - **Does:** reach a step, then navigate to another tab or scroll the target out of view.
-  - **Proves:** the spotlight disappears and the hint card explains where to go — it doesn't ring
-    an unrelated strip of UI at the screen edge.
-  - **Why:** a row scrolled below the fold still measures fine, just off-screen; the overlay used
-    to clamp it back into view and spotlight the tab bar.
+- [ ] **TOUR-05 — A full day doesn't hide the task, and scrolled away from it the card says where to go**
+  - **Does:** sixteen things due today; go through the tour to its last step; then scroll back
+    to the top of the list.
+  - **Proves:** the last step brings the new task up - wholly on screen, above the tab bar,
+    with the ring around it and the card saying to tap Focus. Scrolled away, the ring goes and
+    the hint card explains where to look - it doesn't ring an unrelated strip of UI at the
+    screen edge.
+  - **Why:** a task made in the tour has no day, so it sits under ANYTIME, below everything
+    due today. The last step used to scroll to the top of the list, which was right while Home
+    was one list with the newest task first; with four sections it left the task below the
+    fold and the tour pointing at nothing (measured: on screen with 4 due today, off it with
+    10). And a row scrolled below the fold still measures fine, just off-screen; the overlay
+    used to clamp it back into view and spotlight the tab bar.
+  - **Note:** the fillers have to be dated today. Undated ones sit *below* the tour's task
+    (ANYTIME is newest first and shows five), so they never push it anywhere - which is how
+    this test came to fail when the four sections arrived.
 
 - [ ] **TOUR-06 — The spotlight follows a scrolling row**
   - **Does:** at step 5, scroll the list.
@@ -62,3 +72,11 @@ at nothing or points at the wrong thing, on the very first screen a new user eve
   - **Does:** with the tour active, use an unrelated control (open Settings, complete a task).
   - **Proves:** the app remains usable and the tour keeps its place or waits.
   - **Why:** an overlay that swallows taps turns a first run into a trap.
+
+- [ ] **TOUR-11 — Reopening the app picks the tour up where it was left**
+  - **Does:** finish step 1 and reload; then open capture (step 3) and reload again.
+  - **Proves:** both times the tour resumes at step 2, "Now capture a task", and never goes back
+    to step 1 to ask for a goal that already exists.
+  - **Why:** the tour's place used to live only in memory. The capture steps cannot be picked up
+    where they were, because the half-written task was never saved, so they resume at "open
+    capture".

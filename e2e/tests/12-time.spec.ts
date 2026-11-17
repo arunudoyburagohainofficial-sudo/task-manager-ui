@@ -72,8 +72,9 @@ test("TIME-02 · midnight rolls over with the app open, in a zone behind UTC", a
     await la.page.reload();
     await see(la.page, "LA today | Task · today");
     await la.page.clock.fastForward("02:00");
-    // Still on Home — it's overdue now, not gone — and no longer "today".
-    await see(la.page, /LA today \| Task \|/);
+    // Still on Home — it's overdue now, not gone — and no longer "today": it has moved under
+    // OVERDUE and says which day it was for, worked out on Los Angeles' calendar.
+    await see(la.page, /OVERDUE \| 1 \|[\s\S]*LA today \| Task · was due Yesterday \|/);
     await expect(la.page.getByRole("tab", { name: /^Scheduled, 1 overdue$/ })).toBeVisible();
   } finally {
     await la.close();
@@ -282,11 +283,12 @@ test("TIME-14 · every request carries the device's zone", async ({ app }) => {
     la.page.on("request", (r) => {
       if (r.url().startsWith(API)) seen.push(`${r.headers()["x-timezone"] ?? "(none)"} ${r.url().slice(API.length)}`);
     });
-    await la.page.reload();
-    await see(la.page, "TO DO");
+    await reload(la.page);
     await openTab(la.page, "Progress");
+    // Waited for rather than read after a fixed second: nothing is sent until Google has
+    // confirmed the sign-in, and how long that takes is not this test's subject.
+    await expect.poll(() => seen.length).toBeGreaterThan(3);
     await la.page.waitForTimeout(1_000);
-    expect(seen.length).toBeGreaterThan(3);
     expect(seen.filter((s) => !s.startsWith(`${zone} `))).toEqual([]);
   } finally {
     await la.close();

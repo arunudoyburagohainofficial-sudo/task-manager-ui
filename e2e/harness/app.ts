@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from "@playwright/test";
+import { expect, type Locator, type Page, type Request, type Response } from "@playwright/test";
 import { ZONE } from "./api";
 
 /**
@@ -88,8 +88,47 @@ export async function signIn(page: Page): Promise<void> {
 
 /** Reloads and waits for Home to have data in it again. */
 export async function reload(page: Page): Promise<void> {
-  await page.reload();
-  await expect(page.getByText("TO DO").locator("visible=true").first()).toBeVisible({ timeout: 60_000 });
+  await untilHomeIsCurrent(page, () => page.reload());
+}
+
+/**
+ * Relaunches the app by whatever `go` does, and waits for Home to be showing what the server
+ * says now rather than what this browser last saved.
+ *
+ * Home being on screen is not proof of that. The app asks the server for everything the moment
+ * it opens, but each of those requests first waits for Google to confirm the sign-in, and if
+ * that takes longer than four seconds the app stops holding the splash and draws Home from its
+ * saved copy, filling in the real answer whenever it lands (SessionContext's timeout). Google
+ * normally answers in a third of a second, so "TO DO is visible" nearly always did mean fresh
+ * data. On the occasions it didn't, a test went on to read the previous test's screen and failed
+ * somewhere that made no sense: FOCUS-10 found the last test's session still running, and
+ * TIME-14 counted no requests at all. RES-23 is the deliberate test of that slow path.
+ *
+ * So this also waits for the launch's own request for the task list to come back. When Google is
+ * quick that has already happened by the time Home appears and nothing changes. The wait is
+ * bounded and is never a failure in its own right - a test that relaunches with the network off
+ * sees the request fail, which counts as an answer, and one that never gets an answer carries on
+ * and fails on its own assertion, where the reason is readable.
+ */
+export async function untilHomeIsCurrent(page: Page, go: () => Promise<unknown>): Promise<void> {
+  let answered = false;
+  const isTaskList = (url: string) => url.includes("/api/tasks?status=pending");
+  const onResponse = (r: Response) => void (isTaskList(r.url()) && (answered = true));
+  const onFailed = (r: Request) => void (isTaskList(r.url()) && (answered = true));
+  page.on("response", onResponse);
+  page.on("requestfailed", onFailed);
+  try {
+    await go();
+    await expect(page.getByText("TO DO").locator("visible=true").first()).toBeVisible({ timeout: 60_000 });
+    if (answered) return;
+    const deadline = Date.now() + 20_000;
+    while (!answered && Date.now() < deadline) await page.waitForTimeout(100);
+    // The answer has arrived; give the screen a moment to be redrawn from it.
+    await page.waitForTimeout(500);
+  } finally {
+    page.off("response", onResponse);
+    page.off("requestfailed", onFailed);
+  }
 }
 
 /* ───────────────────────────── finding things ───────────────────────────── */
@@ -98,8 +137,17 @@ export async function reload(page: Page): Promise<void> {
  * Every mounted screen's DOM stays in the page on web, so a plain match finds controls on the
  * screen *underneath* the one on display. Filtering to visible and taking the last rendered is
  * how "the screen in front" is expressed.
+ *
+ * "Last rendered" is right for a screen pushed over another, and wrong for tabs: a tab you have
+ * visited stays in the page after you leave it, drawn underneath, and still counts as visible.
+ * Scheduled comes after Home in the page, so once Scheduled had been opened, a task listed on
+ * both (anything undated is, under ANYTIME) resolved to the Scheduled copy even with Home in
+ * front - and the click landed on whatever part of Home was covering it. The navigator marks
+ * the tabs that aren't on display as hidden from a screen reader, which is the one reliable
+ * sign, so anything inside one is left out.
  */
-const front = (l: Locator) => l.locator("visible=true").last();
+const NOT_IN_A_HIDDEN_TAB = 'xpath=self::*[not(ancestor-or-self::*[@aria-hidden="true"])]';
+const front = (l: Locator) => l.locator("visible=true").locator(NOT_IN_A_HIDDEN_TAB).last();
 
 /** A control by the name a screen reader would read. */
 export const control = (page: Page, name: string | RegExp) => front(page.getByLabel(name, { exact: typeof name === "string" }));
@@ -221,12 +269,38 @@ export async function stayAbsent(page: Page, pattern: string | RegExp, forMs = 1
 }
 
 /**
+ * Every title TO DO's empty state can take. Which one shows depends on whether anything was
+ * finished today and on whether the other sections have rows - see HOME-01 and HOME-34.
+ */
+export const HOME_EMPTY_TITLES = [
+  "Nothing to do yet",
+  "All done for today",
+  "Nothing planned for today",
+  "Nothing left for today",
+] as const;
+
+/**
  * The text of Home's sections. Section headers and counts are separate text nodes, so this reads
  * `TO DO | 3 | …` style runs and lets a test ask what's in which section.
  */
-export async function section(page: Page, name: "TO DO" | "DONE"): Promise<string> {
+export async function section(page: Page, name: "TO DO" | "OVERDUE" | "ANYTIME" | "DONE"): Promise<string> {
   const text = await screenText(page);
-  const order = ["IN SESSION", "TO DO", "DONE", "That’s everything", "Nothing to do yet"];
+  // Every heading that can end a section, in the order Home draws them: today's work, what
+  // slipped, what has no day, what was finished. A section's text runs until the next heading,
+  // so one missing from this list silently merges two sections - ANYTIME was missing when the
+  // section was added, and every "not in TO DO" assertion read the undated rows as TO DO's.
+  //
+  // TO DO's empty state is in here too. It is drawn as that section's footer, and its wording
+  // depends on what else is on the screen, so each title it can take ends the section.
+  const order = [
+    "IN SESSION",
+    "TO DO",
+    "OVERDUE",
+    "ANYTIME",
+    "DONE",
+    "That’s everything",
+    ...HOME_EMPTY_TITLES,
+  ];
   const start = text.indexOf(`| ${name} |`) >= 0 ? text.indexOf(`| ${name} |`) : text.indexOf(`${name} |`);
   if (start < 0) return "";
   const rest = text.slice(start + name.length + 2);
@@ -236,6 +310,28 @@ export async function section(page: Page, name: "TO DO" | "DONE"): Promise<strin
     .filter((i) => i >= 0);
   // Reads as "3 | Collapse all | ▾ | first row …" — the count first, no leading separator.
   return (ends.length ? rest.slice(0, Math.min(...ends)) : rest).replace(/^\s*\|\s*/, "").trim();
+}
+
+/** Scheduled's panels, in the order the screen draws them. */
+export const SCHEDULED_PANELS = ["OVERDUE", "RECURRING", "UPCOMING", "ANYTIME"] as const;
+export type ScheduledPanel = (typeof SCHEDULED_PANELS)[number];
+
+/**
+ * The text of one panel on the Scheduled tab, from its label to the next panel's.
+ *
+ * Reads as "2 | first row | …" - the count first, the same shape `section()` gives for Home.
+ * Empty when the panel is not drawn at all, which is how the screen says "none of these".
+ */
+export async function panel(page: Page, label: ScheduledPanel): Promise<string> {
+  const text = await screenText(page);
+  const start = text.indexOf(`${label} |`);
+  if (start < 0) return "";
+  const rest = text.slice(start + label.length + 2);
+  // The last panel runs on into the tab bar, and into any message showing above it - "“X” done"
+  // names the very task a test has just watched leave. The bar's capture button ends the panel:
+  // matched as a whole label, since a task may well be called "Captured something".
+  const ends = [...SCHEDULED_PANELS.map((l) => rest.indexOf(`${l} |`)), rest.search(/\| Capture(?= \||$)/)].filter((i) => i > 0);
+  return (ends.length ? rest.slice(0, Math.min(...ends)) : rest).trim();
 }
 
 /** The three figures in Home's stat strip. */
@@ -252,6 +348,86 @@ export async function stats(page: Page): Promise<{ streak: number; points: numbe
 export async function expectNoSidewaysScroll(page: Page): Promise<void> {
   const o = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
   expect(o.scroll, "the page scrolls sideways").toBeLessThanOrEqual(o.viewport);
+}
+
+/**
+ * Scrolls Home to its end, and waits until it has stopped moving.
+ *
+ * Home is a virtualised list: it draws roughly the first ten items and adds the rest as they
+ * come into view. So anything below that - usually ANYTIME and DONE on a busy day - is not on
+ * the page to be read until the list has been scrolled, and a test that reads it without
+ * scrolling fails as "the screen never showed X". Once drawn, rows stay drawn.
+ *
+ * Scrolled to the bottom first, and only then asked what is last. An earlier version measured
+ * the last *rendered* row, then wheeled a fixed 5,000px. Home is a virtualised list, so the row
+ * it had measured could end up above the fold once the window moved - and `elementFromPoint`
+ * then hit nothing at all, at a negative y, which reads exactly like "something is covering the
+ * button". Shortening the Focus Now card was enough to push it over that line. The distance was
+ * always a guess; the bottom is a fact.
+ */
+export async function scrollHomeToBottom(page: Page) {
+  await page.mouse.move(187, 400);
+  let previous = -1;
+  await expect
+    .poll(async () => {
+      await page.mouse.wheel(0, 1_200);
+      const offset = await page.evaluate(() => {
+        const scroller = Array.from(document.querySelectorAll("div")).find(
+          (d) => d.scrollHeight > d.clientHeight + 40
+        );
+        return scroller ? scroller.scrollTop : window.scrollY;
+      });
+      const settled = Math.abs(offset - previous) < 1;
+      previous = offset;
+      return settled;
+    }, { timeout: 20_000 })
+    .toBe(true);
+}
+
+/** The control with this accessible name is on screen and nothing is drawn on top of its centre. */
+export async function expectTappable(page: Page, name: string) {
+  const box = (await control(page, name).boundingBox())!;
+  // Guards the guard: something above the fold would make the hit test meaningless either way.
+  expect(box.y, `${name} is off-screen, so this proves nothing`).toBeGreaterThan(0);
+  const hit = await page.evaluate(
+    ({ x, y }) => document.elementFromPoint(x, y)?.closest("[aria-label]")?.getAttribute("aria-label") ?? null,
+    { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  );
+  expect(hit, `something sits on top of ${name}`).toBe(name);
+}
+
+/**
+ * The stricter version: nothing is drawn over the control's centre *or* over any of its edges.
+ *
+ * `expectTappable` asks about one point, and so does a click - Playwright presses the middle. A
+ * button with the docked mascot's circle over its lower half passes both while a thumb landing
+ * a little low starts Capture instead. That is exactly what Scheduled's "N more" pill did at the
+ * foot of its panel, and no test noticed.
+ */
+export async function expectWhollyTappable(page: Page, name: string) {
+  const box = (await control(page, name).boundingBox())!;
+  expect(box.y, `${name} is off-screen, so this proves nothing`).toBeGreaterThan(0);
+  const inset = 2;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  const points = {
+    centre: { x: cx, y: cy },
+    "top edge": { x: cx, y: box.y + inset },
+    "bottom edge": { x: cx, y: box.y + box.height - inset },
+    "left edge": { x: box.x + inset, y: cy },
+    "right edge": { x: box.x + box.width - inset, y: cy },
+  };
+  const hits = await page.evaluate(
+    (pts) =>
+      Object.fromEntries(
+        Object.entries(pts).map(([where, p]) => [
+          where,
+          document.elementFromPoint(p.x, p.y)?.closest("[aria-label]")?.getAttribute("aria-label") ?? null,
+        ])
+      ),
+    points
+  );
+  for (const [where, hit] of Object.entries(hits)) expect(hit, `something sits on the ${where} of ${name}`).toBe(name);
 }
 
 /* ───────────────────────────── moving around ───────────────────────────── */

@@ -98,3 +98,40 @@ export function formatMMSS(totalSeconds: number): string {
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
+
+/**
+ * "added 3 weeks ago" — how long an undated task has been sitting there, once that is worth
+ * saying.
+ *
+ * Undated tasks are the one kind nothing ages out. A null date is read as "today" on purpose,
+ * because a captured thought is something you can act on right now; the catch is that "right
+ * now" lasts for ever, and the list is ordered newest-first, so last month's debris sinks
+ * quietly to the bottom where nobody looks. A row showed nothing at all under its title, which
+ * made a six-week-old capture and this morning's identical.
+ *
+ * Null for the first few days, deliberately. Something captured this morning is not stale and
+ * labelling it would be noise on every fresh row - the label has to mean something when it
+ * appears, or it stops being read at all.
+ *
+ * Rounded down, and never more precise than the unit it is using: "3 weeks" rather than
+ * "23 days", because nobody acts differently on 23 versus 24.
+ */
+export function formatAge(createdAt: string | null | undefined, now: Date = new Date()): string | null {
+  if (!createdAt) return null;
+  const made = Date.parse(createdAt);
+  if (Number.isNaN(made)) return null;
+
+  const days = Math.floor((now.getTime() - made) / 86_400_000);
+  // Negative means a clock disagreement rather than a task from the future; say nothing.
+  if (days < AGE_QUIET_DAYS) return null;
+  if (days < 14) return `added ${days} days ago`;
+
+  const weeks = Math.floor(days / 7);
+  if (weeks < 9) return `added ${weeks} week${weeks === 1 ? "" : "s"} ago`;
+
+  const months = Math.floor(days / 30);
+  return `added ${months} month${months === 1 ? "" : "s"} ago`;
+}
+
+/** Below this an undated task is simply recent, and saying so would be noise on every row. */
+export const AGE_QUIET_DAYS = 3;

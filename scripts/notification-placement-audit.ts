@@ -396,8 +396,10 @@ async function main() {
     });
     findings.push(
       `[Recurring + overdue] A weekly task 3 days overdue: belongsOnHome=${belongsOnHome(task, TODAY)}, ` +
-        `isOverdue=${isOverdue(task, TODAY)} — confirmed live it stays visible on Home AND is sectioned into ` +
-        `the Overdue panel on Scheduled, with no gap between the two. Its missed occurrence's own notification ` +
+        `isOverdue=${isOverdue(task, TODAY)} — so it stays visible. This script only reads those two answers; ` +
+        `where it is drawn is proven through the UI by PLACE-04: on Home it stays in TO DO as a late routine, and ` +
+        `on Scheduled it stays under RECURRING with a late note - it does NOT join the Overdue panel, which counts ` +
+        `one-off tasks only. Its missed occurrence's own notification ` +
         `produces zero device occurrences (a past instant can't be scheduled) — expected, not a bug, since ` +
         `nobody wants a notification about something already missed.`
     );

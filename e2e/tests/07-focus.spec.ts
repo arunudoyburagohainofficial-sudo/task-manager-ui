@@ -126,7 +126,9 @@ test.describe("running one", () => {
     await spend(page, api, 8);
     await endEarly(page);
     await button(page, "Keep task open").click();
-    await expect.poll(() => section(page, "TO DO")).toContain("Come back later");
+    // It was made with no day, so it goes back where it came from: ANYTIME, not TO DO.
+    await expect.poll(() => section(page, "ANYTIME")).toContain("Come back later");
+    expect(await section(page, "TO DO")).not.toContain("Come back later");
     expect(await screenText(page)).not.toContain("Session complete");
     expect(await screenText(page)).not.toContain("IN SESSION");
     await expect.poll(async () => (await stats(page)).minutes).toBe(8);

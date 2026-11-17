@@ -228,3 +228,9 @@ the one the user actually meets.
   - **Proves:** the two anchor options still describe the *stored* anchor until the save lands.
   - **Why:** labels that follow the picker live tell the user the rule has already changed. Pair
     with SHEET-10, which proves that on save it genuinely does re-anchor.
+
+- [ ] **SHEET-31 — Switching apps mid-edit keeps what you had chosen**
+  - **Does:** open the sheet, change something, send the app to the background and bring it back.
+  - **Proves:** the unsaved choices are still there.
+  - **Why:** the sheet used to reload itself from the stored values whenever they were fetched
+    again, and they are fetched again every time the app comes back to the front.

@@ -1,14 +1,14 @@
 import { expect, test } from "../harness/fixtures";
 import type { Api } from "../harness/api";
-import { control, dateKey, deviceClockAt, dontSee, exact, openTab, reload, screenText, section, see, tab } from "../harness/app";
+import { control, dateKey, deviceClockAt, dontSee, exact, expectWhollyTappable, openTab, panel, reload, screenText, section, see, tab } from "../harness/app";
 import { db } from "../harness/db";
 import { choice, openSchedule, saveAndClose } from "../harness/sheet";
 
 /**
  * The Scheduled screen — plan/09-scheduled-screen.md.
  *
- * Where work that isn't for today lives: the missed, the repeating and the planned. A task that
- * falls between its three panels is a task nobody sees again.
+ * Where work that isn't for today lives: the missed, the repeating, the planned, and the work
+ * with no day at all. A task that falls between its four panels is a task nobody sees again.
  */
 
 /** A one-off that slipped `daysAgo` days — the API refuses past dates, so the day is set directly. */
@@ -18,42 +18,37 @@ async function overdue(api: Api, name: string, daysAgo = 1, extra: Parameters<Ap
   return t;
 }
 
-/** The text of one panel, from its label to the next panel's. */
-async function panel(page: import("@playwright/test").Page, label: "OVERDUE" | "RECURRING" | "UPCOMING"): Promise<string> {
-  const text = await screenText(page);
-  const start = text.indexOf(`${label} |`);
-  if (start < 0) return "";
-  const rest = text.slice(start + label.length + 2);
-  const ends = ["OVERDUE |", "RECURRING |", "UPCOMING |"].map((l) => rest.indexOf(l)).filter((i) => i > 0);
-  return (ends.length ? rest.slice(0, Math.min(...ends)) : rest).trim();
-}
-
-test("SCHED-01 · three panels, in order, each holding exactly its own tasks", async ({ app }) => {
+test("SCHED-01 · four panels, in order, each holding exactly its own tasks", async ({ app }) => {
   const { page, api } = app;
   await overdue(api, "Missed A");
   await overdue(api, "Missed B", 3);
   await api.task({ name: "Routine", taskType: "reminder", scheduledFor: dateKey(1), recurrenceRule: "FREQ=DAILY" });
   await api.task({ name: "Planned", taskType: "reminder", scheduledFor: dateKey(4) });
+  await api.task({ name: "Whenever", taskType: "reminder" });
   await api.task({ name: "Today's", taskType: "reminder", scheduledFor: dateKey(0) });
   await reload(page);
   await openTab(page, "Scheduled");
-  await see(page, /OVERDUE \| 2 \|[\s\S]*RECURRING \| 1 \|[\s\S]*UPCOMING \| 1 \|/);
-  const [o, r, u] = await Promise.all([panel(page, "OVERDUE"), panel(page, "RECURRING"), panel(page, "UPCOMING")]);
+  await see(page, /OVERDUE \| 2 \|[\s\S]*RECURRING \| 1 \|[\s\S]*UPCOMING \| 1 \|[\s\S]*ANYTIME \| 1 \|/);
+  const [o, r, u, a] = await Promise.all([panel(page, "OVERDUE"), panel(page, "RECURRING"), panel(page, "UPCOMING"), panel(page, "ANYTIME")]);
   expect(o).toMatch(/Missed A[\s\S]*Missed B|Missed B[\s\S]*Missed A/);
-  expect(o).not.toMatch(/Routine|Planned/);
+  expect(o).not.toMatch(/Routine|Planned|Whenever/);
   expect(r).toContain("Routine");
-  expect(r).not.toMatch(/Missed|Planned/);
+  expect(r).not.toMatch(/Missed|Planned|Whenever/);
   expect(u).toContain("Planned");
+  expect(u).not.toMatch(/Missed|Routine|Whenever/);
+  expect(a).toContain("Whenever");
+  expect(a).not.toMatch(/Missed|Routine|Planned/);
   expect(await screenText(page)).not.toContain("Today's"); // today's work is Home's
 });
 
 test("SCHED-02 · nothing scheduled reads as calm, not broken", async ({ app }) => {
   const { page, api } = app;
-  await api.task({ name: "Undated", taskType: "reminder" });
+  // A plain task for today is Home's alone, so with only that the screen has nothing to list.
+  await api.task({ name: "Only today", taskType: "reminder", scheduledFor: dateKey(0) });
   await reload(page);
   await openTab(page, "Scheduled");
   await see(page, "Nothing scheduled");
-  expect(await screenText(page)).not.toMatch(/OVERDUE|RECURRING|UPCOMING/);
+  expect(await screenText(page)).not.toMatch(/OVERDUE|RECURRING|UPCOMING|ANYTIME|Only today/);
 });
 
 test("SCHED-03 · Upcoming is grouped by day, soonest first", async ({ app }) => {
@@ -162,6 +157,102 @@ test("SCHED-14 · cancelling 'Clear all' leaves every task alone", async ({ app 
   await control(page, "Cancel").click();
   expect((await api.getTask(id)).status).toBe("pending");
   await see(page, /OVERDUE \| 1 \|/);
+});
+
+/**
+ * The two bulk actions at the size they exist for.
+ *
+ * SCHED-06 and SCHED-13 prove each one does the right thing to two or three tasks. Neither can
+ * see what the action costs, and the cost is what broke: every delete used to ask for the whole
+ * notification queue to be rebuilt, which is three more requests per task. Sixty overdue tasks
+ * made about 240 requests in a few seconds; production allows 200 a minute from one address, so
+ * the server began refusing the deletes themselves half-way through, and "Clear all" left an
+ * arbitrary part of the list behind with an error.
+ *
+ * So these count requests. One change per task is the floor - there is no bulk endpoint - and
+ * everything else has to be a handful, however long the list is.
+ */
+/** Requests a bulk action may make beyond one per task: two rebuilds of the queue, three each. */
+const BULK_OVERHEAD = 6;
+
+function countingRequests(page: import("@playwright/test").Page) {
+  const seen: { method: string; path: string }[] = [];
+  page.on("request", (r) => {
+    const at = r.url().indexOf("/api/");
+    if (at >= 0 && r.url().includes("localhost:8080")) seen.push({ method: r.method(), path: r.url().slice(at) });
+  });
+  return {
+    of: (method: string, path: RegExp) => seen.filter((s) => s.method === method && path.test(s.path)).length,
+    all: () => seen.length,
+    reset: () => void (seen.length = 0),
+  };
+}
+
+test("SCHED-19 · 'Clear all' on sixty overdue tasks deletes each once and rebuilds notifications once", async ({ app }) => {
+  test.setTimeout(240_000);
+  const { page, api, userId } = app;
+  db.bulkOverdue(userId, 60, "Pile", dateKey(-3));
+  try {
+    await api.task({ name: "Booked ahead", taskType: "reminder", scheduledFor: dateKey(2) });
+    await api.task({ name: "No day", taskType: "reminder" });
+    await reload(page);
+    await openTab(page, "Scheduled");
+    await see(page, /OVERDUE \| 60 \|/, 60_000);
+    await expect(tab(page, "Scheduled")).toHaveAccessibleName("Scheduled, 60 overdue");
+
+    const requests = countingRequests(page);
+    await control(page, "Delete all 60 overdue tasks").click();
+    await see(page, "Delete all overdue?");
+    await control(page, "Delete").click();
+    await see(page, "Deleted 60 overdue tasks", 120_000);
+    await page.waitForTimeout(2_000); // anything still on its way after the message
+
+    expect(requests.of("DELETE", /^\/api\/tasks\//)).toBe(60);
+    // Sixty deletes and one rebuild of the notification queue, which is three requests. The
+    // ceiling leaves room for a second rebuild and nothing like room for one per task.
+    expect(requests.all(), "requests made by one Clear all").toBeLessThanOrEqual(BULK_OVERHEAD + 60);
+
+    // The database agrees with the message: the sixty are gone and the other two are not.
+    expect(db.countTasks(userId, "pending")).toBe(2);
+    expect(db.countTasks(userId, "completed")).toBe(0);
+    await dontSee(page, /OVERDUE \|/);
+    await expect(tab(page, "Scheduled")).toHaveAccessibleName("Scheduled");
+    expect(await panel(page, "UPCOMING")).toContain("Booked ahead");
+    expect(await panel(page, "ANYTIME")).toContain("No day");
+  } finally {
+    db.removeBulk(userId, "Pile");
+  }
+});
+
+test("SCHED-20 · 'Move all to today' on sixty overdue tasks changes each once and lands them all on Home", async ({ app }) => {
+  test.setTimeout(240_000);
+  const { page, api, userId } = app;
+  db.bulkOverdue(userId, 60, "Backlog", dateKey(-5));
+  try {
+    await reload(page);
+    await openTab(page, "Scheduled");
+    await see(page, /OVERDUE \| 60 \|/, 60_000);
+
+    const requests = countingRequests(page);
+    await control(page, "Move all 60 overdue tasks to today").click();
+    await control(page, "Move all").click();
+    await see(page, "Moved 60 tasks to today", 120_000);
+    await page.waitForTimeout(2_000);
+
+    expect(requests.of("PATCH", /^\/api\/tasks\//)).toBe(60);
+    expect(requests.all(), "requests made by one Move all").toBeLessThanOrEqual(BULK_OVERHEAD + 60);
+
+    await dontSee(page, /OVERDUE \|/);
+    await expect(tab(page, "Scheduled")).toHaveAccessibleName("Scheduled");
+    await openTab(page, "Home");
+    await see(page, /TO DO \| 60 \|/);
+    // Asked of the server rather than read off the screen: all sixty, each on today, none lost.
+    const moved = (await api.tasks("pending")).filter((task) => task.name.startsWith("Backlog "));
+    expect(moved).toHaveLength(60);
+    expect(moved.every((task) => task.scheduledFor === dateKey(0))).toBe(true);
+  } finally {
+    db.removeBulk(userId, "Backlog");
+  }
 });
 
 /**
@@ -323,4 +414,69 @@ test("SCHED-12 · the day rolls over on this screen too", async ({ app }) => {
   await see(page, /OVERDUE \| 1 \|[\s\S]*Today's, unfinished/);
   expect(await screenText(page)).not.toContain("Tomorrow's");
   await expect(tab(page, "Scheduled")).toHaveAccessibleName("Scheduled, 1 overdue");
+});
+
+/**
+ * ANYTIME is the one list here that only ever grows by itself. A missed task can be cleared in
+ * bulk and a booked one eventually arrives, but an undated one has no day to arrive on, so it
+ * stays until somebody deals with it. Home shows the newest five and sends the reader here for
+ * the rest - and this screen used to draw every one of them the moment the tab opened, however
+ * many there were: a little over a thousand rows took the screen to thirteen thousand page
+ * elements, where Home stays at about three hundred and fifty whatever the account holds.
+ *
+ * So it folds, the way Overdue does. The count in the heading stays the whole number, since
+ * that is how many there are; the rows stop at thirty, and one press on a button that names the
+ * remainder brings the rest, oldest included.
+ */
+test("SCHED-21 · Anytime shows the newest thirty and keeps the rest behind one press", async ({ app }) => {
+  test.setTimeout(120_000);
+  const { page, userId } = app;
+  const rows = async () => (await panel(page, "ANYTIME")).match(/Loose \d+ \|/g) ?? [];
+
+  // "Loose 1" is the newest and "Loose 75" the oldest: created_at is staggered a minute apart.
+  db.bulkTasks(userId, 75, "Loose");
+  try {
+    await reload(page);
+    await openTab(page, "Scheduled");
+    await see(page, /ANYTIME \| 75 \|/, 60_000);
+
+    // Thirty rows, the newest thirty, in order - and the heading still counts all of them.
+    expect(await rows()).toEqual(Array.from({ length: 30 }, (_, i) => `Loose ${i + 1} |`));
+    await dontSee(page, "Loose 75 |");
+
+    // The pill is the last thing on the screen, which is where the tab bar's mascot rises over
+    // the list. Scrolled as far down as the screen goes, all of it has to be clear of her - a
+    // click only ever tries the middle, and the middle was never the part she covered.
+    const more = "Show 45 more anytime tasks";
+    await control(page, more).evaluate((el) => {
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        if (/(auto|scroll)/.test(getComputedStyle(p).overflowY) && p.scrollHeight > p.clientHeight) {
+          p.scrollTop = p.scrollHeight;
+          break;
+        }
+      }
+    });
+    await expectWhollyTappable(page, more);
+
+    await control(page, more).click();
+    await expect.poll(async () => (await rows()).length).toBe(75);
+    await see(page, "Loose 75 |");
+    // Nothing left to reveal, so nothing offering to.
+    expect(await panel(page, "ANYTIME")).not.toMatch(/\d+ more/);
+    await see(page, /ANYTIME \| 75 \|/);
+  } finally {
+    db.removeBulk(userId, "Loose");
+  }
+
+  // Exactly thirty is a full list with nothing behind it, so there is no button to press.
+  db.bulkTasks(userId, 30, "Loose");
+  try {
+    await reload(page);
+    await openTab(page, "Scheduled");
+    await see(page, /ANYTIME \| 30 \|/, 60_000);
+    expect(await rows()).toHaveLength(30);
+    expect(await panel(page, "ANYTIME")).not.toMatch(/\d+ more/);
+  } finally {
+    db.removeBulk(userId, "Loose");
+  }
 });

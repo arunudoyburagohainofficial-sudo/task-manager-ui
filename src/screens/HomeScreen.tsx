@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { failureHint } from "../api/client";
 import {
   AppState,
@@ -53,6 +53,7 @@ import { TourTarget, useTour } from "../state/TourContext";
 import { px, textAtDesignSize as td, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import {
+  formatAge,
   formatClockTime,
   formatFirstName,
   formatGreetingDate,
@@ -68,7 +69,7 @@ import { useAutoFinishStaleSession } from "../utils/useAutoFinishStaleSession";
 import { useStartFocusSession } from "../utils/useStartFocusSession";
 import { goalsRowLayout } from "../utils/goalsLayout";
 import { POINTS_PER_MINUTE, REMINDER_POINTS } from "../utils/points";
-import { belongsOnHome } from "../utils/schedule";
+import { belongsOnHome, formatScheduleDate, isOverdue, newestFirst } from "../utils/schedule";
 import { useTodayKey } from "../utils/useTodayKey";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -78,6 +79,33 @@ import type { RootStackParamList } from "../navigation/types";
  * has to cope with an undefined that never actually occurs.
  */
 type HomeSection = { key: string; title: string; count: number; data: TaskDto[] };
+
+/**
+ * How many overdue rows Home shows before handing the rest to Scheduled.
+ *
+ * Three, against Scheduled's five: that screen is *for* the backlog and can give it a panel,
+ * while here it sits under today's work and must not become the bulk of the screen. The number
+ * is a cap on rows, never on the count in the header - a section that says "3" while twelve are
+ * late would be worse than not showing it at all.
+ */
+const HOME_OVERDUE_PREVIEW = 3;
+
+/**
+ * How many undated rows Home shows before handing the rest to Scheduled.
+ *
+ * Five rather than overdue's three. These are not failures - they are things you meant to do
+ * and simply have not dated - so a few more of them on the screen you work from is useful
+ * rather than reproachful. The cap exists because Capture makes every task this way and
+ * nothing ever ages one out, so without it this section quietly becomes the whole screen.
+ */
+const HOME_ANYTIME_PREVIEW = 5;
+
+/**
+ * How many times the walkthrough's last step may hop down the list towards its row before it
+ * gives up and leaves the "find the task" card to do the job. Each hop is a quarter of a
+ * second, so this is two and a half seconds at the outside.
+ */
+const TOUR_SCROLL_HOPS = 10;
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -179,6 +207,49 @@ export function HomeScreen() {
         .filter((task) => task.id !== session?.taskId),
     [tasksQuery.data, today, session?.taskId]
   );
+
+  /**
+   * Today's work and what slipped, told apart.
+   *
+   * Both belong on Home - a missed dated reminder has already gone silent, so dropping it here
+   * too would lose it twice over - but mixed into one list they bury each other. Fifteen things
+   * you did not do is a graveyard, and today's two actual tasks sit in the middle of it.
+   *
+   * Overdue is oldest first, so the thing that has waited longest is the one you see.
+   *
+   * A late *routine* deliberately stays with today's work rather than moving here. Scheduled
+   * keeps repeating tasks out of its Overdue panel - they live under Recurring with an "N late"
+   * note - so folding them in here would make this section count things the footer's "more in
+   * Scheduled" leads to a panel that does not contain. It would also be the wrong advice: a
+   * routine that slipped is still the thing to do today, and the next occurrence only exists
+   * once this one is finished.
+   */
+  const isLooseAndLate = (task: TaskDto) => task.recurrenceRule == null && isOverdue(task, today);
+  /*
+   * Captured without a day. The app reads a null date as "today" on purpose - a thought you can
+   * act on right now - but nothing ever ages one out, and Capture, the fastest way in, makes
+   * every task this way. Left in with today's planned work they become the bulk of it.
+   */
+  const isUndated = (task: TaskDto) => task.scheduledFor == null;
+  /*
+   * Both newest first, and sorted here rather than left in the order the list happens to be
+   * in (see newestFirst). For today's work that only stops a task put back by Undo from
+   * reappearing at the bottom and then jumping to its place a moment later. For undated work
+   * it is the difference between seeing what you just captured and not seeing it: only the
+   * first five rows are drawn.
+   */
+  const todayTasks = useMemo(
+    () => tasks.filter((task) => !isLooseAndLate(task) && !isUndated(task)).sort(newestFirst),
+    [tasks, today]
+  );
+  const anytimeTasks = useMemo(() => tasks.filter(isUndated).sort(newestFirst), [tasks]);
+  const overdueTasks = useMemo(
+    () =>
+      tasks
+        .filter(isLooseAndLate)
+        .sort((a, b) => (a.scheduledFor! < b.scheduledFor! ? -1 : 1)),
+    [tasks, today]
+  );
   const goals = goalsQuery.data ?? [];
   /*
    * Resolved against the live list rather than trusted from the id alone. The goal can be
@@ -214,8 +285,10 @@ export function HomeScreen() {
   const { startIfNeeded, advance: advanceTour, activeStep: tourStep, tourTaskId, remeasure } = useTour();
   /**
    * Which row the walkthrough's last step points at: the task the user just made during the
-   * tour. It needs no scrolling to reach — the server returns pending tasks newest-first
-   * (TaskService.getTasksForUser), so a just-created task is row one.
+   * tour. A task captured in the tour has no day, so it is the first row under ANYTIME (that
+   * section is newest first). On a new account that is the first row on the screen; on an
+   * account with a full day it is below TO DO and OVERDUE, which is why the last step scrolls
+   * to it (see below).
    *
    * The fallback matters for a replayed tour, where the user may skip through without
    * creating anything: any focus task demonstrates the step, and focus over reminder
@@ -281,9 +354,44 @@ export function HomeScreen() {
       {
         key: "todo",
         title: "TO DO",
-        count: tasks.length,
-        data: collapsedSections.todo ? [] : tasks,
+        count: todayTasks.length,
+        data: collapsedSections.todo ? [] : todayTasks,
       },
+      /*
+       * Below today's work, and capped.
+       *
+       * Below, because today is what you came here to do; a backlog above it is a wall to climb
+       * before reaching the point of the screen. Capped, because this is the one section that
+       * grows without bound - nothing pushes a missed task off it the way a passing day moves an
+       * upcoming one along - and three rows is three rows whether you are one behind or fifty.
+       * The header still carries the real count, and the footer leads to Scheduled, where Move
+       * all and Clear all live. Home should not grow bulk actions.
+       */
+      ...(overdueTasks.length > 0
+        ? [
+            {
+              key: "overdue",
+              title: "OVERDUE",
+              count: overdueTasks.length,
+              data: collapsedSections.overdue ? [] : overdueTasks.slice(0, HOME_OVERDUE_PREVIEW),
+            },
+          ]
+        : []),
+      /*
+       * Below what slipped, because an undated task is not late - it never had a day to miss.
+       * Newest first: the thing you just captured is the thing you most likely still mean to
+       * do, and the age label is what speaks for the old ones.
+       */
+      ...(anytimeTasks.length > 0
+        ? [
+            {
+              key: "anytime",
+              title: "ANYTIME",
+              count: anytimeTasks.length,
+              data: collapsedSections.anytime ? [] : anytimeTasks.slice(0, HOME_ANYTIME_PREVIEW),
+            },
+          ]
+        : []),
       ...(completedToday.length > 0
         ? [
             {
@@ -295,7 +403,7 @@ export function HomeScreen() {
           ]
         : []),
     ],
-    [tasks, completedToday, collapsedSections]
+    [todayTasks, overdueTasks, anytimeTasks, completedToday, collapsedSections]
   );
 
   const hasLoaded = tasksQuery.isSuccess && goalsQuery.isSuccess && remindersQuery.isSuccess && streakQuery.isSuccess;
@@ -308,38 +416,97 @@ export function HomeScreen() {
   }, [hasLoaded, startIfNeeded]);
 
   /**
-   * Put the tour's row back on screen for the last step. Home is a tab that stays mounted,
-   * so its list keeps whatever scroll position it had — arriving at step 5 with the list
-   * halfway down leaves the target (row one, since tasks come back newest-first) off the
-   * top edge, where it reports no rect at all and the tour falls back to its hint card.
+   * Where the tour's row is in the list, in the terms scrollToLocation takes. A section's own
+   * heading is its item 0, so the first task under it is item 1. Null when the row is not drawn
+   * at all: its section is collapsed, it is past the section's limit, or there are no tasks.
+   */
+  const tourRowAt = useMemo(() => {
+    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+      const at = sections[sectionIndex].data.findIndex((t) => t.id === tourRowId);
+      if (at >= 0) return { sectionIndex, itemIndex: at + 1 };
+    }
+    return null;
+  }, [sections, tourRowId]);
+  // Read when the scroll fires rather than when it is scheduled - see the effect below.
+  const tourRowAtRef = useRef(tourRowAt);
+  tourRowAtRef.current = tourRowAt;
+
+  /**
+   * Put the tour's row on screen for the last step. Home is a tab that stays mounted, so its
+   * list keeps whatever scroll position it had, and the row can be anywhere: a task made in
+   * the tour sits under ANYTIME, below however much is due today and however much is late. Off
+   * screen it reports no rect at all and the tour falls back to its "find the task" card.
    *
-   * Anchored to the TO DO header rather than to the row by index: index 0 of section 0 is
-   * always measured, so this can't miss the way scrollToLocation on an unmeasured row can,
-   * and it puts the row just below the top edge on any screen size.
+   * It used to scroll to the TO DO header, which was right while Home was one list with the
+   * newest task as row one. With four sections that leaves the row below the fold as soon as
+   * about eight things are due today (measured: on screen with 4, off it with 10).
+   *
+   * Once per row rather than once per step: the step begins the moment the task is saved,
+   * which can be before the list has it, and until then the row is the stand-in (see
+   * tourRowId). When the real one arrives this runs again and goes to that instead.
    */
   const listRef = useRef<SectionList<TaskDto, HomeSection>>(null);
-  const scrolledForTour = useRef(false);
+  const scrolledForTourRow = useRef<TaskDto["id"] | "none" | null>(null);
+  const tourScrollHops = useRef(0);
+  const tourScrollTimers = useRef<{ retry?: ReturnType<typeof setTimeout>; measure?: ReturnType<typeof setTimeout> }>({});
+  const scrollToTourRow = useCallback(() => {
+    const at = tourRowAtRef.current;
+    listRef.current?.scrollToLocation(
+      at
+        ? // A third of the way down: clear of the top edge, and with room underneath for the
+          // tour's card, which is drawn below the row it points at when there is space.
+          { ...at, viewPosition: 0.3, animated: true }
+        : { sectionIndex: 0, itemIndex: 0, viewPosition: 0, animated: true }
+    );
+    // A programmatic animated scroll doesn't reliably fire onMomentumScrollEnd, so the
+    // remeasure that keeps the spotlight glued to the row has to be triggered by hand.
+    clearTimeout(tourScrollTimers.current.measure);
+    tourScrollTimers.current.measure = setTimeout(remeasure, 550);
+  }, [remeasure]);
+  /**
+   * The list can only scroll to a row it has already drawn, because until then it does not know
+   * where the row is - and it draws a long list a screenful or so at a time. Asked for a row
+   * further down than that, it calls this instead of scrolling (and with no handler at all, it
+   * throws). So: go as far towards the row as the list can, which makes it draw the next
+   * stretch, and ask again. A handful of hops reaches a row forty tasks down.
+   *
+   * Capped, so a list that never gets there cannot keep the screen moving. What is left then is
+   * what there was before any of this: the tour's card saying to find the task.
+   */
+  const hopTowardsTourRow = useCallback(
+    ({ index, averageItemLength }: { index: number; averageItemLength: number }) => {
+      if (tourScrollHops.current >= TOUR_SCROLL_HOPS) return;
+      tourScrollHops.current += 1;
+      listRef.current?.getScrollResponder()?.scrollTo({ y: index * averageItemLength, animated: false });
+      clearTimeout(tourScrollTimers.current.retry);
+      tourScrollTimers.current.retry = setTimeout(scrollToTourRow, 250);
+    },
+    [scrollToTourRow]
+  );
   useEffect(() => {
     if (tourStep !== "start") {
       // Reset on the way out so stepping back and forward again scrolls afresh.
-      scrolledForTour.current = false;
+      scrolledForTourRow.current = null;
       return;
     }
-    if (scrolledForTour.current) return;
-    scrolledForTour.current = true;
+    const row = tourRowId ?? "none";
+    if (scrolledForTourRow.current === row) return;
     // Delayed because this fires while Home is still being navigated back to; a scroll
     // issued during the transition is dropped.
     const scrollTimer = setTimeout(() => {
-      listRef.current?.scrollToLocation({ sectionIndex: 0, itemIndex: 0, viewPosition: 0, animated: true });
+      scrolledForTourRow.current = row;
+      tourScrollHops.current = 0;
+      scrollToTourRow();
     }, 350);
-    // A programmatic animated scroll doesn't reliably fire onMomentumScrollEnd, so the
-    // remeasure that keeps the spotlight glued to the row has to be triggered by hand.
-    const measureTimer = setTimeout(remeasure, 900);
+    return () => clearTimeout(scrollTimer);
+  }, [tourStep, tourRowId, scrollToTourRow]);
+  useEffect(() => {
+    const timers = tourScrollTimers.current;
     return () => {
-      clearTimeout(scrollTimer);
-      clearTimeout(measureTimer);
+      clearTimeout(timers.retry);
+      clearTimeout(timers.measure);
     };
-  }, [tourStep, remeasure]);
+  }, []);
 
   /* --------------------------------------------------------- right now */
 
@@ -582,12 +749,86 @@ export function HomeScreen() {
     return notifyTime ? "reminder" : "task";
   }
 
+  /**
+   * The line under a row's title - and for anything late, the day it slipped from.
+   *
+   * Home keeps overdue work deliberately (see utils/schedule.ts): a missed dated reminder has
+   * already gone silent, because a notification whose moment has passed never fires again, so
+   * dropping it from Home as well would lose it in both senses at once. But the row said only
+   * "9 AM", which is what a task due *today* says - nine days late looked identical to due in
+   * an hour, and the one fact that explained why it was still there was the one missing.
+   *
+   * The clock time gives way rather than being added to: once something is overdue, the hour
+   * it would have buzzed at is the least useful thing on the row. Scheduled's Overdue panel
+   * reached the same conclusion and words it the same way.
+   */
   function detailOf(kind: HomeRowKind, task: TaskDto, goal: GoalDto | undefined, notifyTime: string | undefined) {
-    if (kind === "goal") return goal?.name ?? null;
-    if (kind === "focus") return `${defaultFocusDurationMinutes} min`;
-    if (kind === "reminder") return formatClockTime(notifyTime ?? null);
-    return task.scheduledFor === today ? "today" : null;
+    if (isOverdue(task, today)) return `was due ${formatScheduleDate(task.scheduledFor!, today)}`;
+    // What the row says about itself whatever its date: the goal it counts toward, how long
+    // the session is, the hour it rings at.
+    const own =
+      kind === "goal"
+        ? goal?.name ?? null
+        : kind === "focus"
+          ? `${defaultFocusDurationMinutes} min`
+          : kind === "reminder"
+            ? formatClockTime(notifyTime ?? null)
+            : task.scheduledFor === today
+              ? "today"
+              : null;
+    if (!isUndated(task)) return own;
+    /*
+     * How long an undated one has been waiting, once that is worth saying. A plain undated row
+     * printed nothing at all under its title, so this morning's capture and a six-week-old one
+     * looked identical - and because the list is newest-first, the old ones sink out of sight
+     * rather than nagging. formatAge stays quiet for the first few days so the label means
+     * something when it does appear.
+     *
+     * Added to what the row already says, never instead of it. When the age first arrived it
+     * replaced the line outright, and every undated focus task lost its length, every goal task
+     * lost its goal and every timed reminder lost its hour.
+     */
+    const age = formatAge(task.createdAt);
+    return own && age ? `${own} · ${age}` : own ?? age;
   }
+
+  /**
+   * What TO DO says when nothing is planned for today.
+   *
+   * TO DO used to be the whole list, so "Nothing to do yet" under it was simply true. Now it is
+   * one section of three, and it is empty far more often than the screen is: capture makes
+   * every task undated, so most accounts have work in ANYTIME and none dated today. Printing
+   * "Nothing to do yet - tap Foyg to capture something" directly above five things to do told
+   * the user their captures had not counted.
+   *
+   * So the empty words are kept for when the screen really is empty, and otherwise the row says
+   * only that nothing is *planned for today* and points at what is listed underneath.
+   */
+  const hasLate = overdueTasks.length > 0;
+  const hasUndated = anytimeTasks.length > 0;
+  const todoEmpty =
+    !hasLate && !hasUndated
+      ? {
+          title: completedToday.length > 0 ? "All done for today" : "Nothing to do yet",
+          body: "Tap Foyg below to capture something.",
+        }
+      : {
+          title: completedToday.length > 0 ? "Nothing left for today" : "Nothing planned for today",
+          body:
+            hasLate && hasUndated
+              ? "Overdue and anytime tasks are below."
+              : hasLate
+                ? "Your overdue tasks are below."
+                : "Your anytime tasks are below.",
+        };
+
+  /**
+   * True while a capped section is hiding rows. "That's everything for today" directly under
+   * "12 more in Scheduled" is two lines disagreeing with each other, so the closing line waits
+   * until everything there is can actually be seen from here.
+   */
+  const moreOnScheduled =
+    overdueTasks.length > HOME_OVERDUE_PREVIEW || anytimeTasks.length > HOME_ANYTIME_PREVIEW;
 
   /**
    * Two goals fill the row exactly, as drawn. Beyond that they scroll, sized so the next one
@@ -621,6 +862,7 @@ export function HomeScreen() {
         // onLayout, so nothing else would tell the overlay its spotlight has gone stale.
         onMomentumScrollEnd={remeasure}
         onScrollEndDrag={remeasure}
+        onScrollToIndexFailed={hopTowardsTourRow}
         // Headers scroll away with their section — sticking them would leave a label
         // pinned over the greeting and goals while those are still on screen.
         stickySectionHeadersEnabled={false}
@@ -751,7 +993,38 @@ export function HomeScreen() {
           </View>
         }
         renderSectionHeader={({ section }) =>
-          section.key === "done" ? (
+          section.key === "anytime" ? (
+            <HomeListHeader
+              label={section.title}
+              // The muted label, not today's amber and not overdue's red: nothing here is
+              // urgent or failed, and colouring it either way would be a claim about work the
+              // user has deliberately not committed to a day.
+              ink={theme.color.textLabel}
+              count={section.count}
+              countBg={theme.home.countDoneBg}
+              countInk={theme.home.countDoneInk}
+              collapsed={!!collapsedSections.anytime}
+              collapsedLabel="Show"
+              expandedLabel="Hide"
+              caret="up"
+              onToggle={() => toggleSection("anytime")}
+            />
+          ) : section.key === "overdue" ? (
+            <HomeListHeader
+              label={section.title}
+              ink={theme.color.danger}
+              count={section.count}
+              countBg={theme.schedulePanel.overdue.badgeBg}
+              countInk={theme.schedulePanel.overdue.badgeFg}
+              collapsed={!!collapsedSections.overdue}
+              // "Hide" rather than "Collapse all": this section is one list, not the whole
+              // screen, and it is the one people will want out of the way on a bad week.
+              collapsedLabel="Show"
+              expandedLabel="Hide"
+              caret="up"
+              onToggle={() => toggleSection("overdue")}
+            />
+          ) : section.key === "done" ? (
             <HomeListHeader
               label={section.title}
               ink={theme.color.textLabel}
@@ -784,11 +1057,45 @@ export function HomeScreen() {
         // done. Rendering it as the To do section's footer keeps "nothing left to do"
         // correct even while the completed section below is full.
         renderSectionFooter={({ section }) =>
-          section.key === "todo" && section.count === 0 ? (
-            <HomeEmptyRow
-              title={completedToday.length > 0 ? "All done for today" : "Nothing to do yet"}
-              body="Tap Foyg below to capture something."
-            />
+          /*
+           * The overdue overflow, handed to the screen that can do something about it.
+           *
+           * Navigation, not an inline expansion like Scheduled's own "N more". Letting Home
+           * grow to fifty overdue rows is the thing the cap exists to prevent, and the useful
+           * next step when you are that far behind is Move all or Clear all - which live over
+           * there. Nothing shows while the section is collapsed: an invitation to see more,
+           * under a list you just hid, reads as a bug.
+           */
+          section.key === "anytime" ? (
+            !collapsedSections.anytime && anytimeTasks.length > HOME_ANYTIME_PREVIEW ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`See all ${anytimeTasks.length} undated tasks on Scheduled`}
+                onPress={() => navigation.navigate("Main", { screen: "Scheduled" })}
+                style={styles.overdueMore}
+              >
+                <Text style={td(T.meta, { fontSize: 13, fontWeight: "700", color: theme.color.textMuted })}>
+                  {`${anytimeTasks.length - HOME_ANYTIME_PREVIEW} more in Scheduled`}
+                </Text>
+                <Text style={td(T.body, { color: theme.color.textMuted })}>›</Text>
+              </Pressable>
+            ) : null
+          ) : section.key === "overdue" ? (
+            !collapsedSections.overdue && overdueTasks.length > HOME_OVERDUE_PREVIEW ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`See all ${overdueTasks.length} overdue tasks on Scheduled`}
+                onPress={() => navigation.navigate("Main", { screen: "Scheduled" })}
+                style={styles.overdueMore}
+              >
+                <Text style={td(T.meta, { fontSize: 13, fontWeight: "700", color: theme.color.danger })}>
+                  {`${overdueTasks.length - HOME_OVERDUE_PREVIEW} more in Scheduled`}
+                </Text>
+                <Text style={td(T.body, { color: theme.color.danger })}>›</Text>
+              </Pressable>
+            ) : null
+          ) : section.key === "todo" && section.count === 0 ? (
+            <HomeEmptyRow title={todoEmpty.title} body={todoEmpty.body} />
           ) : null
         }
         renderItem={({ item, section }) => {
@@ -815,6 +1122,13 @@ export function HomeScreen() {
               kind={kind}
               title={item.name}
               detail={detailOf(kind, item, itemGoal, notifyTime)}
+              /*
+               * Red, unlike Scheduled's Overdue rows. Those sit inside a panel already titled
+               * OVERDUE and tinted for it, so reddening each line as well would be a wall of
+               * alarm. Home's TO DO is a neutral list, so a late row has to say so for itself -
+               * which is exactly how Scheduled treats a late routine in its own neutral section.
+               */
+              detailTone={isOverdue(item, today) ? "danger" : "default"}
               points={isFocus ? projectedFocusPoints : REMINDER_POINTS}
               actionLabel={isFocus ? "Focus" : "Done"}
               // The whole row is inside the walkthrough's highlight, so opening the task by
@@ -854,7 +1168,7 @@ export function HomeScreen() {
           );
         }}
         ListFooterComponent={
-          tasks.length > 0 || completedToday.length > 0 ? (
+          (tasks.length > 0 || completedToday.length > 0) && !moreOnScheduled ? (
             <HomeClosingLine>That’s everything for today</HomeClosingLine>
           ) : null
         }
@@ -917,6 +1231,15 @@ const makeStyles = (t: Tokens) =>
     goalsHeader: {
       marginTop: 16,
       marginBottom: 9,
+    },
+    /** Reads as a link rather than a row: centred, no card, and the same red as the header. */
+    overdueMore: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: px(4),
+      minHeight: px(44),
+      marginTop: px(2),
     },
     goalsRow: {
       flexDirection: "row",

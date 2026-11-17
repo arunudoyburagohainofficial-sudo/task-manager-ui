@@ -78,6 +78,28 @@ export function isOverdue(task: Pick<TaskDto, "scheduledFor">, today: string = t
 }
 
 /**
+ * Orders tasks newest first, by when each was made.
+ *
+ * Sorted on the screen rather than trusted to arrive in order. The server does send the list
+ * newest first, but the app then patches that list in place: a task just captured, or one put
+ * back by Undo, is added at the *end*. So by the time a screen reads the list its order is
+ * whatever the last few taps left behind. Home shows only the first five undated tasks, which
+ * meant a task the user had just typed was nowhere on the screen until something refetched -
+ * it looked as if it had not been saved.
+ *
+ * A missing or unreadable time sorts last, as the oldest. It should never happen, and if it
+ * does the row belongs with the ones that have waited longest rather than at the top.
+ */
+export function newestFirst(a: Pick<TaskDto, "createdAt">, b: Pick<TaskDto, "createdAt">): number {
+  return createdMs(b) - createdMs(a);
+}
+
+function createdMs(task: Pick<TaskDto, "createdAt">): number {
+  const ms = task.createdAt ? Date.parse(task.createdAt) : NaN;
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+/**
  * Groups upcoming tasks into dated sections, soonest first, for Upcoming's SectionList.
  * Sorting the keys as strings is safe for the same reason bucketFor's comparison is.
  */

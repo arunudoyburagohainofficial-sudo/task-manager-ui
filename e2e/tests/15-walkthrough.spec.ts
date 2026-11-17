@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, freshAccount, test } from "../harness/fixtures";
 import { api as apiFor } from "../harness/api";
-import { button, control, openTab, pageText, see } from "../harness/app";
+import { button, control, dateKey, openTab, pageText, see } from "../harness/app";
 
 /**
  * The first-run walkthrough — plan/15-walkthrough.md.
@@ -109,11 +109,19 @@ test("TOUR-04 · steps 3, 4 and 5 follow the real actions to a finished tour", a
 /**
  * The tab bar is inert during the tour (by design — see TOUR-10), so the reachable way to be away
  * from a step's target is the last step with the new task scrolled off the screen.
+ *
+ * The fillers are dated today on purpose. A task made in the tour has no day, so it is the first
+ * row under ANYTIME - and undated fillers would sit *below* it there, however many there were,
+ * leaving it on screen with nothing to scroll away from. Sixteen things due today put it sixteen
+ * rows down, under TO DO.
+ *
+ * That is also the case the first half is about. The last step used to scroll to the top of the
+ * list, which left the task below the fold on any full day and the tour pointing at nothing.
  */
-test("TOUR-05 · away from the target, the ring goes and the card says where to go", async ({ browser }) => {
+test("TOUR-05 · a full day doesn't hide the task, and scrolled away from it the card says where to go", async ({ browser }) => {
   await withTour(browser, async (page, token) => {
     const api = apiFor(token);
-    for (let i = 0; i < 16; i++) await api.task({ name: `Filler ${i}`, taskType: "reminder" });
+    for (let i = 0; i < 16; i++) await api.task({ name: `Filler ${i}`, taskType: "reminder", scheduledFor: dateKey(0) });
     await page.reload(); // still on step 1, now with a long list
     await tourSays(page, "1 of 5");
     await throughStep3(page, "Far away task");
@@ -121,7 +129,31 @@ test("TOUR-05 · away from the target, the ring goes and the card says where to 
     await page.getByRole("radio", { name: /^Tour goal/ }).locator("visible=true").last().click();
     await button(page, /^Confirm & Add 1 task$/).click();
     await tourSays(page, "5 of 5");
-    // The new task is at the foot of the list and the tour scrolls it into view — so scroll up.
+
+    // Brought up to where it can be pressed: wholly on screen, above the tab bar, ring around it.
+    // The top of the highest tab button. Read off the page rather than through a role query, which
+    // finds nothing while the tour holds the tab bar inert (TOUR-10).
+    const tabBarTop = await page.evaluate(() => {
+      const tops = Array.from(document.querySelectorAll('[role="tab"]'))
+        .map((el) => el.getBoundingClientRect())
+        .filter((r) => r.height > 0)
+        .map((r) => r.top);
+      return tops.length ? Math.min(...tops) : null;
+    });
+    expect(tabBarTop, "no tab bar found to measure against").not.toBeNull();
+    await expect
+      .poll(
+        async () => {
+          const ring = await ringBox(page);
+          const row = await control(page, "Focus: Far away task").boundingBox().catch(() => null);
+          return !!ring && !!row && row.y > 0 && row.y + row.height < tabBarTop! && centreInside(row, ring);
+        },
+        { message: "the last step never brought the task into view with the ring on it", timeout: 15_000 }
+      )
+      .toBe(true);
+    await tourSays(page, "Tap Focus to begin a session");
+
+    // Then away from it, back to the top of the list.
     for (let i = 0; i < 6; i++) {
       await page.mouse.move(187, 420);
       await page.mouse.wheel(0, -800);

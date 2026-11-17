@@ -19,6 +19,28 @@ passing browser tests:
 - **`force-stop` cancels every pending alarm** while a reboot re-arms them. Neither state exists in
   a browser.
 
+## Status: not run since 2026-10-11, and the app has moved
+
+Read this before trusting a result from here. These flows last ran, and were last changed as a
+set, on 2026-10-11. Since then the splash, the sign-in screen and Home have all been rebuilt, and
+the flows have **not** been run against any of it.
+
+Two expectations were known to be wrong and were corrected on 2026-11-17 **by reading the app's
+source, without a run to confirm them**:
+
+- `10-walkthrough` looked for "Tap Ferne to jot down…". The app says "Tap Foyg…" now.
+- `03-placement-matrix` row 1 expected an undated task to be nowhere on Scheduled. It is listed
+  there under ANYTIME now, and on Home it sits under ANYTIME rather than TO DO.
+
+Expect more of the same on the first run: anything that counts the rows under TO DO, anything
+that walks the sign-in screen, and the first seconds after launch (the splash is new). Treat the
+first failures as stale flows rather than as bugs in the app, and check each against
+`maestro hierarchy` before changing either.
+
+It was not run in the 2026-11-16 release-testing round for a plain reason: there was no built
+debug app, building one needs several gigabytes, and the machine had 6.6 GB of disk free with
+its swap nearly full. No phone was attached.
+
 ## Running it
 
 ```bash

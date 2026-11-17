@@ -61,7 +61,9 @@ test("CAP-02 · one task, captured and created exactly as typed, as a focus task
   await draft(page, "Draft the report");
   await toOrganize(page, 1);
   await confirmAll(page, 1);
-  await expect.poll(() => section(page, "TO DO")).toContain("Draft the report | Focus · 25 min");
+  // No day was given, so it is filed under ANYTIME rather than claimed for today.
+  await expect.poll(() => section(page, "ANYTIME")).toContain("Draft the report | Focus · 25 min");
+  expect(await section(page, "TO DO")).not.toContain("Draft the report");
   const [t] = await api.tasks("pending");
   expect(t).toMatchObject({ name: "Draft the report", taskType: "focus" });
 });
@@ -236,4 +238,36 @@ test("CAP-12 · awkward text survives the round trip", async ({ app }) => {
   for (const c of cases.slice(0, 3)) await see(page, c);
   const { expectNoSidewaysScroll } = await import("../harness/app");
   await expectNoSidewaysScroll(page);
+});
+
+/**
+ * ANYTIME draws five rows, and capture makes every task undated. The list held in memory had a
+ * new task added at its end, so on an account with five or more undated tasks the thing just
+ * typed went straight below the cap of its own section: the person confirmed, landed on Home,
+ * and their task was not on it. After the next reload it was the first row. A screen that
+ * disagrees with itself across a refresh is worse than either order.
+ */
+test("CAP-13 · a new capture is the first row under ANYTIME even when that section is already full", async ({ app }) => {
+  const { page, api } = app;
+  for (let i = 1; i <= 6; i++) await api.task({ name: `Earlier ${i}`, taskType: "reminder" });
+  await reload(page);
+  await see(page, /ANYTIME \| 6 \|/);
+
+  await openCapture(page);
+  await draft(page, "Just typed");
+  await toOrganize(page, 1);
+  await confirmAll(page, 1);
+
+  // Straight away, with no reload: this is the moment the person is looking for it.
+  await see(page, /ANYTIME \| 7 \|/);
+  expect(await section(page, "ANYTIME")).toMatch(/^7 \| Hide \| ▴ \| Just typed \|/);
+  await see(page, "2 more in Scheduled");
+
+  // The same after a reload, so the screen agrees with itself.
+  await reload(page);
+  await expect.poll(() => section(page, "ANYTIME")).toMatch(/^7 \| Hide \| ▴ \| Just typed \|/);
+
+  // And first on the screen that lists all seven.
+  await openTab(page, "Scheduled");
+  await see(page, /ANYTIME \| 7 \| Just typed \|/);
 });
