@@ -44,12 +44,16 @@ async function toScreenTime(page: Page) {
 /**
  * Leaves the permissions step.
  *
- * Deliberately the Skip link rather than Continue: `current` is the first permission still
+ * Deliberately the Skip links rather than Continue: `current` is the first permission still
  * outstanding, and on web `isShieldSupported` is false so nothing can ever be granted. The
  * "everything allowed, here is Continue" branch is therefore unreachable in a browser, and
  * belongs to MD/device-test-plan.md rather than here.
+ *
+ * Two skips: Alarms & reminders first, which moves on to the shield's steps rather than out,
+ * then the shield's own, which leaves.
  */
 async function leavePermissions(page: Page) {
+  await control(page, /^Skip for now · reminders may ring late$/).click();
   await control(page, /^Skip for now · app pausing stays off$/).click();
   await see(page, "Here’s where your time went");
 }
@@ -116,12 +120,13 @@ test.describe("the three steps after signing in", () => {
     });
   });
 
-  test("ONBOARD-05 · the permission step names all three and what each is for", async ({ browser }) => {
+  test("ONBOARD-05 · the permission step names all four and what each is for", async ({ browser }) => {
     await freshInstall(browser, async (page) => {
       await toScreenTime(page);
       await button(page, "Continue").click();
-      await see(page, "3 QUICK STEPS");
+      await see(page, "4 QUICK STEPS");
       for (const [title, why] of [
+        ["Alarms & reminders", "Rings your reminders on time"],
         ["Usage access", "Finds your distracting apps"],
         ["Do Not Disturb", "Silences your phone while you focus"],
         ["Display over other apps", "Shows the pause screen"],
@@ -138,8 +143,8 @@ test.describe("the three steps after signing in", () => {
       await toScreenTime(page);
       await button(page, "Continue").click();
       await control(page, "Why these permissions?").click();
-      await see(page, /Usage access[\s\S]*Do Not Disturb/);
-      expect(await screenText(page)).toContain("3 QUICK STEPS");
+      await see(page, /Alarms & reminders[\s\S]*Usage access[\s\S]*Do Not Disturb/);
+      expect(await screenText(page)).toContain("4 QUICK STEPS");
     });
   });
 
@@ -163,7 +168,7 @@ test.describe("getting out of it, and staying out", () => {
       await button(page, "Continue").click();
       await leavePermissions(page);
       await finishOnboarding(page);
-      expect(await screenText(page)).not.toContain("3 QUICK STEPS");
+      expect(await screenText(page)).not.toContain("QUICK STEPS");
       await button(page, "Skip tour").click();
       await see(page, "TO DO", 60_000);
     });
@@ -178,6 +183,22 @@ test.describe("getting out of it, and staying out", () => {
       await finishOnboarding(page);
       await button(page, "Skip tour").click();
       await see(page, "TO DO", 60_000);
+    });
+  });
+
+  /**
+   * Alarms & reminders comes first, and skipping it must not quietly skip the app-pausing
+   * permissions too - they are about different things. Skip moves on to the next step.
+   */
+  test("ONBOARD-12 · skipping Alarms & reminders moves on to the next permission, not out", async ({ browser }) => {
+    await freshInstall(browser, async (page) => {
+      await toScreenTime(page);
+      await button(page, "Continue").click();
+      await see(page, "ring your reminders on time");
+      await control(page, /^Skip for now · reminders may ring late$/).click();
+      await see(page, "find your distracting apps");
+      await expect(control(page, /^Skip for now · app pausing stays off$/)).toBeVisible();
+      expect(await screenText(page)).toContain("4 QUICK STEPS");
     });
   });
 

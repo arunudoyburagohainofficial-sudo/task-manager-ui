@@ -6,7 +6,7 @@ import type { RootStackParamList } from "../navigation/types";
 import { usersApi } from "../api";
 import { syncReminders } from "../notifications/useReminderSync";
 import { isShieldSupported } from "../../modules/focus-shield";
-import { EXACT_ALARMS_ARE_A_THING, openExactAlarmSettings } from "../notifications/exactAlarms";
+import { EXACT_ALARMS_NEED_ASKING, openExactAlarmSettings, useExactAlarmState } from "../notifications/exactAlarms";
 import { ApiError } from "../api/client";
 import {
   ActionPill,
@@ -98,6 +98,7 @@ export function SettingsScreen() {
   const { restart: restartTour } = useTour();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const theme = useTheme();
+  const { state: exactAlarms, refresh: refreshExactAlarms } = useExactAlarmState();
   const styles = useThemedStyles(makeStyles);
   const { choice: appearance, setChoice: setAppearance } = useAppearance();
 
@@ -186,12 +187,12 @@ export function SettingsScreen() {
   /**
    * Opens Android's "Alarms & reminders" screen, or says plainly that it couldn't.
    *
-   * No success message. If the screen opens, the user is looking at it and does not need to
-   * be told; and because the app cannot read the permission back (see exactAlarms.ts), any
-   * "done!" afterwards would be a claim rather than a fact.
+   * No success message: the row itself changes to "On" when the user comes back, read from the
+   * system rather than assumed from having opened the screen.
    */
   async function handleOpenExactAlarmSettings() {
     const opened = await openExactAlarmSettings();
+    refreshExactAlarms();
     if (!opened) {
       Alert.alert(
         "Couldn't open that screen",
@@ -318,26 +319,39 @@ export function SettingsScreen() {
             right={<Text style={ds(T.body, { color: theme.surface.chevron })}>›</Text>}
           />
           {/*
-            A route, not a diagnosis.
+            Android will only ring a reminder at the exact minute if the user has switched on
+            "Alarms & reminders" for the app; without it the alarm is batched and can arrive
+            half an hour late, which is what a 9:45 reminder turning up at 10:15 is. Android 13+
+            leaves it off on a fresh install. The row reads the switch live (exactAlarms.ts) and
+            says which it is, so someone who skipped it in onboarding finds out here.
 
-            Android will only ring a reminder at the exact minute if the app holds permission
-            to; without it the alarm is batched and can arrive an hour late, which is what a
-            9:45 reminder turning up at 10:15 is. app.json declares both permissions that grant
-            it, and on a current phone one of them is given on install - so for almost everyone
-            this row has nothing to fix.
-
-            It is here for the two cases that leaves: an Android 12 or 13 phone where the user
-            revoked it, and the day Google ever objects to the second permission and it has to
-            come out. The app cannot read the current state to tell the two apart (the version
-            of expo-notifications that SDK 54 pins exposes no such API), so the row never claims
-            anything is wrong - it offers the screen and lets the user see for themselves.
+            Only on phones where the switch exists. "unknown" is a build that can't ask - it keeps
+            the plain route to the screen and claims nothing.
           */}
-          {EXACT_ALARMS_ARE_A_THING ? (
-            <PanelRow
-              label="Reminder timing"
-              onPress={handleOpenExactAlarmSettings}
-              right={<Text style={ds(T.body, { color: theme.surface.chevron })}>›</Text>}
-            />
+          {EXACT_ALARMS_NEED_ASKING ? (
+            exactAlarms === "off" ? (
+              <PanelRow
+                onPress={handleOpenExactAlarmSettings}
+                accessibilityLabel="Reminder timing is off. Turn on Alarms & reminders"
+                right={<Text style={ds(T.body, { fontWeight: "800", color: theme.surface.primary })}>Turn on</Text>}
+              >
+                <Text style={ds(T.body, { fontWeight: "700", color: theme.color.text })}>Reminder timing</Text>
+                <Meta style={{ color: theme.color.danger, marginTop: 2 }}>Off - reminders may ring late</Meta>
+              </PanelRow>
+            ) : (
+              <PanelRow
+                label="Reminder timing"
+                onPress={handleOpenExactAlarmSettings}
+                accessibilityLabel={exactAlarms === "on" ? "Reminder timing is on" : "Reminder timing"}
+                right={
+                  exactAlarms === "on" ? (
+                    <Text style={ds(T.body, { fontWeight: "800", color: theme.color.success })}>On</Text>
+                  ) : (
+                    <Text style={ds(T.body, { color: theme.surface.chevron })}>›</Text>
+                  )
+                }
+              />
+            )
           ) : null}
           <PanelRow
             label="Default focus duration"

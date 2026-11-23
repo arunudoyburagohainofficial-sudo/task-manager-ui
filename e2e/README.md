@@ -51,9 +51,9 @@ cd task-app && npx playwright test --config=e2e/playwright.config.ts --project=a
 | [15 · The walkthrough](plan/15-walkthrough.md) | 11 | Five steps coupled to five real controls across four screens |
 | [16 · Visual regression](plan/16-visual-regression.md) | 13 | The design itself — gradients, rings, shadows, the docked bar |
 | 17 · Focus Now | 57 | **Starting work in one motion**, the throwaway tasks that shortcut creates, and a Pomodoro surviving a refresh as itself |
-| 18 · First-run onboarding | 11 | The four screens only a new install sees, which the rest of the suite deliberately skips |
+| 18 · First-run onboarding | 12 | The four screens only a new install sees, which the rest of the suite deliberately skips |
 | 19 · Placement, on the screens | 16 | **Where a task actually appears** - the When × Repeat matrix asserted on Home and Scheduled, not just in the rules |
-| **Total** | **439** | |
+| **Total** | **440** | |
 | [17 · What this can't prove](plan/17-device-only.md) | — | Notification delivery and everything else that needs a real phone |
 
 Two entries are **blocked on the app**, and say so: `DETAIL-18` (no rename control exists yet)
@@ -63,7 +63,7 @@ and `NOTIF-10` (the in-app reminder modal is exported but nothing renders it).
 
 Two thirds of this app's real bugs have come from one place: **what day a thing is for, and when
 it will interrupt you.** So that's where the catalogue is deepest — 68 in the `logic` project, 31
-`SHEET`, 22 `RECUR`, 18 `NOTIF` and 15 `TIME` entries, 154 of the 439, all pointed at scheduling
+`SHEET`, 22 `RECUR`, 18 `NOTIF` and 15 `TIME` entries, 154 of the 440, all pointed at scheduling
 and reminders.
 
 They test it at three different heights on purpose, because each height can be green while the

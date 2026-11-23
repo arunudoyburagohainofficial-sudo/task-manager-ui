@@ -7,6 +7,7 @@ import type { DeliveryBlock } from "../notifications/deliveryStatus";
 import { readDeliveryBlock } from "../notifications/deliveryProbe";
 import { requestPermission } from "../notifications/localNotifications";
 import { syncReminders } from "../notifications/useReminderSync";
+import { openExactAlarmSettings, useExactAlarmState } from "../notifications/exactAlarms";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { radius, space, text as t, type as T } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
@@ -26,12 +27,18 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  *
  * Renders nothing at all when delivery works or when nothing is set up to deliver — an empty
  * queue is only worth mentioning to someone expecting it to be full.
+ *
+ * The second thing it reports is milder: notifications will arrive, but late. That is Android's
+ * "Alarms & reminders" switch being off (see exactAlarms.ts), which leaves every reminder in the
+ * batched queue. It only shows when nothing worse is wrong - a reminder that will never fire is
+ * the one to fix first.
  */
 export function NotificationBlockBanner() {
   const theme = useTheme();
   const styles = useThemedStyles(makeStyles);
   const navigation = useNavigation<Nav>();
   const [block, setBlock] = useState<DeliveryBlock | null>(null);
+  const { state: exactAlarms, refresh: refreshExactAlarms } = useExactAlarmState();
 
   const remindersQuery = useRemindersQuery();
   const intervalsQuery = useIntervalRemindersQuery();
@@ -60,9 +67,32 @@ export function NotificationBlockBanner() {
     (remindersQuery.data ?? []).filter((r) => r.isActive && r.reminderTime).length +
     (intervalsQuery.data ?? []).filter((r) => r.isActive).length;
 
+  if (configured === 0) return null;
+
   // "unsupported" is left out on purpose: on web there is nothing the reader can do about it,
   // and the queue screen already explains it where it's relevant.
-  if (!block || block === "unsupported" || configured === 0) return null;
+  if (!block || block === "unsupported") {
+    if (exactAlarms !== "off") return null;
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Reminders may ring late. Tap to turn on Alarms & reminders."
+        onPress={async () => {
+          await openExactAlarmSettings();
+          refreshExactAlarms();
+        }}
+        style={styles.banner}
+      >
+        <View style={styles.text}>
+          <Text style={t(T.body, { fontWeight: "800", color: theme.color.danger })}>Reminders may ring late</Text>
+          <Text style={t(T.meta, { color: theme.color.textMuted, marginTop: 2 })}>
+            Alarms & reminders is off for FOYG. Tap to turn it on.
+          </Text>
+        </View>
+        <Text style={t(T.body, { fontWeight: "800", color: theme.color.danger })}>›</Text>
+      </Pressable>
+    );
+  }
 
   const label =
     block === "switch-off"

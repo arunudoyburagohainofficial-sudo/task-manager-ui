@@ -5,6 +5,7 @@ import type { IntervalReminderDto } from "../api/types";
 import { radius, size, space, text as t, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { BottomSheet } from "./BottomSheet";
+import { ExactAlarmNote } from "./ExactAlarmNote";
 import { Button } from "./Button";
 import { Stepper } from "./primitives";
 import { Body, H2, Meta } from "./Text";
@@ -183,6 +184,8 @@ export function NudgeSheet({ visible, onClose, onSubmit, onRemove, submitting = 
           </Body>
         ) : null}
       </View>
+
+      <ExactAlarmNote />
 
       <Button
         label={existing ? "Save nudges" : "Start nudging"}

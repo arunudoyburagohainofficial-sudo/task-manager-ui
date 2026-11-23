@@ -58,3 +58,4 @@ export {
   SectionLabel,
 } from "./surfaces";
 export * from "./NotificationBlockBanner";
+export * from "./ExactAlarmNote";

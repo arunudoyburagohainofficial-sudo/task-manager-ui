@@ -71,6 +71,7 @@ export interface ActiveShield {
 
 declare class FocusShieldNativeModule extends NativeModule {
   getPermissions(): ShieldPermissions;
+  canScheduleExactAlarms(): boolean;
   /** Opens the relevant Settings screen. Android grants these there, not through a prompt. */
   requestPermission(permission: ShieldPermission): Promise<void>;
   listInstalledApps(): Promise<InstalledApp[]>;
@@ -97,6 +98,16 @@ const NOTHING_GRANTED: ShieldPermissions = {
 
 export function getPermissions(): ShieldPermissions {
   return native?.getPermissions() ?? NOTHING_GRANTED;
+}
+
+/**
+ * Whether Android would ring a reminder booked right now at its exact minute, or null where this
+ * build cannot ask (web, Expo Go, iOS). Read live every time - see src/notifications/exactAlarms.ts,
+ * which is what the rest of the app should use rather than this.
+ */
+export function canScheduleExactAlarms(): boolean | null {
+  if (Platform.OS !== "android" || native == null) return null;
+  return native.canScheduleExactAlarms();
 }
 
 export async function requestPermission(permission: ShieldPermission): Promise<void> {

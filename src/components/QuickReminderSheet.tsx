@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { radius, size, space, text as t, type as T } from "../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
 import { BottomSheet } from "./BottomSheet";
+import { ExactAlarmNote } from "./ExactAlarmNote";
 import { H2, Meta } from "./Text";
 
 /**
@@ -92,6 +93,9 @@ export function QuickReminderSheet({
           );
         })}
       </View>
+
+      {/* "In 10 minutes" is the reminder that suffers most from being batched half an hour late. */}
+      <ExactAlarmNote />
     </BottomSheet>
   );
 }

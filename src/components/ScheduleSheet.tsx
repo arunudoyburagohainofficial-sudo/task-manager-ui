@@ -24,6 +24,7 @@ import {
   type NotifyVerdict,
 } from "../notifications/schedulingLogic";
 import { BottomSheet } from "./BottomSheet";
+import { ExactAlarmNote } from "./ExactAlarmNote";
 import { PrimaryAction, SecondaryAction } from "./surfaces";
 import { Button } from "./Button";
 import { AlertGlyph, BellGlyph, CalendarGlyph, RepeatIcon } from "./icons";
@@ -918,6 +919,9 @@ export function ScheduleSheet({
             </View>
           );
         })}
+
+        {/* Every notification above rings late while Android's Alarms & reminders is off. */}
+        {notifications.length > 0 ? <ExactAlarmNote /> : null}
 
         {/* The time picker, shown for whichever row is being edited. */}
         {editingIndex !== null && notifications[editingIndex] ? (

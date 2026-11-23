@@ -1,10 +1,20 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { BottomSheet } from "./BottomSheet";
 import { OnboardingAction } from "./onboarding";
 import { px } from "../theme";
 import { useThemedStyles, type Tokens } from "../state/ThemeContext";
+import { EXACT_ALARMS_NEED_ASKING } from "../notifications/exactAlarms";
 
+// Matches the steps on the permissions screen: Alarms & reminders only where Android has the switch.
 const ROWS = [
+  ...(EXACT_ALARMS_NEED_ASKING || Platform.OS === "web"
+    ? [
+        {
+          title: "Alarms & reminders",
+          body: "Lets your reminders ring at the exact minute you set. Without it, Android saves them up and they can arrive late.",
+        },
+      ]
+    : []),
   {
     title: "Usage access",
     body: "Sees which apps you open and for how long, so Foyg can suggest what to pause.",

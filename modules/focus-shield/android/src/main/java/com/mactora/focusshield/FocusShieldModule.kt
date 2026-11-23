@@ -1,5 +1,6 @@
 package com.mactora.focusshield
 
+import android.app.AlarmManager
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
@@ -44,6 +45,24 @@ class FocusShieldModule : Module() {
                 "usageStats" to hasUsageStatsAccess(),
                 "overlay" to ShieldController.canDrawOverlay(context),
             )
+        }
+
+        /*
+         * Whether a reminder booked now would ring at its minute or be batched - Android's
+         * "Alarms & reminders" switch. Not a shield permission, but this is the app's only native
+         * module, and expo-notifications (the version SDK 54 pins) has no way to read it back.
+         *
+         * Asked fresh on every call rather than cached. The user can flip it in Settings at any
+         * time; revoking it stops the app and cancels its exact alarms, so the next read after a
+         * relaunch is already the new answer. Below Android 12 the permission doesn't exist and
+         * every alarm may be exact.
+         */
+        Function("canScheduleExactAlarms") {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                true
+            } else {
+                (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
+            }
         }
 
         /*

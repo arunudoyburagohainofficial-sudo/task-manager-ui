@@ -18,8 +18,10 @@ to be, the test is lying.
 - **Delivery under Doze and battery optimisation**, on the manufacturers that kill background
   work most aggressively.
 - **Delivery after a reboot**, and after a long idle period.
-- **Exact alarm timing** — the APK does not request `SCHEDULE_EXACT_ALARM`, which is the named
-  suspect for late reminders.
+- **Exact alarm timing** — whether Android's "Alarms & reminders" switch really reads back as on
+  or off, and whether a reminder rings on the minute once it is on and late while it is off. The
+  browser has no such switch: on web the check answers "unknown" and every warning stays hidden.
+  Steps in `MD/device-test-plan.md`, "On lateness".
 - **The 64-pending-notification ceiling** on a real iOS device, and the fair-share allocator's
   behaviour against it.
 

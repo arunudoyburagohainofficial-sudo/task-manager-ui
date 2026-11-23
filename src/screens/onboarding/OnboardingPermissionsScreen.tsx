@@ -6,6 +6,7 @@ import { Meta, ScreenContainer } from "../../components";
 import { FerneSays, OnboardingHeader, OnboardingTextLink } from "../../components/onboarding";
 import { WhyPermissionsSheet } from "../../components/WhyPermissionsSheet";
 import { getPermissions, isShieldSupported, requestPermission, type ShieldPermission } from "../../../modules/focus-shield";
+import { EXACT_ALARMS_NEED_ASKING, openExactAlarmSettings, readExactAlarmState } from "../../notifications/exactAlarms";
 import { useOnboarding } from "../../state/OnboardingContext";
 import { px, space } from "../../theme";
 import { useTheme, useThemedStyles, type Tokens } from "../../state/ThemeContext";
@@ -13,15 +14,31 @@ import type { RootStackParamList } from "../../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList, "OnboardingPermissions">;
 
+/** The shield's three, plus Android's "Alarms & reminders" switch, which reminders need. */
+type StepKey = ShieldPermission | "exactAlarms";
+type Granted = Record<StepKey, boolean>;
+
 interface Step {
-  key: ShieldPermission;
+  key: StepKey;
   title: string;
   why: string;
   /** What to look for once Android's own settings screen opens. */
   hint: string;
 }
 
-const STEPS: Step[] = [
+/*
+ * Alarms & reminders comes first because reminders are what the app is for: without it Android
+ * batches them and they can ring half an hour late. It is only on phones where the switch exists
+ * (Android 12+), and on web, which renders this screen as a preview with nothing granted.
+ */
+const ALARMS_STEP: Step = {
+  key: "exactAlarms",
+  title: "Alarms & reminders",
+  why: "Rings your reminders on time",
+  hint: "Switch on Allow setting alarms and reminders for FOYG.",
+};
+
+const SHIELD_STEPS: Step[] = [
   {
     key: "usageStats",
     title: "Usage access",
@@ -42,7 +59,26 @@ const STEPS: Step[] = [
   },
 ];
 
-const SAYS: Record<ShieldPermission, string> = {
+const STEPS: Step[] = [
+  ...(EXACT_ALARMS_NEED_ASKING || Platform.OS === "web" ? [ALARMS_STEP] : []),
+  ...SHIELD_STEPS,
+];
+
+/** What the Skip link costs, said on the link itself. */
+const SKIP_LABEL: Record<StepKey, string> = {
+  exactAlarms: "Skip for now · reminders may ring late",
+  usageStats: "Skip for now · app pausing stays off",
+  notificationPolicy: "Skip for now · app pausing stays off",
+  overlay: "Skip for now · app pausing stays off",
+};
+
+function readGranted(): Granted | null {
+  if (!isShieldSupported) return null;
+  return { ...getPermissions(), exactAlarms: readExactAlarmState() === "on" };
+}
+
+const SAYS: Record<StepKey, string> = {
+  exactAlarms: "ring your reminders on time",
   usageStats: "find your distracting apps",
   notificationPolicy: "keep your phone quiet while you focus",
   overlay: "show the pause screen over an app",
@@ -54,14 +90,20 @@ export function OnboardingPermissionsScreen() {
   const theme = useTheme();
   const { finish } = useOnboarding();
 
-  const [granted, setGranted] = useState(() => (isShieldSupported ? getPermissions() : null));
+  const [granted, setGranted] = useState<Granted | null>(readGranted);
   const [whyOpen, setWhyOpen] = useState(false);
   /** The permission we last opened Android settings for, cleared once it is granted. */
-  const [attempted, setAttempted] = useState<ShieldPermission | null>(null);
+  const [attempted, setAttempted] = useState<StepKey | null>(null);
   const [refused, setRefused] = useState(false);
+  /*
+   * Skipping Alarms & reminders moves on to the shield's steps rather than out of the screen:
+   * the two are about different things, and skipping one shouldn't silently skip the other.
+   * Skipping a shield step still leaves, as it always has.
+   */
+  const [skippedAlarms, setSkippedAlarms] = useState(false);
 
   const refresh = useCallback(() => {
-    if (isShieldSupported) setGranted(getPermissions());
+    if (isShieldSupported) setGranted(readGranted());
   }, []);
 
   // Granting happens on Android's own settings screen, so the only reliable moment to re-read
@@ -69,7 +111,7 @@ export function OnboardingPermissionsScreen() {
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") return;
-      const next = isShieldSupported ? getPermissions() : null;
+      const next = readGranted();
       setGranted(next);
       // Back from Android's settings with the switch still off. Saying so is the only way the
       // Skip route is reachable at all.
@@ -79,7 +121,8 @@ export function OnboardingPermissionsScreen() {
     return () => sub.remove();
   }, [attempted]);
 
-  const current = STEPS.find((step) => !granted?.[step.key]) ?? null;
+  const current =
+    STEPS.find((step) => !granted?.[step.key] && !(step.key === "exactAlarms" && skippedAlarms)) ?? null;
   const currentIndex = current ? STEPS.indexOf(current) : STEPS.length - 1;
   const grantedFlags = STEPS.map((step) => Boolean(granted?.[step.key]));
 
@@ -95,11 +138,20 @@ export function OnboardingPermissionsScreen() {
     setRefused(false);
     setAttempted(step.key);
     try {
-      await requestPermission(step.key);
+      if (step.key === "exactAlarms") await openExactAlarmSettings();
+      else await requestPermission(step.key);
     } catch {
       // The settings screen refused to open; refresh will keep the row as it was.
     }
     refresh();
+  }
+
+  /** The Skip link for whichever step is current. */
+  function skip(step: Step) {
+    setRefused(false);
+    setAttempted(null);
+    if (step.key === "exactAlarms") setSkippedAlarms(true);
+    else navigation.navigate("OnboardingPickApps");
   }
 
   function onNext() {
@@ -142,10 +194,7 @@ export function OnboardingPermissionsScreen() {
         </View>
 
         <View style={s.refusedFooter}>
-          <OnboardingTextLink
-            label="Skip for now · app pausing stays off"
-            onPress={() => navigation.navigate("OnboardingPickApps")}
-          />
+          <OnboardingTextLink label={SKIP_LABEL[current.key]} onPress={() => skip(current)} />
         </View>
       </ScreenContainer>
     );
@@ -230,10 +279,7 @@ export function OnboardingPermissionsScreen() {
         ) : null}
         {current ? (
           <View style={s.skipRow}>
-            <OnboardingTextLink
-              label="Skip for now · app pausing stays off"
-              onPress={() => navigation.navigate("OnboardingPickApps")}
-            />
+            <OnboardingTextLink label={SKIP_LABEL[current.key]} onPress={() => skip(current)} />
           </View>
         ) : (
           <Pressable accessibilityRole="button" accessibilityLabel="Continue" onPress={onNext} style={s.action}>
