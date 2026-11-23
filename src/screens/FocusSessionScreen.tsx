@@ -154,6 +154,16 @@ export function FocusSessionScreen() {
               : undefined,
         });
         /*
+         * Home learns the session is over here, whichever way the screen leaves. The quick-focus
+         * branch below used to skip this: it jumps straight to Completion, so Home came back still
+         * showing the running card with its timer counting down, until the next refetch.
+         * Cleared outright rather than invalidated - the server has just said the session is
+         * finished, so there is nothing to ask it.
+         */
+        queryClient.setQueryData(queryKeys.currentFocusSession(), null);
+        // The minutes it credited are part of today's totals.
+        queryClient.invalidateQueries({ queryKey: ["todayProgress"] });
+        /*
          * A quick-focus task finishes with its session. It was never a thing to come back to —
          * it exists only because a session needs a task — so asking "is it done, or will you
          * come back to it?" is a question about nothing.
@@ -173,7 +183,6 @@ export function FocusSessionScreen() {
           if ((completed.durationSeconds ?? 0) < 60) {
             await tasksApi.deleteTask(taskId).catch(() => {});
             queryClient.invalidateQueries({ queryKey: ["tasks"] });
-            queryClient.invalidateQueries({ queryKey: queryKeys.currentFocusSession() });
             showToast({ message: "Too short to count - nothing was saved" });
             navigation.navigate("Main", { screen: "Home" });
             return;
@@ -189,10 +198,6 @@ export function FocusSessionScreen() {
         }
         setCompletedSession(completed);
         setPhase("completePrompt");
-        // Home reads both: the session is no longer running, and the minutes it credited are
-        // part of today's totals.
-        queryClient.invalidateQueries({ queryKey: queryKeys.currentFocusSession() });
-        queryClient.invalidateQueries({ queryKey: ["todayProgress"] });
       } catch (err) {
         /*
          * Previously a bare try/finally: if saving the session failed, the error escaped, the
