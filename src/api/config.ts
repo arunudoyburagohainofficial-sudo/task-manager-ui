@@ -3,8 +3,10 @@
  *
  * **The real one unless something says otherwise.** A build produced by `eas build` runs on
  * Expo's cloud infrastructure, not this laptop, so "local by default" would mean every installed
- * APK silently fails to reach anything. eas.json pins every build profile to the real server too,
- * so a local setting left in .env can't leak into a store build.
+ * APK silently fails to reach anything. eas.json pins EXPO_PUBLIC_USE_LOCAL_API=false on every
+ * build profile, so a `true` left in .env can't leak into a store build. It can't do the same for
+ * API_HOST (EAS refuses an empty value there), which is why .env says to pass that one on the
+ * command line only.
  *
  * The switch is EXPO_PUBLIC_USE_LOCAL_API, set to "true" in .env or on the command line:
  *

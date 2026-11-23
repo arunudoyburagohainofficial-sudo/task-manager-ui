@@ -7,8 +7,7 @@
     "preview": {
       "env": {
         "EXPO_PUBLIC_SHOW_TEST_LOGIN": "false",
-        "EXPO_PUBLIC_USE_LOCAL_API": "false",
-        "EXPO_PUBLIC_API_HOST": ""
+        "EXPO_PUBLIC_USE_LOCAL_API": "false"
       },
       "android": {
         "buildType": "apk"
@@ -17,8 +16,7 @@
     "production": {
       "env": {
         "EXPO_PUBLIC_SHOW_TEST_LOGIN": "false",
-        "EXPO_PUBLIC_USE_LOCAL_API": "false",
-        "EXPO_PUBLIC_API_HOST": ""
+        "EXPO_PUBLIC_USE_LOCAL_API": "false"
       },
       "android": {
         "buildType": "app-bundle"
