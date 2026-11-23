@@ -34,7 +34,7 @@ cd task-app && npx playwright test --config=e2e/playwright.config.ts --project=a
 | Area | Tests | What it guards |
 | --- | ---: | --- |
 | [18 · The scheduling arithmetic](plan/18-scheduling-logic.md) | 68 | **When a reminder actually fires** — the layer every screen below reads from |
-| [01 · Auth and session](plan/01-auth-session.md) | 10 | Sign-in, session restore, one account's data never reaching another |
+| [01 · Auth and session](plan/01-auth-session.md) | 11 | Sign-in, session restore, one account's data never reaching another, the launch splash |
 | [02 · Home](plan/02-home.md) | 37 | The four sections and what belongs in each, what a row says, finishing and undoing, the stat strip |
 | [03 · Capture and Organize](plan/03-capture.md) | 13 | The only way work gets into the app, including partial-failure batches |
 | [04 · Task Detail](plan/04-task-detail.md) | 17 | Type, goal, nudges, starting a session, and a task that no longer exists |
@@ -53,7 +53,7 @@ cd task-app && npx playwright test --config=e2e/playwright.config.ts --project=a
 | 17 · Focus Now | 57 | **Starting work in one motion**, the throwaway tasks that shortcut creates, and a Pomodoro surviving a refresh as itself |
 | 18 · First-run onboarding | 11 | The four screens only a new install sees, which the rest of the suite deliberately skips |
 | 19 · Placement, on the screens | 16 | **Where a task actually appears** - the When × Repeat matrix asserted on Home and Scheduled, not just in the rules |
-| **Total** | **438** | |
+| **Total** | **439** | |
 | [17 · What this can't prove](plan/17-device-only.md) | — | Notification delivery and everything else that needs a real phone |
 
 Two entries are **blocked on the app**, and say so: `DETAIL-18` (no rename control exists yet)
@@ -63,7 +63,7 @@ and `NOTIF-10` (the in-app reminder modal is exported but nothing renders it).
 
 Two thirds of this app's real bugs have come from one place: **what day a thing is for, and when
 it will interrupt you.** So that's where the catalogue is deepest — 68 in the `logic` project, 31
-`SHEET`, 22 `RECUR`, 18 `NOTIF` and 15 `TIME` entries, 154 of the 438, all pointed at scheduling
+`SHEET`, 22 `RECUR`, 18 `NOTIF` and 15 `TIME` entries, 154 of the 439, all pointed at scheduling
 and reminders.
 
 They test it at three different heights on purpose, because each height can be green while the

@@ -41,11 +41,10 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
  * above SessionProvider in the tree and has no access to session state, which is why this
  * is a separate component rather than one more branch in App().
  *
- * Splash hides only once three things are all true: the navigator has mounted its first
- * screen (navReady), the persisted-session check has finished (!isLoading), and — if a
- * session was found — the initial data prefetch has settled or timed out (isReady). Until
- * then the native splash stays up, so Home (and every other first-load screen) appears
- * with real data already in the cache instead of showing its own spinner right after.
+ * The native splash normally comes down earlier than this, the moment the full splash
+ * (LoadingScreen) has been drawn - see RootNavigator. The hide here is the fallback: once the
+ * navigator has mounted its first screen (navReady), the persisted-session check has finished
+ * (!isLoading), and the initial data prefetch has settled or timed out (isReady).
  */
 function AppContent() {
   const { isLoading, isReady } = useSession();
@@ -53,7 +52,9 @@ function AppContent() {
 
   useEffect(() => {
     if (navReady && !isLoading && isReady) {
-      SplashScreen.hideAsync();
+      // Usually already done: LoadingScreen hides it the moment the full splash is drawn. This
+      // is the fallback for any launch that reaches a real screen without passing through it.
+      SplashScreen.hideAsync().catch(() => {});
     }
   }, [navReady, isLoading, isReady]);
 

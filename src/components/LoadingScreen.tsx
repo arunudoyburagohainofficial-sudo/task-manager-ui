@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { Animated, Easing, Image, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import Svg, { Defs, Ellipse, RadialGradient, Rect, Stop } from "react-native-svg";
+import * as SplashScreen from "expo-splash-screen";
 
 import { useReduceMotion } from "./Ferne";
 import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
@@ -21,8 +22,13 @@ import { useTheme, useThemedStyles, type Tokens } from "../state/ThemeContext";
  * in both, so the handoff is the lockup resolving rather than a cut to something else.
  */
 
-/** The design's own palette for this screen, which is warmer than the app's own dark. */
-const DESIGN = {
+/**
+ * The design's own palette for this screen, which is warmer than the app's own dark.
+ *
+ * Exported because the screen shown while a focus session starts (StartingFocus) is drawn on the
+ * same ground - it is a moment of the same kind, waiting for the app rather than for the user.
+ */
+export const SPLASH_PALETTE = {
   light: {
     bg: "#FDF8EA",
     ring1: "#EDE0C6",
@@ -57,7 +63,7 @@ const DESIGN = {
  * The shape of one variant. Needed because `as const` narrows every value to its own literal,
  * so light and dark end up as two incompatible types and neither can be passed as "a palette".
  */
-type SplashPalette = { -readonly [K in keyof typeof DESIGN.light]: string };
+export type SplashPalette = { -readonly [K in keyof typeof SPLASH_PALETTE.light]: string };
 
 /** Ferne's box in the design. The rings are sized from it, as they are in the CSS. */
 const HERO = 210;
@@ -123,7 +129,7 @@ export function LoadingScreen() {
   const s = useThemedStyles(makeStyles);
   const { width, height } = useWindowDimensions();
   const reduceMotion = useReduceMotion();
-  const palette = theme.mode === "dark" ? DESIGN.dark : DESIGN.light;
+  const palette = theme.mode === "dark" ? SPLASH_PALETTE.dark : SPLASH_PALETTE.light;
 
   /*
    * The loader's sweep. The only motion kept from the design: the rings breathe and Ferne
@@ -142,7 +148,15 @@ export function LoadingScreen() {
   }, [reduceMotion, sweep]);
 
   return (
-    <View style={[s.screen, { backgroundColor: palette.bg }]}>
+    <View
+      style={[s.screen, { backgroundColor: palette.bg }]}
+      // The phone's own splash comes down the moment this one is drawn, not before - there is
+      // no gap between them - and not after, which is how the full design went unseen.
+      // Rejects harmlessly when there is nothing to hide (a sign-in later on, or the web).
+      onLayout={() => {
+        SplashScreen.hideAsync().catch(() => {});
+      }}
+    >
       <Atmosphere palette={palette} width={width} height={height} />
 
       <View style={s.spacerTop} />

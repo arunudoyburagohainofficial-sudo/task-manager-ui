@@ -222,3 +222,57 @@ test("AUTH-10 · a cold start with no network shows the last known screen", asyn
     await acct.close();
   }
 });
+
+/**
+ * The full splash - rings, "foyg.", the tagline, the progress bar - is what a launch shows, for
+ * long enough to read, signed in or not.
+ *
+ * On a phone it was never seen at all: the phone's own splash (one image on one colour) stayed
+ * up until the data had arrived, and by then the full one had nothing left to cover. A browser
+ * has no native splash, so that half can't be reproduced here. What can be is the other half of
+ * the fix: the floor under how long the full splash stays up, without which a quick launch
+ * flickers it for a frame or two, and a signed-out one skips it.
+ */
+test("AUTH-11 · a launch shows the full splash long enough to read, then moves on", async ({ browser }) => {
+  const TAGLINE = "Your companion for phone-free focus.";
+  const timeSplash = (page: Page) =>
+    page.addInitScript((tagline) => {
+      const w = window as unknown as { __splash: { shown?: number; gone?: number } };
+      w.__splash = {};
+      new MutationObserver(() => {
+        const up = !!document.body?.innerText.includes(tagline);
+        if (up && w.__splash.shown === undefined) w.__splash.shown = performance.now();
+        if (!up && w.__splash.shown !== undefined && w.__splash.gone === undefined) w.__splash.gone = performance.now();
+      }).observe(document, { subtree: true, childList: true, characterData: true });
+    }, TAGLINE);
+  const shownFor = async (page: Page) => {
+    const t = await page.evaluate(() => (window as unknown as { __splash: { shown?: number; gone?: number } }).__splash);
+    expect(t.shown, "the full splash never appeared").toBeDefined();
+    expect(t.gone, "the full splash never went away").toBeDefined();
+    return t.gone! - t.shown!;
+  };
+
+  // Signed in: splash, then Home.
+  const acct = await freshAccount(browser);
+  try {
+    const { page } = acct;
+    await timeSplash(page);
+    await page.reload();
+    await see(page, "Try a focus session");
+    expect(await shownFor(page)).toBeGreaterThanOrEqual(1_000);
+  } finally {
+    await acct.close();
+  }
+
+  // Signed out, on a first install: splash, then the welcome screen - not straight to it.
+  const { context } = await phoneContext(browser);
+  try {
+    const page = await context.newPage();
+    await timeSplash(page);
+    await page.goto("/");
+    await see(page, "Hi, I’m Foyg. I’ll help you focus and keep your phone away.");
+    expect(await shownFor(page)).toBeGreaterThanOrEqual(1_000);
+  } finally {
+    await context.close();
+  }
+});

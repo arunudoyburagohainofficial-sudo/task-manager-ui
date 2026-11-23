@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { LoadingScreen } from "../components";
 import { useSession } from "../state/SessionContext";
@@ -22,9 +22,28 @@ import type { RootStackParamList } from "./types";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+/**
+ * The shortest time the full splash stays up when the app starts.
+ *
+ * Without a floor, a launch whose data arrives quickly would show the full splash for a frame
+ * or two - a flicker of rings and wordmark - or, for someone signed out, not at all. Long
+ * enough to read "foyg." and the line under it; short enough that nobody waits for it. Counted
+ * from the moment the app knows who is signed in, which is about when the splash is first
+ * drawn. Only the launch is held: a sign-in later on shows it just for as long as the data
+ * takes, as before.
+ */
+const LAUNCH_SPLASH_MIN_MS = 1200;
+
 export function RootNavigator() {
   const { user, isLoading, isReady } = useSession();
   const { finished: onboarded } = useOnboarding();
+  const launchKnown = !isLoading && onboarded !== null;
+  const [launchHeld, setLaunchHeld] = useState(true);
+  useEffect(() => {
+    if (!launchKnown) return;
+    const timer = setTimeout(() => setLaunchHeld(false), LAUNCH_SPLASH_MIN_MS);
+    return () => clearTimeout(timer);
+  }, [launchKnown]);
 
   // Keeps the device's locally scheduled reminders in step with the server's, on sign-in
   // and on every foreground. No-ops while signed out.
@@ -34,14 +53,21 @@ export function RootNavigator() {
   // returning user briefly flashes the Auth screen before this resolves.
   // Same reasoning as the session check below: deciding before storage has answered would show
   // onboarding to someone who already finished it.
-  if (isLoading || onboarded === null) return null;
+  if (!launchKnown) return null;
 
-  // Covers the one gap the native splash screen can't: a user who just signed in
-  // interactively (not a cold launch) has no native splash left to hide behind while
-  // their data prefetches — this stands in for it instead of letting Home mount with
-  // whatever's still empty in the cache. Cold launch never actually shows this itself,
-  // since the native splash is still covering the screen for that entire window.
-  if (user && !isReady) return <LoadingScreen />;
+  /*
+   * The full splash: the rings, the wordmark, the tagline and the progress bar around Foyg.
+   *
+   * On a launch it takes over from the phone's own splash, which can only ever be one image on
+   * one colour - the screen hands over as soon as this has been drawn (LoadingScreen hides the
+   * native one). It used to be the other way round: the phone's splash stayed up until the data
+   * had arrived, and by then this had nothing left to cover, so on a phone the full design was
+   * never seen. Only Foyg on a dark background, which is what a phone showed.
+   *
+   * It also covers a sign-in made from the Auth screen, where there is no native splash left to
+   * hide behind while the data loads - instead of letting Home mount half-empty.
+   */
+  if (launchHeld || (user && !isReady)) return <LoadingScreen />;
 
   return (
     /*

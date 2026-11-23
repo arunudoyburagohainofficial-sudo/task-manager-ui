@@ -75,3 +75,14 @@ here (they must explain themselves), and their happy paths belong to the device 
     never ends; actions that need the network say so.
   - **Why:** the cache is persisted precisely for this, and "offline" is the normal state on a
     commute.
+
+- [ ] **AUTH-11 — A launch shows the full splash long enough to read, then moves on**
+  - **Does:** reload a signed-in account; then open the app fresh, signed out. Times how long the
+    tagline is on screen each time.
+  - **Proves:** both launches show the full splash for at least a second, then reach Home and the
+    welcome screen respectively.
+  - **Why:** on a phone the full splash was never seen - the phone's own splash, which is only
+    Foyg on a flat colour, stayed up until the data had arrived, and by then the full one had
+    nothing left to cover. The browser has no native splash, so that half is phone-only (not yet
+    checked on a device); this covers the floor that stops a quick launch from flickering it or skipping
+    it. **Seen to fail** with the floor set to zero.
