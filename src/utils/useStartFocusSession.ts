@@ -29,6 +29,12 @@ export interface StartSessionOptions {
    * it. Nothing was credited, so leaving a stub behind would just litter the list.
    */
   createdTaskId?: string;
+  /**
+   * Asked once the server has answered, just before moving to the session screen. False means
+   * the user cancelled while waiting (StartingFocus): the session that was just opened is
+   * abandoned, its throwaway task removed, and nothing is shown.
+   */
+  shouldContinue?: () => boolean;
 }
 
 /**
@@ -57,9 +63,11 @@ export function useStartFocusSession() {
   const { defaultFocusDurationMinutes, dndDuringFocusEnabled } = usePreferences();
   const [starting, setStarting] = useState(false);
 
+  // Resolves true once a session screen is on its way in - the new session's, or one already
+  // running - and false when nothing was shown.
   const start = useCallback(
-    async ({ taskId, focusMode = "regular", blockMinutes, cycles = 1, dndEnabled, createdTaskId }: StartSessionOptions) => {
-      if (starting) return;
+    async ({ taskId, focusMode = "regular", blockMinutes, cycles = 1, dndEnabled, createdTaskId, shouldContinue }: StartSessionOptions): Promise<boolean> => {
+      if (starting) return false;
       setStarting(true);
 
       const block = blockMinutes ?? defaultFocusDurationMinutes;
@@ -76,6 +84,12 @@ export function useStartFocusSession() {
           // for a regular session, which is one block by definition.
           ...(focusMode === "pomodoro" ? { numPomodoroCycles: cycles } : {}),
         });
+        if (shouldContinue && !shouldContinue()) {
+          // Cancelled while the request was out. Nothing has run, so nothing is credited.
+          await focusSessionsApi.abandonFocusSession(session.id).catch(() => {});
+          await discardStub(createdTaskId, queryClient);
+          return false;
+        }
         /*
          * Navigate first, then write the cache.
          *
@@ -99,22 +113,25 @@ export function useStartFocusSession() {
           // mounted and covering Home, so the timer never appears on Home and slide away.
           startedSession: session,
         });
-        return;
+        return true;
       } catch (e) {
         if (!(e instanceof ApiError) || e.status !== 409) {
           await discardStub(createdTaskId, queryClient);
+          if (shouldContinue && !shouldContinue()) return false;
           Alert.alert("Couldn't start session", "Try again.");
-          return;
+          return false;
         }
 
         // Another session owns the slot, so this one's throwaway task has no reason to exist.
         await discardStub(createdTaskId, queryClient);
 
         const current = await focusSessionsApi.getCurrentSession().catch(() => null);
+        // Cancelled: the session that is running is a real one from earlier, so it is left alone.
+        if (shouldContinue && !shouldContinue()) return false;
         if (current) {
           queryClient.setQueryData(queryKeys.currentFocusSession(), current);
           navigation.navigate("FocusSession", resumeSessionParams(current, defaultFocusDurationMinutes, dnd));
-          return;
+          return true;
         }
 
         /*
@@ -150,6 +167,7 @@ export function useStartFocusSession() {
             },
           ]
         );
+        return false;
       } finally {
         setStarting(false);
       }

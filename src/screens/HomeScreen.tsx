@@ -43,6 +43,7 @@ import {
   type HomeRowKind,
   NotificationBlockBanner,
   FocusNowCard,
+  StartingFocus,
   ScreenContainer,
 } from "../components";
 import { syncReminders } from "../notifications/useReminderSync";
@@ -62,7 +63,7 @@ import {
   isToday,
 } from "../utils/format";
 import { readRunningSession, resumeSessionParams } from "../utils/focusSession";
-import { forgetQuickFocusStub, isQuickFocusStub, markQuickFocusStub } from "../utils/quickFocusStubs";
+import { dropQuickFocusTask, forgetQuickFocusStub, isQuickFocusStub, markQuickFocusStub } from "../utils/quickFocusStubs";
 import { setSessionPaused } from "../utils/sessionPause";
 import { forgetSessionPosition, setSessionPosition } from "../utils/sessionPosition";
 import { useAutoFinishStaleSession } from "../utils/useAutoFinishStaleSession";
@@ -99,6 +100,13 @@ const HOME_OVERDUE_PREVIEW = 3;
  * nothing ever ages one out, so without it this section quietly becomes the whole screen.
  */
 const HOME_ANYTIME_PREVIEW = 5;
+
+/**
+ * How long the starting-focus screen stays up after the session screen has been asked for: the
+ * stack's push (220ms, RootNavigator) and a frame or two of margin, so what fades in beneath it is
+ * the timer at rest rather than a screen still sliding.
+ */
+const STARTING_FOCUS_HANDOVER_MS = 280;
 
 /**
  * How many times the walkthrough's last step may hop down the list towards its row before it
@@ -171,6 +179,14 @@ export function HomeScreen() {
    * though the slide had been refused.
    */
   const [creatingQuickFocus, setCreatingQuickFocus] = useState(false);
+  /*
+   * The loading screen between the slide and the timer (StartingFocus). Separate from
+   * creatingQuickFocus because the two end at different moments: this one stays up until the
+   * session screen has slid in underneath it, and goes at once on Cancel, while the work behind
+   * it may still be tidying up.
+   */
+  const [showStartingFocus, setShowStartingFocus] = useState(false);
+  const quickFocusCancelled = useRef(false);
   const [editingGoal, setEditingGoal] = useState<GoalDto | null>(null);
   const [creatingGoal, setCreatingGoal] = useState(false);
   /*
@@ -536,6 +552,10 @@ export function HomeScreen() {
   async function handleQuickFocus() {
     if (creatingQuickFocus) return;
     setCreatingQuickFocus(true);
+    quickFocusCancelled.current = false;
+    setShowStartingFocus(true);
+    const goalBefore = quickFocusGoalId;
+    let reachedTimer = false;
     try {
       const at = new Date();
       const task = await createTaskMutation.mutateAsync({
@@ -561,18 +581,45 @@ export function HomeScreen() {
        */
       setQuickFocusGoalId(null);
       await markQuickFocusStub(task.id);
-      await startSession({
+      if (quickFocusCancelled.current) {
+        // Cancelled before the session was asked for: the task is all there is to undo.
+        if (await dropQuickFocusTask(task.id)) void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        return;
+      }
+      reachedTimer = await startSession({
         taskId: task.id,
         focusMode: defaultFocusMode,
         blockMinutes: defaultFocusDurationMinutes,
         cycles: defaultFocusMode === "pomodoro" ? defaultPomodoroCycles : 1,
         createdTaskId: task.id,
+        shouldContinue: () => !quickFocusCancelled.current,
       });
     } catch {
-      showToast({ tone: "error", message: `Couldn't start - ${failureHint(null)}` });
+      if (!quickFocusCancelled.current) showToast({ tone: "error", message: `Couldn't start - ${failureHint(null)}` });
     } finally {
+      // Nothing started, so the goal they picked still describes the next sitting.
+      if (!reachedTimer) setQuickFocusGoalId(goalBefore);
       setCreatingQuickFocus(false);
+      if (reachedTimer) {
+        /*
+         * Held until the session screen has finished sliding in underneath (Stack's 220ms),
+         * then faded out to reveal it. Hidden at once, the slide itself showed - over Home.
+         */
+        setTimeout(() => setShowStartingFocus(false), STARTING_FOCUS_HANDOVER_MS);
+      } else {
+        setShowStartingFocus(false);
+      }
     }
+  }
+
+  /**
+   * Cancel on the loading screen. Takes the screen away at once; whatever was already sent is
+   * undone behind it (see handleQuickFocus and useStartFocusSession), so a sitting that was
+   * opened in the meantime is abandoned rather than left running, and credits nothing.
+   */
+  function cancelQuickFocus() {
+    quickFocusCancelled.current = true;
+    setShowStartingFocus(false);
   }
 
   function handleResumeSession() {
@@ -1188,6 +1235,12 @@ export function HomeScreen() {
         onClose={() => setCreatingGoal(false)}
         onSave={handleSaveGoal}
         saving={savingGoal}
+      />
+      <StartingFocus
+        visible={showStartingFocus}
+        // What the slider said: a Pomodoro is the whole sitting, cycles x minutes.
+        minutes={defaultFocusMode === "pomodoro" ? defaultPomodoroCycles * defaultFocusDurationMinutes : defaultFocusDurationMinutes}
+        onCancel={cancelQuickFocus}
       />
     </ScreenContainer>
   );

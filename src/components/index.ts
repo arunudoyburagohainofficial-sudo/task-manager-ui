@@ -7,6 +7,7 @@ export * from "./ScreenWash";
 // Type scale
 export * from "./Text";
 export * from "./LoadingScreen";
+export * from "./StartingFocus";
 export * from "./TourOverlay";
 
 // Primitives
