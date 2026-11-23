@@ -59,7 +59,7 @@ export async function phoneContext(browser: Browser, timezoneId = "Asia/Kolkata"
       if (hits.length) {
         throw new Error(
           `The app tried to reach the deployed backend (${hits[0]}). Restart Metro with\n` +
-            "  EXPO_PUBLIC_API_HOST=localhost npx expo start --web"
+            "  EXPO_PUBLIC_USE_LOCAL_API=true npx expo start --web"
         );
       }
     },

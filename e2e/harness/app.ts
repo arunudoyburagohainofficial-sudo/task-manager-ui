@@ -81,7 +81,7 @@ export async function signIn(page: Page): Promise<void> {
     button.or(page.getByText("TO DO")).first(),
     "Neither the test-user link nor Home appeared. Metro is probably running without the\n" +
       "flag that reveals the link - restart it with\n" +
-      "  cd task-app && EXPO_PUBLIC_API_HOST=localhost EXPO_PUBLIC_SHOW_TEST_LOGIN=true npx expo start --web"
+      "  cd task-app && EXPO_PUBLIC_USE_LOCAL_API=true EXPO_PUBLIC_SHOW_TEST_LOGIN=true npx expo start --web"
   ).toBeVisible({ timeout: 60_000 });
   if (await button.count()) await button.first().click();
 }

@@ -1,20 +1,32 @@
 /**
- * Defaults to the real deployed backend — a build produced by `eas build` runs on
- * Expo's cloud infrastructure, not this laptop, so "point at localhost by default" would
- * mean every installed APK silently fails to reach anything. EXPO_PUBLIC_* vars are
- * inlined into the JS bundle at build time, so overriding this for local development
- * (`expo start` against a backend on this machine) still works exactly as before —
- * nothing about local dev changes, only what happens when no override is set.
+ * Which server the app talks to: the real one on Cloud Run, or one running on a machine nearby.
  *
- * On a physical Android device pointed at a *local* backend, "localhost" means the
- * phone itself — use EXPO_PUBLIC_API_HOST=<your machine's LAN IP> in that case. The
- * Android emulator's 10.0.2.2-for-localhost special case is also only relevant for
- * local development, never for this default.
+ * **The real one unless something says otherwise.** A build produced by `eas build` runs on
+ * Expo's cloud infrastructure, not this laptop, so "local by default" would mean every installed
+ * APK silently fails to reach anything. eas.json pins every build profile to the real server too,
+ * so a local setting left in .env can't leak into a store build.
+ *
+ * The switch is EXPO_PUBLIC_USE_LOCAL_API, set to "true" in .env or on the command line:
+ *
+ *   EXPO_PUBLIC_USE_LOCAL_API=true npx expo start
+ *
+ * EXPO_PUBLIC_API_HOST / EXPO_PUBLIC_API_PORT then say *which* machine (localhost:8080 unless
+ * set). Setting API_HOST on its own also means local - that is how the e2e suite and the Maestro
+ * runner have always started Metro, and quietly sending them to production instead would let a
+ * test run seed and delete real accounts.
+ *
+ * On a physical Android device, "localhost" means the phone itself - use
+ * EXPO_PUBLIC_API_HOST=<your machine's LAN IP>. The Android emulator reaches this machine at
+ * 10.0.2.2. EXPO_PUBLIC_* vars are inlined into the JS bundle at build time, so changing either
+ * needs Metro restarted (`npx expo start --clear`), not just a reload.
  */
 const PRODUCTION_API_BASE_URL = "https://task-svc-1094191642804.us-central1.run.app/api";
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_HOST
-  ? `http://${process.env.EXPO_PUBLIC_API_HOST}:${process.env.EXPO_PUBLIC_API_PORT ?? "8080"}/api`
+export const USES_LOCAL_API =
+  process.env.EXPO_PUBLIC_USE_LOCAL_API === "true" || !!process.env.EXPO_PUBLIC_API_HOST;
+
+export const API_BASE_URL = USES_LOCAL_API
+  ? `http://${process.env.EXPO_PUBLIC_API_HOST || "localhost"}:${process.env.EXPO_PUBLIC_API_PORT ?? "8080"}/api`
   : PRODUCTION_API_BASE_URL;
 
 /**

@@ -26,7 +26,7 @@ test("the local stack is up", async () => {
   expect(
     metro,
     "Metro isn't running on :8081.\n" +
-      "  cd task-app && EXPO_PUBLIC_API_HOST=localhost EXPO_PUBLIC_SHOW_TEST_LOGIN=true npx expo start --web"
+      "  cd task-app && EXPO_PUBLIC_USE_LOCAL_API=true EXPO_PUBLIC_SHOW_TEST_LOGIN=true npx expo start --web"
   ).toBe(true);
   expect(
     api,
