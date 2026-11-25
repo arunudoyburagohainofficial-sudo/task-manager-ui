@@ -33,7 +33,7 @@ cd task-app && npx playwright test --config=e2e/playwright.config.ts --project=a
 
 | Area | Tests | What it guards |
 | --- | ---: | --- |
-| [18 · The scheduling arithmetic](plan/18-scheduling-logic.md) | 68 | **When a reminder actually fires** — the layer every screen below reads from |
+| [18 · The scheduling arithmetic](plan/18-scheduling-logic.md) | 73 | **When a reminder actually fires** — the layer every screen below reads from |
 | [01 · Auth and session](plan/01-auth-session.md) | 11 | Sign-in, session restore, one account's data never reaching another, the launch splash |
 | [02 · Home](plan/02-home.md) | 37 | The four sections and what belongs in each, what a row says, finishing and undoing, the stat strip |
 | [03 · Capture and Organize](plan/03-capture.md) | 13 | The only way work gets into the app, including partial-failure batches |
@@ -44,7 +44,7 @@ cd task-app && npx playwright test --config=e2e/playwright.config.ts --project=a
 | [08 · Goals](plan/08-goals.md) | 13 | The number behind a twenty-day commitment |
 | [09 · The Scheduled screen](plan/09-scheduled-screen.md) | 21 | Overdue, Recurring, Upcoming, Anytime — nothing falling between them, and the bulk actions |
 | [10 · Progress, Settings, points](plan/10-progress-settings.md) | 20 | Making the app's numbers reconcile across screens |
-| [11 · Notifications (UI side)](plan/11-notifications-ui.md) | 18 | What the app queues, what it tells you it queued, and when it stops |
+| [11 · Notifications (UI side)](plan/11-notifications-ui.md) | 19 | What the app queues, what it tells you it queued, and when it stops |
 | [12 · Time and timezones](plan/12-time-and-timezone.md) | 15 | The user's day, midnight, DST — where this codebase has lost days before |
 | [13 · Failure, offline, two devices](plan/13-resilience.md) | 16 | Every optimistic update's rollback path, a backlog larger than one page, and a slow sign-in |
 | [14 · Accessibility and rendering](plan/14-accessibility-and-rendering.md) | 8 | Names, Reduce Motion, large text, small screens |
@@ -53,7 +53,7 @@ cd task-app && npx playwright test --config=e2e/playwright.config.ts --project=a
 | 17 · Focus Now | 57 | **Starting work in one motion**, the throwaway tasks that shortcut creates, and a Pomodoro surviving a refresh as itself |
 | 18 · First-run onboarding | 12 | The four screens only a new install sees, which the rest of the suite deliberately skips |
 | 19 · Placement, on the screens | 16 | **Where a task actually appears** - the When × Repeat matrix asserted on Home and Scheduled, not just in the rules |
-| **Total** | **445** | |
+| **Total** | **451** | |
 | [17 · What this can't prove](plan/17-device-only.md) | — | Notification delivery and everything else that needs a real phone |
 
 Two entries are **blocked on the app**, and say so: `DETAIL-18` (no rename control exists yet)
@@ -62,8 +62,8 @@ and `NOTIF-10` (the in-app reminder modal is exported but nothing renders it).
 ## Where the weight is, and why
 
 Two thirds of this app's real bugs have come from one place: **what day a thing is for, and when
-it will interrupt you.** So that's where the catalogue is deepest — 68 in the `logic` project, 36
-`SHEET`, 22 `RECUR`, 18 `NOTIF` and 15 `TIME` entries, 159 of the 445, all pointed at scheduling
+it will interrupt you.** So that's where the catalogue is deepest — 73 in the `logic` project, 36
+`SHEET`, 22 `RECUR`, 19 `NOTIF` and 15 `TIME` entries, 165 of the 451, all pointed at scheduling
 and reminders.
 
 They test it at three different heights on purpose, because each height can be green while the

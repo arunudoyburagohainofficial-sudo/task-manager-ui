@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { planQueue, type Scheduled } from "../../src/notifications/schedulingLogic";
+import { focusWindow, MAX_PENDING, planQueue, type Scheduled } from "../../src/notifications/schedulingLogic";
 import type { Api } from "./api";
 
 /**
@@ -7,7 +7,7 @@ import type { Api } from "./api";
  *
  * `expo-notifications` does nothing on web, so the real queue is always empty here. But the
  * decision about what to queue is `planQueue`: the same function `scheduleAll` calls on a phone,
- * fed the same three lists `syncReminders` fetches. Running it on those lists is exactly what a
+ * fed the same four things `syncReminders` fetches (the three lists and the running session). Running it on those lists is exactly what a
  * phone would do with them; the only step left out is handing the result to the OS — which is the
  * part plan/17-device-only.md owns.
  *
@@ -17,8 +17,13 @@ import type { Api } from "./api";
  */
 export async function phoneQueue(api: Api): Promise<Scheduled[]> {
   assertSameZone();
-  const [reminders, intervals, pending] = await Promise.all([api.reminders(), api.intervals(), api.tasks("pending")]);
-  return planQueue(reminders, intervals, pending);
+  const [reminders, intervals, pending, session] = await Promise.all([
+    api.reminders(),
+    api.intervals(),
+    api.tasks("pending"),
+    api.currentSession(),
+  ]);
+  return planQueue(reminders, intervals, pending, MAX_PENDING, true, focusWindow(session));
 }
 
 /** One task's entries, as "title / body @ local YYYY-MM-DD HH:mm". */

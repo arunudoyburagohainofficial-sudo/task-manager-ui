@@ -141,3 +141,13 @@ screen was built to name which end it's reporting.
     the second task back into the pending list, where it sat until something else refetched. The
     guard is a single `isMutating() === 0` check, and its symptom — a task you just finished
     quietly reappearing — is indistinguishable from the app losing the write.
+
+- [ ] **NOTIF-19 — A task's reminder stays quiet while you focus on it, and comes back if you keep it open** (added 2026-11-26)
+  - **Does:** two tasks with a reminder an hour from now; start a session on one from Task Detail;
+    end it early and keep the task open.
+  - **Proves:** starting the session re-syncs the phone's queue (a `GET /reminders` follows), and
+    the queue then leaves out the focused task's reminder and keeps the other's; ending it re-syncs
+    and the reminder is back.
+  - **Why:** the session's start and end are the only moments the quiet can begin and end. The
+    re-sync is triggered from the three session calls in `src/api/focusSessions.ts`, so it covers
+    every way into and out of a session.

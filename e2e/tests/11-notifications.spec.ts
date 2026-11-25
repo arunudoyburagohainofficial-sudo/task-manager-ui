@@ -277,4 +277,43 @@ test.describe("the queue a phone would hold", () => {
     await stayAbsent(page, /TO DO \| \d+ \| Collapse all[^|]*\| ▾ \| (First|Second) \|/, 3_000);
     expect(await screenText(page)).toContain("All done for today");
   });
+
+  /**
+   * "Time to focus" on the task you're already focusing on is noise - and the session has Do Not
+   * Disturb on, so it would only have landed silently. While a task's own session runs, the phone
+   * doesn't queue its reminder; ended with the task kept open, the reminder is booked again.
+   *
+   * The reminder is an hour from now on an undated task, so its next occurrence is always about an
+   * hour out (past midnight included) and inside the session's quiet window.
+   */
+  test("NOTIF-19 · a task's reminder stays quiet while you focus on it, and comes back if you keep it open", async ({ app }) => {
+    const { page, api } = app;
+    const inAnHour = new Date(Date.now() + 60 * 60_000);
+    const time = `${String(inAnHour.getHours()).padStart(2, "0")}:${String(inAnHour.getMinutes()).padStart(2, "0")}:00`;
+    const focused = await api.task({ name: "Deep work", notifications: [{ time, daysBefore: 0 }] });
+    const other = await api.task({ name: "Something else", taskType: "reminder", notifications: [{ time, daysBefore: 0 }] });
+    const next = (entries: string[]) => entries.find((e) => e.endsWith(stamp(new Date(inAnHour.setSeconds(0, 0)))));
+    await reload(page);
+    expect(next(entriesFor(await phoneQueue(api), focused.id)), "booked before the session").toBeTruthy();
+
+    // Starting the session re-syncs the phone's queue straight away...
+    await exact(page, "Deep work").click();
+    const startSync = nextSync(page);
+    await button(page, /^Start \d+ (min session|rounds?)$/).click();
+    await see(page, /End Session/);
+    await startSync;
+    // ...and what it books leaves out the focused task's reminder, and only that one.
+    const during = await phoneQueue(api);
+    expect(next(entriesFor(during, focused.id)), "quiet during the session").toBeUndefined();
+    expect(next(entriesFor(during, other.id)), "another task still rings").toBeTruthy();
+
+    // Ended early with the task kept open: the reminder is still ahead, so it's booked again.
+    const endSync = nextSync(page);
+    await button(page, "End Session").click();
+    await control(page, "End").click();
+    await see(page, "Session complete");
+    await endSync;
+    await button(page, "Keep task open").click();
+    expect(next(entriesFor(await phoneQueue(api), focused.id)), "back after the session").toBeTruthy();
+  });
 });

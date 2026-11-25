@@ -1,12 +1,13 @@
 import { useCallback, useEffect } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import * as Notifications from "expo-notifications";
-import { remindersApi, tasksApi } from "../api";
+import { focusSessionsApi, remindersApi, tasksApi } from "../api";
 import { handleNotificationResponse } from "./notificationActions";
 import { queryClient } from "../api/queryClient";
 import { queryKeys } from "../api/queryKeys";
 import { useSession } from "../state/SessionContext";
 import { scheduleAll } from "./localNotifications";
+import { focusWindow } from "./schedulingLogic";
 import { startBackgroundSync } from "./backgroundSync";
 
 /** The run under way, if there is one. Everything that asks while it runs shares it. */
@@ -80,10 +81,13 @@ export async function withReminderSyncHeld<T>(work: () => Promise<T>): Promise<T
 
 async function syncOnce(): Promise<void> {
   try {
-    const [reminders, intervals, tasks] = await Promise.all([
+    const [reminders, intervals, tasks, session] = await Promise.all([
       remindersApi.getReminders(),
       remindersApi.getIntervalReminders(),
       tasksApi.getTasks("pending"),
+      // The running session, so its task's reminders stay quiet (planQueue). Failing to read it
+      // must not stop the sync: worst case the reminder rings during the session, as it used to.
+      focusSessionsApi.getCurrentSession().catch(() => null),
     ]);
 
     /**
@@ -113,7 +117,7 @@ async function syncOnce(): Promise<void> {
 
     // Scheduling still runs on the fetched data either way: a slightly stale notification
     // set self-corrects on the next sync, and skipping it entirely would be worse.
-    await scheduleAll(reminders, intervals, tasks);
+    await scheduleAll(reminders, intervals, tasks, focusWindow(session));
   } catch {
     // Offline, permission denied, or a transient API error — retried on next foreground.
   }

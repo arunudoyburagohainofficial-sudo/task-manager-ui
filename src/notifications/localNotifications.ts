@@ -3,7 +3,7 @@ import { Platform } from "react-native";
 import type { IntervalReminderDto, ReminderDto, TaskDto } from "../api/types";
 import { REMINDER_CATEGORY, registerNotificationCategory } from "./notificationActions";
 import { readNotificationsEnabled } from "./preference";
-import { MAX_PENDING, planQueue } from "./schedulingLogic";
+import { MAX_PENDING, planQueue, type FocusWindow } from "./schedulingLogic";
 
 /**
  * Reminder delivery lives here, on the device — the backend stores reminders so they sync
@@ -98,12 +98,13 @@ export async function configureAndroidChannel(): Promise<void> {
 export function scheduleAll(
   reminders: ReminderDto[],
   intervals: IntervalReminderDto[],
-  tasks: TaskDto[]
+  tasks: TaskDto[],
+  focusing: FocusWindow | null = null
 ): Promise<number> {
   // Serialised against any run already in progress — see `pending` below.
   const result = pending.then(
-    () => runScheduleAll(reminders, intervals, tasks),
-    () => runScheduleAll(reminders, intervals, tasks)
+    () => runScheduleAll(reminders, intervals, tasks, focusing),
+    () => runScheduleAll(reminders, intervals, tasks, focusing)
   );
   // The chain itself must never hold a rejection, or every later call inherits it and
   // this queue jams permanently. Callers still see the real (possibly rejected) promise.
@@ -134,7 +135,8 @@ let pending: Promise<void> = Promise.resolve();
 async function runScheduleAll(
   reminders: ReminderDto[],
   intervals: IntervalReminderDto[],
-  tasks: TaskDto[]
+  tasks: TaskDto[],
+  focusing: FocusWindow | null
 ): Promise<number> {
   /*
    * The Settings switch. It used to be stored and never read — reminders kept arriving after
@@ -160,7 +162,7 @@ async function runScheduleAll(
   // *before* the cancel below: cancelling first and then throwing while building would leave the
   // device with no notifications at all, and syncReminders swallows the error, so that loss would
   // be completely silent.
-  const chosen = planQueue(reminders, intervals, tasks, MAX_PENDING, enabled);
+  const chosen = planQueue(reminders, intervals, tasks, MAX_PENDING, enabled, focusing);
 
   await Notifications.cancelAllScheduledNotificationsAsync();
 

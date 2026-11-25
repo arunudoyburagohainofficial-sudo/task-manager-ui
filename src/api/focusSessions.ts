@@ -6,6 +6,16 @@ import type {
 } from "./types";
 
 /**
+ * A session starting or ending changes which reminders should ring: a task's own reminders stay
+ * quiet while someone is focusing on it (planQueue's `focusing`). Every start, finish and discard
+ * in the app goes through the three calls below, so the re-sync lives here rather than at each of
+ * the ten places that make them. Imported lazily - the sync module imports this one.
+ */
+function resyncReminders(): void {
+  void import("../notifications/useReminderSync").then((m) => m.syncReminders()).catch(() => undefined);
+}
+
+/**
  * The currently in-progress session for this user, if any — null when there isn't one
  * (server returns 204). Lets a 409 from startFocusSession deep-link straight to it.
  */
@@ -23,6 +33,9 @@ export function startFocusSession(
   return apiRequest<FocusSessionDto>(`/tasks/${taskId}/focus-sessions`, {
     method: "POST",
     body: request,
+  }).then((session) => {
+    resyncReminders();
+    return session;
   });
 }
 
@@ -34,6 +47,9 @@ export function completeFocusSession(
   return apiRequest<FocusSessionDto>(`/focus-sessions/${sessionId}/complete`, {
     method: "POST",
     body: request,
+  }).then((session) => {
+    resyncReminders();
+    return session;
   });
 }
 
@@ -45,5 +61,7 @@ export function completeFocusSession(
  * a new one. Refused on a session that has already finished.
  */
 export function abandonFocusSession(sessionId: string): Promise<void> {
-  return apiRequest<void>(`/focus-sessions/${sessionId}`, { method: "DELETE" });
+  return apiRequest<void>(`/focus-sessions/${sessionId}`, { method: "DELETE" }).then(() => {
+    resyncReminders();
+  });
 }

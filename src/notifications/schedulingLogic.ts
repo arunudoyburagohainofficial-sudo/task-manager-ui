@@ -1,4 +1,4 @@
-import type { IntervalReminderDto, ReminderDto, TaskDto } from "../api/types";
+import type { FocusSessionDto, IntervalReminderDto, ReminderDto, TaskDto } from "../api/types";
 import { WEEKDAYS, type RecurrencePattern } from "../utils/recurrence";
 
 /**
@@ -327,9 +327,20 @@ export function planQueue(
   tasks: TaskDto[],
   budget: number = MAX_PENDING,
   /** Settings → Reminder notifications. Off means nothing is queued at all. */
-  enabled: boolean = true
+  enabled: boolean = true,
+  /** The task being focused on right now, if any - see focusWindow. */
+  focusing: FocusWindow | null = null
 ): Scheduled[] {
   if (!enabled) return [];
+  /*
+   * A task's own reminders and nudges stay quiet while someone is in a focus session on it. "Time
+   * to focus" in the middle of the session is noise, and the session has Do Not Disturb on anyway,
+   * so it would only land silently in the shade to be found afterwards. Only occurrences inside the
+   * window are dropped: once the session ends with the task kept open, the next sync books the
+   * ones still ahead again.
+   */
+  const quiet = (taskId: string, at: Date) =>
+    focusing != null && taskId === focusing.taskId && at.getTime() < focusing.until.getTime();
   const taskName = new Map(tasks.map((task) => [task.id, task.name]));
   const isPending = new Set(tasks.filter((t) => t.status === "pending").map((t) => t.id));
   // Every reminder used to announce itself as "Time to focus", including on reminder-type
@@ -355,9 +366,11 @@ export function planQueue(
       reminder.daysBefore ?? 0
     );
     if (!occurrences.length) continue;
+    const audible = occurrences.filter((at) => !quiet(reminder.taskId, at));
+    if (!audible.length) continue;
     const focus = isFocusTask.has(reminder.taskId);
     groups.push(
-      occurrences.map((at) => ({
+      audible.map((at) => ({
         at,
         title: focus ? "Time to focus" : "Reminder",
         // A lead-time notification says so, otherwise "Buy Mum a gift" a week early reads as if
@@ -373,7 +386,7 @@ export function planQueue(
 
   for (const interval of intervals) {
     if (!interval.isActive || !isPending.has(interval.taskId)) continue;
-    const occurrences = intervalOccurrences(interval);
+    const occurrences = intervalOccurrences(interval).filter((at) => !quiet(interval.taskId, at));
     if (!occurrences.length) continue;
     groups.push(
       occurrences.map((at) => ({
@@ -388,6 +401,29 @@ export function planQueue(
   const chosen = allocateFairly(groups, budget);
   chosen.sort((a, b) => a.at.getTime() - b.at.getTime());
   return chosen;
+}
+
+/** A task whose reminders are held back until a moment - the focus session running on it. */
+export type FocusWindow = { taskId: string; until: Date };
+
+/**
+ * The longest a session can run before the server stops crediting it (CLAUDE.md: planned + 5,
+ * hard ceiling 240 minutes). Used as the far end of the quiet window, so a session left open -
+ * the app killed mid-session, a phone left on a desk - can't silence a task's reminders for ever.
+ */
+export const FOCUS_QUIET_CEILING_MINUTES = 240;
+
+/**
+ * The quiet window for a running session: from now until the session ends, which the phone can't
+ * know in advance (a Pomodoro's breaks wait to be tapped), so until the ceiling after it started.
+ * The session's end is what actually lifts it - finishing or discarding re-syncs, and a sync with
+ * no running session books the task's later reminders again.
+ */
+export function focusWindow(session: FocusSessionDto | null | undefined): FocusWindow | null {
+  if (!session || session.completedAt) return null;
+  const started = new Date(session.startedAt).getTime();
+  if (!Number.isFinite(started)) return null;
+  return { taskId: session.taskId, until: new Date(started + FOCUS_QUIET_CEILING_MINUTES * 60_000) };
 }
 
 /**

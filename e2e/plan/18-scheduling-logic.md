@@ -299,6 +299,42 @@ client's.
     five weekdays where "Every weekday" was meant isn't wrong, but it's the difference between a
     summary and a data dump.
 
+## G · The whole queue — `planQueue`
+
+The function `scheduleAll` hands to the phone, fed what `syncReminders` fetches. LOGIC-37 and
+LOGIC-38 live in `budget-and-wording.spec.ts`; LOGIC-39 to LOGIC-43 in `focus-quiet.spec.ts`.
+
+- [x] **LOGIC-37 — Reminders switched off in Settings queue nothing at all**
+  - **Proves:** with the Settings switch off the queue is empty; the same data with it on isn't.
+
+- [x] **LOGIC-38 — Only live reminders on unfinished tasks are queued, soonest first, named for their task**
+  - **Proves:** a switched-off reminder and a finished task's reminder are left out; the rest are in
+    time order; a focus task's says "Time to focus", a reminder task's says "Reminder".
+
+- [x] **LOGIC-39 — The focused task's reminder in the session is dropped; another task's isn't** (added 2026-11-26)
+  - **Does:** two tasks with a 12:00 reminder; a session on one started at 10:00; it's 10:30.
+  - **Proves:** only the other task's 12:00 is queued.
+  - **Why:** "Time to focus" on the task you're already focusing on is noise, and the session has
+    Do Not Disturb on, so it would only have arrived silently.
+
+- [x] **LOGIC-40 — Only the window is quiet: later the same day, and the days after, still ring**
+  - **Proves:** the window runs to 14:00 (four hours after a 10:00 start); a 15:00 reminder the
+    same day is still queued; an undated task's daily 12:00 skips today's and keeps tomorrow's.
+
+- [x] **LOGIC-41 — The focused task's nudges are quiet in the session; another task's keep coming**
+  - **Proves:** hourly nudges 11:00–16:00 on the focused task queue only 14:00, 15:00 and 16:00;
+    another task's 11:00 and 12:00 nudges are untouched.
+
+- [x] **LOGIC-42 — No session, or one that has finished, silences nothing**
+  - **Proves:** no window for no session, a finished one, or an unreadable start; a null window
+    queues exactly what no window does.
+
+- [x] **LOGIC-43 — A session left open can't silence the task for ever**
+  - **Proves:** the window ends `FOCUS_QUIET_CEILING_MINUTES` (240, the server's own crediting
+    ceiling) after the start; six hours on, with the session still "open", the reminder rings.
+  - **Why:** the session's end is what normally lifts the quiet (finishing or discarding re-syncs),
+    but the app can be killed mid-session; the ceiling stops that becoming a silent task.
+
 ---
 
 ## What this file deliberately does not do
