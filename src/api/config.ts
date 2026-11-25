@@ -8,9 +8,10 @@
  * API_HOST (EAS refuses an empty value there), which is why .env says to pass that one on the
  * command line only.
  *
- * The switch is EXPO_PUBLIC_USE_LOCAL_API, set to "true" in .env or on the command line:
- *
- *   EXPO_PUBLIC_USE_LOCAL_API=true npx expo start
+ * The switch is EXPO_PUBLIC_USE_LOCAL_API="true", set in .env.local (gitignored) or on the command
+ * line. A value in a .env file wins over the command line in Metro's dev server, which is why .env
+ * itself doesn't set it at all - a "false" there once overrode `EXPO_PUBLIC_USE_LOCAL_API=true` and
+ * pointed a test run at production.
  *
  * EXPO_PUBLIC_API_HOST / EXPO_PUBLIC_API_PORT then say *which* machine (localhost:8080 unless
  * set). Setting API_HOST on its own also means local - that is how the e2e suite and the Maestro

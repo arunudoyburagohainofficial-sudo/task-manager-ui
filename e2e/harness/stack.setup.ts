@@ -34,3 +34,44 @@ test("the local stack is up", async () => {
       "  cd task-svc && docker compose up -d && mvn spring-boot:run"
   ).toBe(true);
 });
+
+/**
+ * Metro being up isn't enough: the bundle it serves has to point at the local server.
+ *
+ * The app talks to production unless EXPO_PUBLIC_USE_LOCAL_API is "true" (or an API_HOST is set),
+ * and Metro's dev server takes a value from a .env file over the same variable on the command
+ * line. A "false" left in .env once overrode `EXPO_PUBLIC_USE_LOCAL_API=true npx expo start`, and
+ * the run only stopped because the fixtures block *.run.app - every test failed at sign-in with
+ * "Failed to fetch", which says nothing about why. This reads the served bundle and says so.
+ */
+test("the app under test talks to the local server", async () => {
+  const html = await (await fetch("http://localhost:8081")).text();
+  const src = /src="([^"]*\.bundle[^"]*)"/.exec(html)?.[1]?.replace(/&amp;/g, "&");
+  expect(src, "couldn't find the app bundle in Metro's page").toBeTruthy();
+  const bundle = await (await fetch(new URL(src!, "http://localhost:8081"))).text();
+
+  /*
+   * The same merge as node_modules/expo/virtual/env.js: Metro's own environment (injected as a
+   * prelude) first, then each .env file in this order, each overriding what came before.
+   */
+  const fromShell = /HMR env vars from Expo CLI[^\n]*/.exec(bundle)?.[0] ?? "";
+  const files = [".env", ".env.development", ".env.local", ".env.development.local"].map((name) => {
+    const at = bundle.indexOf(`,[],"${name}");`);
+    if (at < 0) return "";
+    const open = bundle.lastIndexOf("var _default = {", at);
+    return open < 0 ? "" : bundle.slice(open, at);
+  });
+  const read = (name: string): string | undefined => {
+    let value = new RegExp(`"${name}": \\{ enumerable: true, value: "([^"]*)"`).exec(fromShell)?.[1];
+    for (const file of files) value = new RegExp(`"${name}": "([^"]*)"`).exec(file)?.[1] ?? value;
+    return value;
+  };
+
+  const local = read("EXPO_PUBLIC_USE_LOCAL_API") === "true" || !!read("EXPO_PUBLIC_API_HOST");
+  expect(
+    local,
+    "Metro is serving an app that talks to PRODUCTION.\n" +
+      "  Check .env and .env.local for EXPO_PUBLIC_USE_LOCAL_API (a file value beats the command line), then:\n" +
+      "  cd task-app && EXPO_PUBLIC_USE_LOCAL_API=true EXPO_PUBLIC_SHOW_TEST_LOGIN=true npx expo start --web --clear"
+  ).toBe(true);
+});
