@@ -2,7 +2,7 @@ import { expect, test } from "../harness/fixtures";
 import { button, control, dateKey, exact, foreground, openTab, reload, screenText, section, see, stayAbsent } from "../harness/app";
 import { db } from "../harness/db";
 import { entriesFor, nextSync, phoneQueue, stamp } from "../harness/queue";
-import { openSchedule, saveAndClose, storedNotifications } from "../harness/sheet";
+import { openReminders, openSchedule, reminderTime, saveAndClose, sheetButton, storedNotifications } from "../harness/sheet";
 
 /**
  * Notifications, as far as a browser can see — plan/11-notifications-ui.md.
@@ -63,7 +63,8 @@ test.describe("what's configured, and what a phone would queue", () => {
     await see(page, "Loud | Reminder · 11:30 PM");
     await exact(page, "Loud").click();
     await openSchedule(page, "Loud");
-    await control(page, "Remove this notification").click();
+    await openReminders(page);
+    await sheetButton(page, "Turn off reminders").click();
     const synced = nextSync(page);
     await saveAndClose(page);
     await synced;
@@ -249,10 +250,10 @@ test.describe("the queue a phone would hold", () => {
         syncs.push(rows.filter((x) => x.taskId === t.id && x.isActive).map((x) => x.reminderTime).join(","));
       }
     });
-    for (const preset of ["Evening", "Night"]) {
+    for (const preset of ["Evening", "Night"] as const) {
       await openSchedule(page, "Changed twice");
-      await control(page, /Change the time for/).click();
-      await page.getByRole("radio", { name: preset, exact: true }).locator("visible=true").last().click();
+      await openReminders(page);
+      await reminderTime(page, "on the day", preset).click();
       await saveAndClose(page);
     }
     await expect.poll(() => syncs.at(-1)).toBe("21:00:00");

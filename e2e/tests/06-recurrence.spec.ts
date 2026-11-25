@@ -4,7 +4,7 @@ import { expect, test } from "../harness/fixtures";
 import type { Api } from "../harness/api";
 import { button, control, dateKey, exact, openTab, reload, screenText, section, see } from "../harness/app";
 import { db } from "../harness/db";
-import { choice, openSchedule, saveAndClose, seedAndOpen, sheetButton, storedNotifications } from "../harness/sheet";
+import { choice, openSchedule, saveAndClose, seedAndOpen, storedNotifications } from "../harness/sheet";
 
 /**
  * Recurrence through the UI — plan/06-recurrence.md.
@@ -229,7 +229,7 @@ test.describe("where the next one lands", () => {
     await reload(page);
     await exact(page, "Habit I'm dropping").click();
     await openSchedule(page, "Habit I'm dropping");
-    await choice(page, "Never").click();
+    await choice(page, "No").click();
     await saveAndClose(page);
     expect((await api.getTask(t.id)).scheduledFor).toBe(dateKey(0));
     await control(page, "Mark as done").click();
@@ -311,7 +311,7 @@ test.describe("where the next one lands", () => {
     const t = await seedAndOpen(page, api, { name: "Rent", scheduledFor: "2026-11-30", recurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=31" });
     expect(t.recurrenceRule).toBe("FREQ=MONTHLY;BYMONTHDAY=31");
     await openSchedule(page, "Rent");
-    await sheetButton(page, "Notify me").click();
+    await control(page, "Add a reminder").click();
     await saveAndClose(page);
     expect((await api.getTask(t.id)).recurrenceRule).toBe("FREQ=MONTHLY;BYMONTHDAY=31");
     expect(await storedNotifications(api, t.id)).toHaveLength(1);

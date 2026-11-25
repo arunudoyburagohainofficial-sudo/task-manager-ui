@@ -430,7 +430,7 @@ export function TaskDetailScreen() {
       ? [formatScheduleDate(task.scheduledFor), notifyTime].filter(Boolean).join(" · ")
       : notifyTime
         ? `${notifyTime} · every day until done`
-        : "No date";
+        : "Anytime";
 
   /**
    * The next buzz, as a countdown rather than a clock time — that's what makes it read as a

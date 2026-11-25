@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "../harness/fixtures";
-import { button, control, dateKey, exact, openTab, reload, screenText, section, see } from "../harness/app";
-import { choice, saveAndClose, sheetButton, storedNotifications } from "../harness/sheet";
+import { button, control, dateKey, deviceClockAt, exact, openTab, reload, screenText, section, see } from "../harness/app";
+import { addReminderButton, choice, openReminders, reminderLine, reminderTime, saveAndClose, sheetButton, storedNotifications } from "../harness/sheet";
 
 /**
  * Capture and Organize — plan/03-capture.md.
@@ -79,7 +79,8 @@ test("CAP-03 · several drafts in one pass, each keeping its own settings", asyn
   await card(page, "Call the bank").getByText("Reminder Task", { exact: true }).click();
   await card(page, "Call the bank").getByText("Set a schedule", { exact: true }).click();
   await choice(page, "Today").click();
-  await sheetButton(page, "Notify me").click();
+  // A day brings its reminder by itself - unless it's so late tonight there's no time left to offer.
+  if ((await reminderLine(page)) === "No reminder") await control(page, "Add a reminder").click();
   await saveAndClose(page);
 
   await card(page, "Goal work").getByText("Count toward a goal", { exact: true }).click();
@@ -91,7 +92,8 @@ test("CAP-03 · several drafts in one pass, each keeping its own settings", asyn
   expect(byName["Plain focus"]).toMatchObject({ taskType: "focus", goalId: null, scheduledFor: null });
   expect(byName["Call the bank"]).toMatchObject({ taskType: "reminder", goalId: null, scheduledFor: dateKey(0) });
   expect(byName["Goal work"]).toMatchObject({ taskType: "focus", goalId: goal.id, scheduledFor: null });
-  await see(page, "Call the bank | Reminder · 9 AM");
+  // The default's hour depends on the clock (9 AM, or the next full hour once that's gone).
+  await see(page, /Call the bank \| Reminder · \d{1,2}(:\d{2})? (AM|PM)/);
   await see(page, "Goal work | Goal · Alpha");
 });
 
@@ -150,22 +152,28 @@ test("CAP-07 · going back from Organize keeps every draft", async ({ app }) => 
  */
 test("CAP-08 · a schedule set during Organize is saved whole, lead times included", async ({ app }) => {
   const { page, api } = app;
+  // "The day before" a task due tomorrow is this evening - offered only while it's still ahead,
+  // so the phone's clock is set to the afternoon whatever time the suite runs.
+  await deviceClockAt(page, dateKey(0), "14:00");
   await openCapture(page);
   await draft(page, "Dentist");
   await toOrganize(page, 1);
   await card(page, "Dentist").getByText("Reminder Task", { exact: true }).click();
   await card(page, "Dentist").getByText("Set a schedule", { exact: true }).click();
   await choice(page, "Tomorrow").click();
-  // Adding a notification opens its time editor already, so the presets are right there.
-  await sheetButton(page, "Notify me").click();
-  await choice(page, "Evening").click();
-  await sheetButton(page, "+ 1 day before").click();
+  // The day brings a 9 AM reminder; move it to the evening, and add one the day before - which is
+  // this evening, so only times still ahead of 2 PM are offered for it: Night.
+  await openReminders(page);
+  await reminderTime(page, "on the day", "Evening").click();
+  await addReminderButton(page, "The day before").click();
+  await reminderTime(page, "the day before", "Night").click();
+  await sheetButton(page, "Done").click();
   await saveAndClose(page);
   await confirmAll(page, 1);
 
   const [t] = await api.tasks("pending");
   expect(t.scheduledFor).toBe(dateKey(1));
-  expect(await storedNotifications(api, t.id)).toEqual(["09:00/1", "18:00/0"]);
+  expect(await storedNotifications(api, t.id)).toEqual(["21:00/1", "18:00/0"]);
 });
 
 test("CAP-09 · a goal attached during Organize sticks", async ({ app }) => {

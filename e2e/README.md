@@ -38,7 +38,7 @@ cd task-app && npx playwright test --config=e2e/playwright.config.ts --project=a
 | [02 · Home](plan/02-home.md) | 37 | The four sections and what belongs in each, what a row says, finishing and undoing, the stat strip |
 | [03 · Capture and Organize](plan/03-capture.md) | 13 | The only way work gets into the app, including partial-failure batches |
 | [04 · Task Detail](plan/04-task-detail.md) | 17 | Type, goal, nudges, starting a session, and a task that no longer exists |
-| [05 · The schedule sheet](plan/05-schedule-sheet.md) | 31 | When × Repeat × Notify, and every sentence it says about a notification that can't fire |
+| [05 · The schedule sheet](plan/05-schedule-sheet.md) | 36 | When × Repeat × Notify, and every sentence it says about a notification that can't fire |
 | [06 · Recurrence](plan/06-recurrence.md) | 22 | One live occurrence: completion mints the next, undo retracts it, and finished ones leave nothing behind on the phone |
 | [07 · Focus sessions](plan/07-focus-sessions.md) | 21 | Crediting real work and only real work; sessions that outlive the screen |
 | [08 · Goals](plan/08-goals.md) | 13 | The number behind a twenty-day commitment |
@@ -53,7 +53,7 @@ cd task-app && npx playwright test --config=e2e/playwright.config.ts --project=a
 | 17 · Focus Now | 57 | **Starting work in one motion**, the throwaway tasks that shortcut creates, and a Pomodoro surviving a refresh as itself |
 | 18 · First-run onboarding | 12 | The four screens only a new install sees, which the rest of the suite deliberately skips |
 | 19 · Placement, on the screens | 16 | **Where a task actually appears** - the When × Repeat matrix asserted on Home and Scheduled, not just in the rules |
-| **Total** | **440** | |
+| **Total** | **445** | |
 | [17 · What this can't prove](plan/17-device-only.md) | — | Notification delivery and everything else that needs a real phone |
 
 Two entries are **blocked on the app**, and say so: `DETAIL-18` (no rename control exists yet)
@@ -62,8 +62,8 @@ and `NOTIF-10` (the in-app reminder modal is exported but nothing renders it).
 ## Where the weight is, and why
 
 Two thirds of this app's real bugs have come from one place: **what day a thing is for, and when
-it will interrupt you.** So that's where the catalogue is deepest — 68 in the `logic` project, 31
-`SHEET`, 22 `RECUR`, 18 `NOTIF` and 15 `TIME` entries, 154 of the 440, all pointed at scheduling
+it will interrupt you.** So that's where the catalogue is deepest — 68 in the `logic` project, 36
+`SHEET`, 22 `RECUR`, 18 `NOTIF` and 15 `TIME` entries, 159 of the 445, all pointed at scheduling
 and reminders.
 
 They test it at three different heights on purpose, because each height can be green while the

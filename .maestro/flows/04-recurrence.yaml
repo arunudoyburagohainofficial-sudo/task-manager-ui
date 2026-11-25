@@ -113,7 +113,7 @@ tags:
 - tapOn: "Reminder Task"
 - tapOn: "Set a schedule"
 - extendedWaitUntil:
-    visible: "When"
+    visible: "When will you do it\\?"
     timeout: 20000
 - tapOn: "Today"
 - tapOn: "Daily"

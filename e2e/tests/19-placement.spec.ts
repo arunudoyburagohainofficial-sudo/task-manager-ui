@@ -392,7 +392,7 @@ test.describe("tasks moving between the screens on their own", () => {
     await openTab(page, "Scheduled");
     await exact(page, "Someday").click();
     await openSchedule(page, "Someday");
-    await choice(page, "No date").click();
+    await choice(page, "Anytime").click();
     await saveAndClose(page);
     await control(page, "Back").click();
 

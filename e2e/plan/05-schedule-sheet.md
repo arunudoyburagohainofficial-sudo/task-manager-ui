@@ -12,7 +12,7 @@ can't: that the sheet builds the right thing, says the right thing, and saves it
 
 ## When
 
-- [ ] **SHEET-01 — No date, today, tomorrow and a picked date all save**
+- [ ] **SHEET-01 — Anytime, today, tomorrow and a picked date all save**
   - **Proves:** each choice writes through, the sheet reopens showing it, and the task lands on
     the screen that choice implies (Home vs Upcoming).
   - **Why:** the four When states are the spine of the whole model.
@@ -74,47 +74,79 @@ can't: that the sheet builds the right thing, says the right thing, and saves it
   - **Proves:** the rule follows the new day rather than keeping the old anchor.
   - **Why:** an anchor left behind drifts the series permanently — Jan 31 → Feb 28 → forever.
 
-## Notify
+## Notify — the reminder card, rebuilt 2026-11-26
 
-- [ ] **SHEET-11 — Up to three notifications, and no more**
-  - **Does:** add three; try a fourth.
-  - **Proves:** three save and are listed earliest-warning-first; the fourth is refused with a
-    reason rather than a server error.
+The card ("Remind you?") is one line until **Change** opens it: exactly when the phone will ring,
+in real dates. A day brings a reminder by itself (9 AM on the day, or the next full hour at least
+half an hour ahead once that has gone), and nothing is offered that couldn't ring. Each reminder is
+a named group ("Reminder on the day", "Reminder the day before", "Reminder a week before") with its
+own time chips, and the tests reach a chip through its reminder.
+
+- [ ] **SHEET-11 — Three reminders, said earliest first, and no fourth**
+  - **Does:** a task ten days out, saved silent; "Add one", then "+ The day before" and "+ A week
+    before"; a fourth through the API.
+  - **Proves:** a silent task offers a reminder rather than adding one; each reminder's sentence
+    names its own date; the closed line reads in the order the phone rings
+    ("…at 9:00 AM, …at 6:00 PM and …at 9:00 AM"); the limit is said in words and the add row goes;
+    it saves as 7/1/0 days before; the fourth is a 400, not a server error.
   - **Why:** the ceiling exists because iOS gives the whole app 64 pending notifications; one
     task must not crowd out the rest.
 
-- [ ] **SHEET-12 — A notification can be removed and its time changed**
-  - **Proves:** both write through, and the set sent is the whole set (removing the last one
-    leaves the task genuinely silent).
-  - **Why:** the API replaces the set wholesale — a client that sends a partial set deletes
-    notifications the user didn't touch.
+- [ ] **SHEET-12 — A reminder can be retimed and removed, and turning them off leaves silence**
+  - **Does:** two reminders; move the day-of one to Evening, remove the day-before one; save. Reopen,
+    "Turn off reminders", save. Reopen again.
+  - **Proves:** only extra reminders carry a Remove; the whole set is sent (the API replaces it
+    wholesale); off saves as no reminders at all, and stays off on reopening ("Add one", not a
+    reminder put back).
 
-- [ ] **SHEET-13 — A lead time longer than the runway is warned about**
-  - **Does:** a task due in three days, with a "one week before" notification.
-  - **Proves:** the sheet says that one can't fire, and keeps saying it while the date is what it is.
-  - **Why:** `MD/notification-placement-audit.md` found exactly this configuration looking healthy
-    while being permanently dead — and worse, pairing it with a day-of notification hides it
-    completely, because the task still buzzes.
+- [ ] **SHEET-13 — An earlier reminder is only offered while it can still ring**
+  - **Does:** tasks due in 3 days, today, and in 8 days.
+  - **Proves:** 3 days out offers the day before but not a week before; today offers neither and
+    the "Also remind me earlier" row isn't there at all; 8 days out offers a week before.
+  - **Why:** `MD/notification-placement-audit.md` found "a week before" on something due in three
+    days looking healthy while being permanently dead. The sheet now doesn't offer it.
 
-- [ ] **SHEET-14 — A lead time outpaced by a short repeat is warned about**
-  - **Does:** a daily task with a "week before" notification.
-  - **Proves:** the warning appears — every occurrence is a day out, so that warning can never fire.
-  - **Why:** same class as SHEET-13, reached through the repeat rather than the date.
+- [ ] **SHEET-14 — A repeat hides the earlier reminders it would make impossible**
+  - **Does:** a dated task, switched Daily → Weekly → Monthly with the card open.
+  - **Proves:** daily offers neither earlier reminder (the next copy is always a day out); weekly
+    offers the day before but not a week before; monthly offers both.
 
-- [ ] **SHEET-15 — The warning clears when the configuration becomes fireable**
-  - **Does:** with the warning showing, move the date out far enough.
-  - **Proves:** it disappears without saving and reopening.
+- [ ] **SHEET-15 — A reminder that can't ring is said in red, and clears as soon as it can**
+  - **Does:** a daily task with a week-before reminder, set up through the API (as an older
+    version of the sheet allowed); then Monthly.
+  - **Proves:** the closed card says "One of these won't ring. Tap Change to see why." in red; the
+    reminder's own red line names the repeat as the cause; switching to Monthly turns it into the
+    quiet "starts from the next" note without saving.
   - **Why:** a warning that sticks after it stops being true teaches people to ignore warnings.
 
-- [ ] **SHEET-16 — An undated task's notification is honest about what it does**
-  - **Does:** set a notification on a task with no date.
-  - **Proves:** the sheet describes it as firing every day until done, and no days-before offset
-    is stored.
-  - **Why:** an offset is meaningless without a date; the client flattens it rather than storing
-    a promise it can't keep.
+- [ ] **SHEET-16 — An undated task's reminder rings every day, and stores no offset**
+  - **Proves:** no default on an undated task; "Remind me daily" gives "Every day at 9:00 AM until
+    it's done"; no earlier reminder is offered; it stores `09:00/0`.
+
+- [ ] **SHEET-32 — Giving an undated task a day brings a reminder with it, and it follows the day**
+  - **Proves:** Tomorrow brings 9:00 AM; Anytime takes the untouched default away (rather than
+    turning it into a daily reminder); Tomorrow brings it back; it saves.
+
+- [ ] **SHEET-33 — A task saved silent stays silent when its day changes**
+  - **Proves:** a dated task saved with no reminder gets none when moved; nor does one whose
+    reminders were turned off earlier in the same sheet.
+
+- [ ] **SHEET-34 — A reminder someone chose stays put when the day changes**
+  - **Proves:** once retimed (9 PM) it is theirs: Anytime keeps it as a daily reminder, Tomorrow
+    keeps 9 PM, and it saves as `21:00/0`.
+
+- [ ] **SHEET-35 — Times already gone today aren't offered for a reminder that's today**
+  - **Does:** the phone's clock at 2 PM; a reminder today, then one tomorrow.
+  - **Proves:** today's shows only Evening and Night; tomorrow's shows all four.
+
+- [ ] **SHEET-36 — Today's default reminder is always still ahead**
+  - **Does:** the phone's clock at 7:00, 8:40, 14:10, 14:40, 21:20 and 21:40; "Today" each time.
+  - **Proves:** 9 AM, 10 AM, 3 PM, 4 PM, 10 PM, then no default and "Add one" - every branch of
+    "9 AM while that's half an hour off, else the next full hour at least half an hour ahead, else
+    nothing", whatever time the suite runs.
 
 - [ ] **SHEET-17 — A saved schedule is really one write**
-  - **Does:** change date, repeat and notifications together, with the request failing.
+  - **Does:** change date and repeat and turn the reminder off together, with the request failing.
   - **Proves:** nothing is applied — no date moved with the notifications lost — and the sheet
     stays open with the error.
   - **Why:** this replaced three separate calls, two of which had no error path at all. The
@@ -134,9 +166,11 @@ can't: that the sheet builds the right thing, says the right thing, and saves it
     that caused it — the device plan keeps the rest.
 
 - [ ] **SHEET-20 — Every combination the matrix lists can be built through the UI**
-  - **Does:** walk the When × Repeat × Notify table from `MD/schedule-combination-matrix.md`,
-    building each through the sheet rather than the API.
-  - **Proves:** each one is constructible, saves, and lands where the matrix says.
+  - **Does:** walk When × Repeat × Notify (20 combinations), each on a fresh undated task, building
+    it through the sheet with the phone's clock at 2 PM.
+  - **Proves:** each one is constructible, saves, and lands where the matrix says. "None" on a dated
+    task is reached by turning the default off. "The day before" is offered where it can ring and
+    absent where it can't (a one-off due today; any daily repeat) - those end with one reminder.
   - **Why:** the harnesses prove the *server* honours the matrix. This proves the sheet can
     actually express it — the gap where "a user can construct something that doesn't do what they
     expect" lives.
@@ -153,47 +187,42 @@ correctly. These prove the sheet says the right sentence for each, which is a se
 the one the user actually meets.
 
 - [ ] **SHEET-21 — The self-correcting case is stated quietly, not as a problem**
-  - **Does:** a weekly repeating task whose notification time has already passed today.
-  - **Proves:** the line reads "Too late for this one — starts from the next." and is *not* styled
-    as an error — no warning colour, no icon.
+  - **Does:** the phone's clock at 2 PM; a weekly task whose 9 AM reminder has passed today.
+  - **Proves:** the closed card raises no alarm, and the open card reads "Too late for this one -
+    starts from the next." in the quiet grey, not red.
   - **Why:** nothing is lost: the next occurrence fires normally. This is the exact case that was
     previously alarmed about, and the reason the `not-this-time` verdict exists at all.
 
-- [ ] **SHEET-22 — A notification that works once and then never is warned about**
-  - **Does:** a daily task, dated today, with a "3 days before" notification set to a time still
-    ahead.
-  - **Proves:** "Fires this time, but not on the copies after it — this repeats sooner than the
-    warning.", styled as a problem.
-  - **Why:** the `only-this-time` verdict. Every existing check would call this healthy — the
-    occurrence in front of you genuinely fires — while the routine goes silent from tomorrow
-    onwards, permanently.
+- [ ] **SHEET-22 — A reminder that works once and then never is warned about**
+  - **Does:** a daily task due in two days with a day-before reminder (set up through the API).
+  - **Proves:** "Rings this time, but not on the ones after it - this repeats sooner than the day
+    before.", in red, and the closed card's red line.
+  - **Why:** the `only-this-time` verdict. The occurrence in front of you genuinely rings, while the
+    routine goes silent from then on, permanently.
 
 - [ ] **SHEET-23 — Each "never" names the cause that actually applies**
-  - **Does:** three configurations that all reach the `never` verdict by different routes — a
-    daily task with a week's warning; a day-of notification whose time passed today; a lead time
-    landing before today on a one-off.
-  - **Proves:** three different sentences — the repeat one, "That time has already passed today",
-    and "That lands on <date>, already past" — each naming the fix that would work.
+  - **Does:** the phone's clock at 2 PM; three set-ups reaching `never` by different routes — a
+    daily task with a week-before reminder; a day-of 9 AM reminder today; a week-before reminder on
+    a one-off due in three days.
+  - **Proves:** three different sentences — "This repeats too often for a reminder a week before…",
+    "9:00 AM has already gone today. Pick a later time.", and "A week before is <date>, which has
+    already passed. This one won't ring." — each in red.
   - **Why:** all three are the same verdict and would be equally satisfied by one generic message.
     The cause is the only part the user can act on, and the date in the third is computed from the
-    shared `fireDayOf` rather than a second local copy — which is what let the sheet and the rest
-    of the app disagree before.
+    shared `fireDayOf`.
 
-- [ ] **SHEET-24 — An undated task's notification says what it really does**
-  - **Proves:** the line reads "Every day until you finish it." and no lead-time control is
-    offered.
-  - **Why:** the same claim as SHEET-16 from the copy side. An offset is meaningless without a
-    date, so the sheet must describe the daily behaviour rather than leave the user assuming a
-    one-off.
+- [ ] **SHEET-24 — The undated copy offers no earlier reminders at all**
+  - **Proves:** an undated reminder reads "Every day at 9:00 AM until it's done", and opening it
+    offers no "+ On the day / The day before / A week before" and no "Also remind me earlier" row.
 
 ## Building the rule — added 2026-09-18
 
-- [ ] **SHEET-25 — Changing one notification's time leaves the others alone**
-  - **Does:** three notifications; edit the middle one's time.
-  - **Proves:** only that one moves, and the list re-sorts earliest-warning-first afterwards.
-  - **Why:** `updateNotificationTime` rewrites by index into a list that is also re-ordered for
-    display. An index taken from the sorted view and applied to the stored order edits the wrong
-    row — and the API replaces the set wholesale, so the user's other two reminders are gone.
+- [ ] **SHEET-25 — Changing one reminder's time leaves the others alone**
+  - **Does:** three reminders; set the day-before one to Evening.
+  - **Proves:** that chip is selected and the other two keep Morning, and it saves as
+    `09:00/7, 18:00/1, 09:00/0`.
+  - **Why:** each reminder has its own row of identical chips; a chip that edited the wrong
+    reminder would replace the user's other reminders, since the API takes the set wholesale.
 
 - [ ] **SHEET-26 — Turning the date off drops the repeat in the same write**
   - **Proves:** one request, carrying a null date *and* a null rule — the client doesn't send a

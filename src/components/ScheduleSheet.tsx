@@ -42,7 +42,7 @@ import { Meta } from "./Text";
  * Here they're three independent choices, and the shape of the control is what keeps them
  * valid rather than a rule enforced afterwards:
  *
- *   When   — a day, or no day at all. "No date" is an ordinary choice, not a failure to pick.
+ *   When   — a day, or no day at all. "Anytime" (no day) is an ordinary choice, not a failure to pick.
  *   Repeat — only offered once a day exists, because a repeat needs something to repeat from.
  *   Notify — always available; means "that day" with a date, "every day until done" without.
  *
@@ -61,23 +61,44 @@ const MAX_NOTIFICATIONS = 3;
 /** A sensible hour for a newly-added notification, rather than whatever second it was added. */
 const DEFAULT_NOTIFY_TIME = "09:00:00";
 
-/** How far ahead a notification can be asked for. 0 is the day itself. */
-const LEAD_TIME_PRESETS = [
+/** The reminders a task can have, as their buttons name them. 0 is the day itself. */
+const REMINDER_OPTIONS = [
   { daysBefore: 0, label: "On the day" },
-  { daysBefore: 1, label: "1 day before" },
-  { daysBefore: 7, label: "1 week before" },
+  { daysBefore: 1, label: "The day before" },
+  { daysBefore: 7, label: "A week before" },
 ];
 
-/** "9:00 AM · 1 week before" — one notification, as a single readable line. */
-function formatNotification(n: NotificationSpec, hasDate: boolean): string {
-  const [h, m] = n.time.split(":").map(Number);
+/** "the day before" - how a reminder's offset reads in the middle of a sentence. */
+function leadPhrase(daysBefore: number): string {
+  if (daysBefore === 0) return "on the day";
+  if (daysBefore === 1) return "the day before";
+  if (daysBefore === 7) return "a week before";
+  return `${daysBefore} days before`;
+}
+
+/** "Thu 28 Nov" - a reminder's own day, so nobody has to count back from "a week before". */
+function dayLabel(date: Date): string {
+  return date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+}
+
+/** "9 AM" - printed on each time chip, because "Evening" means a different hour to everyone. */
+function hourLabel(hour: number): string {
   const at = new Date();
-  at.setHours(h, m, 0, 0);
-  const time = at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  if (!hasDate) return `${time} · every day`;
-  if (n.daysBefore === 0) return `${time} · on the day`;
-  if (n.daysBefore === 1) return `${time} · 1 day before`;
-  return `${time} · ${n.daysBefore} days before`;
+  at.setHours(hour, 0, 0, 0);
+  return at.toLocaleTimeString(undefined, { hour: "numeric" });
+}
+
+const presetTime = (hour: number) => `${String(hour).padStart(2, "0")}:00:00`;
+
+const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/**
+ * The next sensible time still ahead today: the next full hour at least half an hour away.
+ * null after about 10 PM, when there is no "later today" worth offering.
+ */
+function nextTimeToday(now: Date = new Date()): string | null {
+  const hour = now.getHours() + (now.getMinutes() >= 30 ? 2 : 1);
+  return hour <= 22 ? presetTime(hour) : null;
 }
 
 /** The handful of times most notifications actually land on — see the chip row for why. */
@@ -158,13 +179,6 @@ function formatClock(time: string): string {
   const at = new Date();
   at.setHours(h, m, 0, 0);
   return at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-}
-
-/** "1 day before" — the offset, shown under the clock rather than run into it. */
-function leadLabel(n: NotificationSpec, hasDate: boolean): string {
-  if (!hasDate) return "Every day";
-  if (n.daysBefore === 0) return "On the day";
-  return `${n.daysBefore} day${n.daysBefore === 1 ? "" : "s"} before`;
 }
 
 /**
@@ -248,7 +262,7 @@ function SegmentItem({ label, active, onPress }: ChoiceProps) {
 }
 
 /** A standalone choice that sizes to its own label — the qualifiers inside the rail. */
-function PillChip({ label, active, onPress }: ChoiceProps) {
+function PillChip({ label, active, onPress, compact = false }: ChoiceProps & { compact?: boolean }) {
   const theme = useTheme();
   const styles = useThemedStyles(makeStyles);
   return (
@@ -257,7 +271,7 @@ function PillChip({ label, active, onPress }: ChoiceProps) {
       accessibilityState={{ selected: active }}
       aria-checked={active}
       onPress={onPress}
-      style={[styles.pill, active && styles.pillOn]}
+      style={[styles.pill, compact && styles.pillCompact, active && styles.pillOn]}
     >
       <Text
         style={t(T.meta, {
@@ -308,6 +322,17 @@ export function ScheduleSheet({
   const [notifications, setNotifications] = useState<NotificationSpec[]>([]);
   // Which notification the time picker is currently editing, by index. null = none open.
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  // The reminder card is one summary line until "Change" opens it.
+  const [notifyOpen, setNotifyOpen] = useState(false);
+  /*
+   * A dated task reminds you by default (9 AM on the day, Outlook-style), unless reminders are
+   * deliberately off. `autoReminder` marks the one the sheet added by itself and nobody has
+   * touched, so it can follow the day around - moving the task to today after 9 AM moves the
+   * reminder to later today rather than leaving it already gone. `remindersOff` is a task saved
+   * silent, or "Turn off reminders" pressed: no default is ever added over that choice.
+   */
+  const [autoReminder, setAutoReminder] = useState(false);
+  const [remindersOff, setRemindersOff] = useState(false);
   const [clockTime, setClockTime] = useState(nextRoundHalfHour);
 
   /*
@@ -347,8 +372,14 @@ export function ScheduleSheet({
     const storedDate = initial?.scheduledFor ? new Date(`${initial.scheduledFor}T00:00:00`) : null;
     setSelectedDate(storedDate && storedDate.getTime() >= today.getTime() ? storedDate : today);
     setRepeat(parseRecurrence(initial?.recurrenceRule ?? null));
-    setNotifications(initial?.notifications ?? []);
+    // The day itself first, then the earlier ones - the order the sentences read in, and the
+    // order addReminder keeps. Stored reminders come back in whatever order the server has them.
+    setNotifications([...(initial?.notifications ?? [])].sort((a, b) => a.daysBefore - b.daysBefore));
     setEditingIndex(null);
+    setNotifyOpen(false);
+    setAutoReminder(false);
+    // A task already given a day and saved with no reminder was made silent on purpose.
+    setRemindersOff(!!initial?.scheduledFor && !initial?.notifications?.length);
     setClockTime(nextRoundHalfHour());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, initial?.scheduledFor, initial?.recurrenceRule, initial?.notifications]);
@@ -412,61 +443,167 @@ export function ScheduleSheet({
    * today is fine — the next occurrence fires — and painting that red taught users to ignore the
    * warnings that do matter. It's now a quiet line, or nothing.
    */
-  /**
-   * The lead times still on offer: the ones this task has a date for, minus the ones already
-   * set. Computed once so the heading above the row and the row itself cannot disagree about
-   * whether there is anything left to add.
-   */
-  const offeredLeadTimes = (hasDate ? LEAD_TIME_PRESETS : LEAD_TIME_PRESETS.slice(0, 1)).filter(
-    (preset) => !notifications.some((n) => n.daysBefore === preset.daysBefore)
-  );
-
   function noteFor(n: NotificationSpec): { text: string; bad: boolean } {
     switch (verdictFor(n)) {
       case "never":
         // The repeat is the more useful explanation when it's the reason nothing can ever work.
         if (isOutpacedByRepeat(n.daysBefore, repeat)) {
           return {
-            text: "This repeats more often than the warning, so it can never fire. Shorten the warning, or repeat less often.",
+            text: `This repeats too often for a reminder ${leadPhrase(n.daysBefore)}, so it can never ring. Remove it, or repeat less often.`,
             bad: true,
           };
         }
         if (notificationHealth(n) === "passed-today") {
-          return { text: "That time has already passed today - it won't fire. Pick a later time.", bad: true };
+          return { text: `${formatClock(n.time)} has already gone today. Pick a later time.`, bad: true };
         }
         return {
-          text: `That lands on ${fireDayLabel(n)}, already past - it won't fire. Try a shorter warning or a later date.`,
+          text: `${capitalise(leadPhrase(n.daysBefore))} is ${fireDayLabel(n)}, which has already passed. This one won't ring.`,
           bad: true,
         };
       case "only-this-time":
         return {
-          text: "Fires this time, but not on the copies after it - this repeats sooner than the warning.",
+          text: `Rings this time, but not on the ones after it - this repeats sooner than ${leadPhrase(n.daysBefore)}.`,
           bad: true,
         };
       case "not-this-time":
         // Deliberately not an error: nothing is lost, it simply starts at the next occurrence.
         return { text: "Too late for this one - starts from the next.", bad: false };
       default:
-        // Undated keeps a note because it adds something the lead line doesn't: that it
-        // repeats until the task is finished.
-        if (!hasDate) return { text: "Every day until you finish it.", bad: false };
         /*
-         * Nothing. A healthy dated notification already says when it lands, one line above,
-         * in leadLabel - and the note repeated it word for word, so the card read
-         * "On the day / On the day." The note is for what the lead line cannot say: a warning
-         * that will never fire, or one that starts from the next occurrence.
+         * Nothing. The reminder's own sentence already says when it rings ("Remind me on Thu
+         * 28 Nov at", "every day until it's done") - a note is only for what that sentence can't
+         * say: one that will never ring, or one that starts from the next occurrence.
          */
         return { text: "", bad: false };
     }
   }
 
+  /** Any change made by hand: the reminders are now the person's, not the default. */
+  function editReminders(next: NotificationSpec[]) {
+    setNotifications(next);
+    setAutoReminder(false);
+    setRemindersOff(false);
+  }
+
   /** Rewrites one notification's time, keeping the rest of the list untouched. */
-  function updateNotificationTime(index: number, when: Date) {
-    const hh = String(when.getHours()).padStart(2, "0");
-    const mm = String(when.getMinutes()).padStart(2, "0");
-    setNotifications(
-      notifications.map((n, i) => (i === index ? { ...n, time: `${hh}:${mm}:00` } : n))
-    );
+  function setReminderTime(index: number, time: string) {
+    editReminders(notifications.map((n, i) => (i === index ? { ...n, time } : n)));
+  }
+
+  const timeOf = (when: Date) =>
+    `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}:00`;
+
+  /** The day one reminder rings on. */
+  const fireDate = (n: NotificationSpec) => addDays(selectedDate, -n.daysBefore);
+
+  /**
+   * The time a new reminder starts at - 6 PM the evening before for "the day before", 9 AM
+   * otherwise - or, when that has already gone today, the next sensible time later today.
+   * null when it can't ring at all: its day is behind us, or it is late tonight.
+   *
+   * A repeating task always gets the preferred time. Missing today only means it starts from the
+   * next occurrence, which the sheet says in its own note.
+   */
+  function startTimeFor(daysBefore: number, date: Date, repeating: boolean): string | null {
+    const preferred = daysBefore === 1 ? "18:00:00" : DEFAULT_NOTIFY_TIME;
+    if (repeating) return preferred;
+    const fires = addDays(date, -daysBefore);
+    if (!isSameDay(fires, today)) return fires.getTime() > today.getTime() ? preferred : null;
+    const now = new Date();
+    const [h] = preferred.split(":").map(Number);
+    if (h * 60 >= now.getHours() * 60 + now.getMinutes() + 30) return preferred;
+    return nextTimeToday(now);
+  }
+
+  /** A day was picked: give it the default reminder, or move the untouched default along with it. */
+  function dayChosen(date: Date) {
+    if (remindersOff) return;
+    if (notifications.length === 0 || (autoReminder && notifications.length === 1)) {
+      const time = startTimeFor(0, date, !!repeat);
+      setNotifications(time ? [{ time, daysBefore: 0 }] : []);
+      setAutoReminder(!!time);
+    }
+  }
+
+  /** "Anytime" was picked: the default goes (an undated reminder rings every day), and so do earlier ones. */
+  function anytimeChosen() {
+    if (autoReminder) {
+      setNotifications([]);
+      setAutoReminder(false);
+      return;
+    }
+    setNotifications((current) => current.filter((n) => n.daysBefore === 0));
+  }
+
+  /**
+   * Whether a reminder can be offered at all. Only ones that can still ring: never a duplicate,
+   * only "on the day" without a date, never one a repeat makes impossible ("a week before" on
+   * a daily task), and on a one-off task never one whose day - or whose whole evening - is gone.
+   */
+  function canOffer(daysBefore: number): boolean {
+    if (notifications.some((n) => n.daysBefore === daysBefore)) return false;
+    if (!hasDate) return daysBefore === 0;
+    if (repeat) return !isOutpacedByRepeat(daysBefore, repeat);
+    return startTimeFor(daysBefore, selectedDate, false) !== null;
+  }
+
+  function addReminder(daysBefore: number) {
+    const time = (hasDate && startTimeFor(daysBefore, selectedDate, !!repeat)) || DEFAULT_NOTIFY_TIME;
+    const next = [...notifications, { time, daysBefore }];
+    // The day itself first, then the earlier ones - the order the sentences read in.
+    next.sort((a, b) => a.daysBefore - b.daysBefore);
+    editReminders(next);
+  }
+
+  /** The preset times worth showing for one reminder: on a one-off ringing today, only those still ahead. */
+  function timesFor(n: NotificationSpec) {
+    if (!hasDate || repeat || !isSameDay(fireDate(n), today)) return TIME_PRESETS;
+    const now = new Date();
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    return TIME_PRESETS.filter((preset) => preset.hour * 60 > minutes);
+  }
+
+  /** The sentence above one reminder's time choices. */
+  function sentenceFor(n: NotificationSpec, first: boolean): string {
+    const lead = first ? "Remind me" : "Also remind me";
+    if (!hasDate) return `${lead} every day until it's done, at`;
+    if (repeat) return `${lead} ${leadPhrase(n.daysBefore)}, every time, at`;
+    const day = dayLabel(fireDate(n));
+    return n.daysBefore === 0 ? `${lead} on ${day} at` : `${lead} on ${day} (${leadPhrase(n.daysBefore)}) at`;
+  }
+
+  /** The closed card's one line: exactly when the phone will ring, earliest first. */
+  function reminderSummary(): string {
+    if (notifications.length === 0) return "No reminder";
+    if (!hasDate) return `Every day at ${formatClock(notifications[0].time)} until it's done`;
+    const parts = [...notifications]
+      .sort((a, b) => b.daysBefore - a.daysBefore)
+      .map((n) =>
+        repeat
+          ? `${leadPhrase(n.daysBefore)} at ${formatClock(n.time)}`
+          : `${dayLabel(fireDate(n))} at ${formatClock(n.time)}`
+      );
+    const joined = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
+    return repeat ? `Every time: ${joined}` : joined;
+  }
+
+  /** "Pick another time…": the phone's own picker, a dialog on Android and inline on iOS. */
+  function pickOtherTime(index: number) {
+    const [h, m] = notifications[index].time.split(":").map(Number);
+    const seeded = new Date();
+    seeded.setHours(h, m, 0, 0);
+    setClockTime(seeded);
+    if (Platform.OS !== "android") {
+      setEditingIndex(editingIndex === index ? null : index);
+      return;
+    }
+    DateTimePickerAndroid.open({
+      value: seeded,
+      mode: "time",
+      onChange: (event, date) => {
+        if (event.type === "set" && date) setReminderTime(index, timeOf(date));
+      },
+    });
   }
 
   /*
@@ -504,29 +641,19 @@ export function ScheduleSheet({
           setSelectedDate(date);
           setHasDate(true);
           setShowDatePicker(true); // styling only on Android — marks "a custom date is active"
+          dayChosen(date);
         }
       },
     });
   }
 
-  /**
+  /*
    * Android's DateTimePicker is fundamentally different from iOS's: `display="spinner"`
    * rendered as ordinary JSX always pops up as Android's own native Dialog the instant it
    * mounts, regardless of the prop — it's never inline there. Mounting it declaratively
    * inside another Modal (this sheet is one) made it render behind the sheet's own window.
-   * DateTimePickerAndroid.open() is the library's intended API for Android.
+   * DateTimePickerAndroid.open() is the library's intended API for Android - see pickOtherTime.
    */
-  function openAndroidTimePicker() {
-    DateTimePickerAndroid.open({
-      value: clockTime,
-      mode: "time",
-      onChange: (event, date) => {
-        if (event.type !== "set" || !date) return;
-        setClockTime(date);
-        if (editingIndex !== null) updateNotificationTime(editingIndex, date);
-      },
-    });
-  }
 
   /** The frequency's unit word, singular or plural to match the interval. */
   const intervalUnit = (p: RecurrencePattern) =>
@@ -598,7 +725,9 @@ export function ScheduleSheet({
       : showInterval
       ? `${base}, starting ${startPhraseLower()}.`
       : `${base}.`;
-    const tail = `${rule}${endsClause(p)} Finishing one schedules the next.`;
+    // The part people find surprising, said plainly: the next one appears when this one is
+    // ticked off, not on a calendar of its own.
+    const tail = `${rule}${endsClause(p)} Tick it off and the next one appears.`;
     return note ? `${note}\n${tail}` : tail;
   }
 
@@ -623,13 +752,19 @@ export function ScheduleSheet({
 
       {/* ───────────────── WHEN ───────────────── */}
       <View style={styles.card}>
-        <Text style={t(T.eyebrow, { color: theme.color.textMuted })}>When</Text>
+        {/*
+          Each card opens with a question in sentence case (2026-11-25). "When" / "No date"
+          described a field; these say what the person is deciding, and "Anytime" is the name of
+          the Home section the task lands in. They were first tried as the uppercase eyebrow, and
+          a whole question in 11pt tracked capitals read as shouting - so a title, not a label.
+        */}
+        <CardQuestion icon={<CalendarGlyph size={16} color={theme.color.textMuted} />}>When will you do it?</CardQuestion>
 
         {/* Two columns, not four: the final screens widened these so each one clears a 44pt
             target on a 375 screen, and they read as one set either way. */}
         <View style={styles.grid4}>
           <GridChip
-            label="No date"
+            label="Anytime"
             active={!hasDate}
             onPress={() => {
               setHasDate(false);
@@ -637,6 +772,7 @@ export function ScheduleSheet({
               // A repeat can't survive losing its day — dropped here rather than left set
               // and refused on save.
               setRepeat(null);
+              anytimeChosen();
             }}
           />
           {[
@@ -651,6 +787,7 @@ export function ScheduleSheet({
                 setSelectedDate(date);
                 setHasDate(true);
                 setShowDatePicker(false);
+                dayChosen(date);
               }}
             />
           ))}
@@ -658,10 +795,14 @@ export function ScheduleSheet({
             label={
               hasDate && (showDatePicker || (!isSameDay(selectedDate, today) && !isSameDay(selectedDate, tomorrow)))
                 ? selectedDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-                : "Pick date"
+                : "Pick a date"
             }
             active={hasDate && showDatePicker}
-            onPress={() => (Platform.OS === "android" ? openAndroidDatePicker() : (setHasDate(true), setShowDatePicker(true)))}
+            onPress={() =>
+              Platform.OS === "android"
+                ? openAndroidDatePicker()
+                : (setHasDate(true), setShowDatePicker(true), dayChosen(selectedDate))
+            }
           />
         </View>
 
@@ -673,16 +814,19 @@ export function ScheduleSheet({
             // A date in the past can never fire and can't be "upcoming" — refusing to let one
             // be picked is better than silently creating something that never happens.
             minimumDate={today}
-            onChange={(_, date) => date && setSelectedDate(date)}
+            onChange={(_, date) => {
+              if (!date) return;
+              setSelectedDate(date);
+              dayChosen(date);
+            }}
           />
         )}
 
         <View style={styles.hint}>
-          <CalendarGlyph size={14} color={theme.color.textFaint} />
           <Meta style={styles.hintText}>
             {!hasDate ? (
               <>
-                Stays on <Text style={styles.hintStrong}>Home</Text> until you give it a day
+                Sits under <Text style={styles.hintStrong}>Anytime</Text> on Home until you give it a day
               </>
             ) : isSameDay(selectedDate, today) ? (
               <>
@@ -700,17 +844,15 @@ export function ScheduleSheet({
 
       {/* ───────────────── REPEAT ───────────────── */}
       <View style={styles.card}>
-        <View style={styles.cardHead}>
-          <RepeatIcon size={14} color={theme.color.textFaint} />
-          <Text style={t(T.eyebrow, { color: theme.color.textMuted })}>Repeat</Text>
-        </View>
+        <CardQuestion icon={<RepeatIcon size={16} color={theme.color.textMuted} />}>Repeat this task?</CardQuestion>
 
         {hasDate ? (
           <>
             {/* One track, five choices — a segmented control rather than loose chips, because
-                these are mutually exclusive and "Never" belongs in the same set as the rest. */}
+                these are mutually exclusive and "No" belongs in the same set as the rest. It is "No"
+                rather than "Never" because the heading is a yes/no question. */}
             <View style={styles.segment}>
-              <SegmentItem label="Never" active={repeat === null} onPress={() => setRepeat(null)} />
+              <SegmentItem label="No" active={repeat === null} onPress={() => setRepeat(null)} />
               {RECURRENCE_OPTIONS.map((option) => (
                 <SegmentItem
                   key={option.value}
@@ -840,188 +982,213 @@ export function ScheduleSheet({
             ) : null}
           </>
         ) : (
-          <Meta style={{ color: theme.color.textFaint }}>Pick a day above to make this repeat.</Meta>
+          <Meta style={{ color: theme.color.textFaint }}>Give it a day first, then it can repeat.</Meta>
         )}
       </View>
 
       {/* ───────────────── NOTIFY ───────────────── */}
+      {/*
+        One line until "Change" is pressed (2026-11-26). Every sentence says when the phone will
+        ring in real dates - "Thu 28 Nov at 9 AM" - rather than "on the day / 1 day before",
+        and nothing is offered that couldn't ring (canOffer, timesFor).
+      */}
       <View style={styles.card}>
-        <View style={styles.cardHead}>
-          <BellGlyph size={14} color={theme.color.textFaint} />
-          <Text style={t(T.eyebrow, { color: theme.color.textMuted })}>Notify me</Text>
-        </View>
+        <CardQuestion icon={<BellGlyph size={16} color={theme.color.textMuted} />}>Remind you?</CardQuestion>
 
-        {notifications.length === 0 ? (
-          <Meta style={{ color: theme.color.textFaint }}>Off - no notification.</Meta>
-        ) : null}
-
-        {/* One bordered group per notification, with its own note attached underneath rather
-            than pooled into a summary at the bottom of the card — the fix belongs beside the
-            thing that needs fixing. */}
-        {notifications.map((n, index) => {
-          const note = noteFor(n);
-          return (
-            <View key={`${n.daysBefore}-${n.time}-${index}`} style={styles.notify}>
-              <View style={styles.notifyRow}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Change the time for ${formatNotification(n, hasDate)}`}
-                  style={styles.notifyText}
-                  onPress={() => {
-                    const [h, m] = n.time.split(":").map(Number);
-                    const seeded = new Date();
-                    seeded.setHours(h, m, 0, 0);
-                    setClockTime(seeded);
-                    setEditingIndex(editingIndex === index ? null : index);
-                  }}
-                >
-                  <View style={styles.notifyClockRow}>
-                    <Text style={t(T.bodyLg, { fontWeight: "800", color: note.bad ? theme.color.danger : theme.color.text })}>
-                      {formatClock(n.time)}
-                    </Text>
-                    {/* The time is the only control here that looked like plain text, so it read
-                        as a readout rather than something to tap. */}
-                    <View style={styles.notifyChange}>
-                      <Text style={t(T.badge, { color: theme.surface.actionInk })}>
-                        {editingIndex === index ? "Done" : "Change"}
-                      </Text>
-                    </View>
-                  </View>
-                  <Meta style={{ color: theme.color.textMuted, marginTop: 1 }}>{leadLabel(n, hasDate)}</Meta>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Remove this notification"
-                  hitSlop={8}
-                  onPress={() => {
-                    setNotifications(notifications.filter((_, i) => i !== index));
-                    setEditingIndex(null);
-                  }}
-                  style={styles.remove}
-                >
-                  <Text style={t(T.meta, { fontWeight: "800", color: theme.color.selectedText })}>✕</Text>
-                </Pressable>
-              </View>
-
-              {/* Only a permanent loss is painted as a problem. A repeating task whose time has
-                  passed today is fine — the next occurrence fires — so that case gets the same
-                  quiet treatment as any other explanatory line. */}
-              {note.bad ? (
-                <View style={styles.notifyAlert}>
-                  <AlertGlyph size={14} color={theme.color.danger} />
-                  <Meta style={{ flex: 1, color: theme.color.danger, fontWeight: "700", lineHeight: 17 }}>{note.text}</Meta>
-                </View>
-              ) : note.text ? (
-                <View style={styles.notifyNote}>
-                  <Meta style={{ color: theme.color.textFaint, lineHeight: 17 }}>{note.text}</Meta>
-                </View>
-              ) : null}
-            </View>
-          );
-        })}
-
-        {/* Every notification above rings late while Android's Alarms & reminders is off. */}
-        {notifications.length > 0 ? <ExactAlarmNote /> : null}
-
-        {/* The time picker, shown for whichever row is being edited. */}
-        {editingIndex !== null && notifications[editingIndex] ? (
+        {!notifyOpen ? (
           <>
-            {/*
-              Both of these rows were unlabelled. Four words in a row and then a large time in
-              a box are perfectly clear to whoever built them, and to a user they are two
-              unexplained controls - one of which looks like a readout rather than a button.
-            */}
-            <Meta style={styles.pickerLabel}>Common times</Meta>
-            <View style={styles.subRow}>
-              {TIME_PRESETS.map(({ label, hour }) => (
-                <PillChip
-                  key={label}
-                  label={label}
-                  active={clockTime.getHours() === hour && clockTime.getMinutes() === 0}
-                  onPress={() => {
-                    const next = new Date(clockTime);
-                    next.setHours(hour, 0, 0, 0);
-                    setClockTime(next);
-                    updateNotificationTime(editingIndex, next);
-                  }}
-                />
-              ))}
-            </View>
-
-            <Meta style={styles.pickerLabel}>Or choose your own time</Meta>
-            {Platform.OS === "android" ? (
+            <View style={styles.reminderLine}>
+              <Text
+                style={[
+                  t(T.label, { color: notifications.length ? theme.color.text : theme.color.textMuted }),
+                  styles.reminderLineText,
+                ]}
+              >
+                {reminderSummary()}
+              </Text>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Choose your own time"
-                onPress={openAndroidTimePicker}
-                style={styles.androidTimeButton}
+                accessibilityLabel={
+                  notifications.length ? "Change the reminders" : hasDate ? "Add a reminder" : "Remind me every day"
+                }
+                onPress={() => {
+                  if (notifications.length) {
+                    setNotifyOpen(true);
+                    return;
+                  }
+                  const time = hasDate ? startTimeFor(0, selectedDate, !!repeat) : DEFAULT_NOTIFY_TIME;
+                  editReminders([{ time: time ?? DEFAULT_NOTIFY_TIME, daysBefore: 0 }]);
+                  // Too late tonight for a sensible default: open the choices instead of guessing.
+                  if (!time) setNotifyOpen(true);
+                }}
+                style={styles.reminderAction}
               >
-                <Text style={t(T.h2, { color: theme.color.text })}>
-                  {clockTime.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                <Text style={t(T.meta, { fontWeight: "800", color: theme.surface.actionInk })}>
+                  {notifications.length ? "Change" : hasDate ? "Add one" : "Remind me daily"}
                 </Text>
               </Pressable>
-            ) : (
-              <DateTimePicker
-                value={clockTime}
-                mode="time"
-                display="spinner"
-                onChange={(_, date) => {
-                  if (!date) return;
-                  setClockTime(date);
-                  updateNotificationTime(editingIndex, date);
-                }}
-              />
-            )}
-          </>
-        ) : null}
-
-        {/* Adding another. Lead-time options only make sense once there's a date to count
-            back from, and only up to the per-task ceiling the server enforces. */}
-        {notifications.length < MAX_NOTIFICATIONS && offeredLeadTimes.length > 0 ? (
-          <>
-            {/*
-              Only once something is already set. With nothing set the single button reads
-              "Notify me", which is its own label and does not want a heading over it.
-            */}
-            {notifications.length > 0 ? (
-              <Meta style={styles.pickerLabel}>Add an earlier reminder</Meta>
+            </View>
+            {notifications.some((n) => noteFor(n).bad) ? (
+              <View style={styles.notifyAlert}>
+                <AlertGlyph size={14} color={theme.color.danger} />
+                <Meta style={{ flex: 1, color: theme.color.danger, fontWeight: "700", lineHeight: 17 }}>
+                  One of these won't ring. Tap Change to see why.
+                </Meta>
+              </View>
             ) : null}
-            <View style={styles.addRow}>
-            {offeredLeadTimes.map((preset) => {
+          </>
+        ) : (
+          <>
+            {notifications.map((n, index) => {
+              const note = noteFor(n);
+              const times = timesFor(n);
+              const onPreset = TIME_PRESETS.some(({ hour }) => presetTime(hour) === n.time);
               return (
-                <Pressable
-                  key={preset.daysBefore}
-                  accessibilityRole="button"
-                  onPress={() => {
-                    const added = { time: DEFAULT_NOTIFY_TIME, daysBefore: preset.daysBefore };
-                    const next = [...notifications, added];
-                    // Earliest warning first, so the list reads in the order things happen.
-                    next.sort((a, b) => b.daysBefore - a.daysBefore);
-                    setNotifications(next);
-                    // Open the new row's time editor straight away. Picking a time used to take
-                    // three taps — add, then the bare clock text, which nothing marked as
-                    // tappable — and people reported the time as missing rather than hidden.
-                    setEditingIndex(next.indexOf(added));
-                  }}
-                  style={styles.add}
+                // A named group per reminder: each has its own row of identical time chips, so a screen
+                // reader (and a test) needs to know which reminder a chip belongs to.
+                <View
+                  key={n.daysBefore}
+                  role="group"
+                  accessibilityLabel={`Reminder ${leadPhrase(n.daysBefore)}`}
+                  style={styles.reminderBlock}
                 >
-                  <Text style={t(T.meta, { fontWeight: "700", color: theme.color.textMuted })}>
-                    {notifications.length === 0 && preset.daysBefore === 0 ? "Notify me" : `+ ${preset.label}`}
-                  </Text>
-                </Pressable>
+                  <View style={styles.reminderHead}>
+                    <Text style={[t(T.label, { color: theme.color.text }), styles.reminderLineText]}>
+                      {sentenceFor(n, index === 0)}
+                    </Text>
+                    {/* Only the extra ones: the first goes with "Turn off reminders". */}
+                    {index > 0 ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove the reminder ${leadPhrase(n.daysBefore)}`}
+                        hitSlop={8}
+                        onPress={() => {
+                          editReminders(notifications.filter((_, i) => i !== index));
+                          setEditingIndex(null);
+                        }}
+                      >
+                        <Text style={t(T.meta, { fontWeight: "700", color: theme.color.textMuted })}>Remove</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.subRow}>
+                    {times.map(({ label, hour }) => (
+                      <PillChip
+                        key={label}
+                        compact
+                        label={`${label} · ${hourLabel(hour)}`}
+                        active={n.time === presetTime(hour)}
+                        onPress={() => setReminderTime(index, presetTime(hour))}
+                      />
+                    ))}
+                    {/* A time that isn't a preset shows itself here, selected, so it's never hidden. */}
+                    <PillChip
+                      compact
+                      label={onPreset ? "Pick another time…" : formatClock(n.time)}
+                      active={!onPreset}
+                      onPress={() => pickOtherTime(index)}
+                    />
+                  </View>
+
+                  {Platform.OS !== "android" && editingIndex === index ? (
+                    <DateTimePicker
+                      value={clockTime}
+                      mode="time"
+                      display="spinner"
+                      onChange={(_, date) => {
+                        if (!date) return;
+                        setClockTime(date);
+                        setReminderTime(index, timeOf(date));
+                      }}
+                    />
+                  ) : null}
+
+                  {/* Only a permanent loss is painted as a problem; "starts from the next" is information. */}
+                  {note.bad ? (
+                    <View style={styles.notifyAlert}>
+                      <AlertGlyph size={14} color={theme.color.danger} />
+                      <Meta style={{ flex: 1, color: theme.color.danger, fontWeight: "700", lineHeight: 17 }}>
+                        {note.text}
+                      </Meta>
+                    </View>
+                  ) : note.text ? (
+                    <Meta style={{ color: theme.color.textFaint, lineHeight: 17 }}>{note.text}</Meta>
+                  ) : null}
+                </View>
               );
             })}
+
+            {notifications.length >= MAX_NOTIFICATIONS ? (
+              <Meta style={{ color: theme.color.textFaint }}>
+                That's the most one task can have: {MAX_NOTIFICATIONS} reminders.
+              </Meta>
+            ) : REMINDER_OPTIONS.some((option) => canOffer(option.daysBefore)) ? (
+              <>
+                <Meta style={styles.pickerLabel}>Also remind me earlier</Meta>
+                <View style={styles.addRow}>
+                  {REMINDER_OPTIONS.filter((option) => canOffer(option.daysBefore)).map((option) => (
+                    <Pressable
+                      key={option.daysBefore}
+                      accessibilityRole="button"
+                      onPress={() => addReminder(option.daysBefore)}
+                      style={styles.add}
+                    >
+                      <Text style={t(T.meta, { fontWeight: "700", color: theme.color.textMuted })}>
+                        + {option.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            ) : null}
+
+            <View style={styles.reminderFooter}>
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => {
+                  setNotifications([]);
+                  setAutoReminder(false);
+                  setRemindersOff(true);
+                  setNotifyOpen(false);
+                  setEditingIndex(null);
+                }}
+              >
+                <Text style={t(T.meta, { fontWeight: "700", color: theme.color.textMuted })}>Turn off reminders</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setNotifyOpen(false);
+                  setEditingIndex(null);
+                }}
+                style={styles.reminderAction}
+              >
+                <Text style={t(T.meta, { fontWeight: "800", color: theme.surface.actionInk })}>Done</Text>
+              </Pressable>
             </View>
           </>
-        ) : notifications.length >= MAX_NOTIFICATIONS ? (
-          <Meta style={{ color: theme.color.textFaint }}>
-            {MAX_NOTIFICATIONS} notifications is the limit for one task.
-          </Meta>
-        ) : null}
+        )}
+
+        {/* Every reminder above rings late while Android's Alarms & reminders is off. */}
+        {notifications.length > 0 ? <ExactAlarmNote /> : null}
       </View>
 
       {onClear ? <Button label="Clear schedule" variant="destructiveText" onPress={onClear} /> : null}
     </BottomSheet>
+  );
+}
+
+/** A card's opening question: an icon and a short sentence, in the body face rather than an eyebrow. */
+function CardQuestion({ icon, children }: { icon: React.ReactNode; children: string }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  return (
+    <View style={styles.cardHead} accessibilityRole="header">
+      {icon}
+      <Text style={t(T.body, { fontWeight: "700", color: theme.color.text })}>{children}</Text>
+    </View>
   );
 }
 
@@ -1164,41 +1331,40 @@ const makeStyles = (t: Tokens) =>
     },
 
     /* ---- Notify ---- */
-    notify: {
-      borderWidth: 1,
-      borderColor: t.color.border,
-      borderRadius: radius.card,
-      overflow: "hidden",
+    pillCompact: {
+      minHeight: 38,
+      paddingHorizontal: 12,
     },
-    notifyRow: {
+    reminderLine: {
       flexDirection: "row",
       alignItems: "center",
       gap: space.base,
-      padding: space.base,
     },
-    notifyText: {
+    reminderLineText: {
       flex: 1,
       minWidth: 0,
     },
-    notifyClockRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: space.sm,
-    },
-    notifyChange: {
-      backgroundColor: t.surface.action,
-      borderRadius: 999,
-      paddingHorizontal: px(10),
-      paddingVertical: px(3),
-    },
-    remove: {
-      width: px(28),
-      height: px(28),
-      borderRadius: radius.pill,
-      borderWidth: 1,
-      borderColor: t.color.border,
+    reminderAction: {
+      minHeight: 36,
+      paddingHorizontal: 14,
       alignItems: "center",
       justifyContent: "center",
+      borderRadius: 999,
+      backgroundColor: t.surface.action,
+    },
+    reminderBlock: {
+      gap: space.sm,
+    },
+    reminderHead: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space.base,
+    },
+    reminderFooter: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginTop: space.sm,
     },
     /** Attached to the row it describes, inside the same border, so the two can't be read apart. */
     notifyAlert: {
@@ -1209,11 +1375,6 @@ const makeStyles = (t: Tokens) =>
       backgroundColor: t.color.selectedTint,
       borderTopWidth: 1,
       borderTopColor: t.color.border,
-    },
-    notifyNote: {
-      paddingHorizontal: space.base,
-      paddingBottom: space.md,
-      marginTop: -space.sm,
     },
     addRow: {
       flexDirection: "row",
@@ -1229,16 +1390,6 @@ const makeStyles = (t: Tokens) =>
       borderWidth: 1,
       borderStyle: "dashed",
       borderColor: t.color.border,
-    },
-    androidTimeButton: {
-      minHeight: size.button + 2,
-      paddingHorizontal: 14,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: radius.control,
-      borderWidth: 1,
-      borderColor: t.color.border,
-      backgroundColor: t.color.card,
     },
 
     /* ---- Footer ---- */

@@ -7,9 +7,13 @@
 # env:
 #   TITLE   required. The task's name. Keep it unique per flow — assertions match on it.
 #   TYPE    "Focus Task" (default) | "Reminder Task"
-#   WHEN    "" (skip the sheet entirely) | "No date" | "Today" | "Tomorrow"
-#   REPEAT  "" (leave alone) | "Never" | "Daily" | "Weekly" | "Monthly" | "Yearly"
-#   NOTIFY  "" (silent) | "On the day" | "1 day before" | "1 week before"
+#   WHEN    "" (skip the sheet entirely) | "Anytime" | "Today" | "Tomorrow"
+#   REPEAT  "" (leave alone) | "No" | "Daily" | "Weekly" | "Monthly" | "Yearly"
+#   NOTIFY  "" (leave it as the sheet sets it) | "Off" | "On the day" | "The day before" | "A week before"
+#
+# Since 2026-11-26 a day brings its own reminder - 9 AM on the day, or the next full hour once that
+# has gone - so "" on a dated task is NOT silent. "Off" turns it off. "On the day" makes sure there
+# is one (on an undated task that is "Remind me daily"). The earlier ones are added from "Change".
 appId: com.mactora.taskManager
 ---
 # The docked Ferne button. Labelled "Capture tasks" and role=button; it is NOT a tab, it pushes
@@ -45,7 +49,7 @@ appId: com.mactora.taskManager
     commands:
       - tapOn: "Set a schedule"
       - extendedWaitUntil:
-          visible: "When"
+          visible: "When will you do it\\?"
           timeout: 20000
 
       - runFlow:
@@ -62,21 +66,41 @@ appId: com.mactora.taskManager
           commands:
             - tapOn: "${REPEAT}"
 
-      # Two spellings: the very first day-of add reads "Notify me" (which is also the card's
-      # eyebrow, hence the index), every other one carries a literal "+ " prefix.
+      # The reminder card is one line until "Change". With no reminder its button is "Add one"
+      # (dated) or "Remind me daily" (undated); any reminder at all makes it "Change".
       - runFlow:
           when:
-            true: ${(NOTIFY || "") === "On the day"}
+            true: ${(NOTIFY || "") !== "" && (NOTIFY || "") !== "Off"}
           commands:
-            - tapOn:
-                text: "Notify me"
-                index: 1
+            - runFlow:
+                when:
+                  visible: "Add one"
+                commands:
+                  - tapOn: "Add one"
+            - runFlow:
+                when:
+                  visible: "Remind me daily"
+                commands:
+                  - tapOn: "Remind me daily"
 
       - runFlow:
           when:
-            true: ${(NOTIFY || "") !== "" && (NOTIFY || "") !== "On the day"}
+            true: ${(NOTIFY || "") === "The day before" || (NOTIFY || "") === "A week before"}
           commands:
+            - tapOn: "Change"
             - tapOn: "\\+ ${NOTIFY}"
+            - tapOn: "Done"
+
+      - runFlow:
+          when:
+            true: ${(NOTIFY || "") === "Off"}
+          commands:
+            - runFlow:
+                when:
+                  visible: "Change"
+                commands:
+                  - tapOn: "Change"
+                  - tapOn: "Turn off reminders"
 
       - tapOn: "Save schedule"
       - extendedWaitUntil:

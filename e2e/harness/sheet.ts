@@ -6,7 +6,7 @@ import { control, exact, openTask, reload, screenText, see, tab } from "./app";
  * The schedule sheet — When × Repeat × Notify — as a test drives it.
  *
  * **What the browser can't do here.** The native date and time pickers render nothing in
- * react-native-web, so on web a person can choose only No date / Today / Tomorrow, and a
+ * react-native-web, so on web a person can choose only Anytime / Today / Tomorrow, and a
  * notification's time only from the four preset chips. Any other date is seeded through the API
  * and the sheet is then asked to show and preserve it; picking one by hand is device-only
  * (plan/17-device-only.md).
@@ -61,10 +61,50 @@ export async function sheetText(page: Page): Promise<string> {
   return at >= 0 ? text.slice(at) : "";
 }
 
-/** The repeat summary box: everything from the rule sentence to "Finishing one schedules the next." */
+/** The repeat summary box: everything from the rule sentence to "Tick it off and the next one appears." */
 export async function summary(page: Page): Promise<string> {
-  const m = /(?:\| )([^|]*?(?:— a one-time reminder\. \| )?[^|]*Finishing one schedules the next\.)/.exec(await sheetText(page));
+  const m = /(?:\| )([^|]*?(?:— a one-time reminder\. \| )?[^|]*Tick it off and the next one appears\.)/.exec(await sheetText(page));
   return m?.[1] ?? "";
+}
+
+/*
+ * The reminder card ("Remind you?"), rebuilt 2026-11-26.
+ *
+ * Closed, it is one line - exactly when the phone will ring - and one button: "Change" when there
+ * are reminders, "Add one" on a dated task without, "Remind me daily" on an undated one. Open, each
+ * reminder is a named group ("Reminder on the day", "Reminder the day before", "Reminder a week
+ * before") holding its own row of time chips, so a chip is always found inside its reminder.
+ */
+
+/** How a reminder's group is named: the offset as the sheet says it mid-sentence. */
+export type Lead = "on the day" | "the day before" | "a week before";
+
+/** The closed card's one line: "Sat, Dec 5 at 6:00 PM and Sun, Dec 6 at 9:00 AM", or "No reminder". */
+export async function reminderLine(page: Page): Promise<string> {
+  return /Remind you\? \| ([^|]*) \|/.exec(await sheetText(page))?.[1] ?? "";
+}
+
+/** Opens the card from its summary line. */
+export async function openReminders(page: Page): Promise<void> {
+  await control(page, "Change the reminders").click();
+  await expect(sheetButton(page, "Turn off reminders")).toBeVisible();
+}
+
+/** One reminder's group, for scoping its chips and its Remove. */
+export const reminder = (page: Page, lead: Lead) =>
+  page.getByRole("group", { name: `Reminder ${lead}`, exact: true }).locator("visible=true").last();
+
+/** A preset time inside one reminder - "Evening" picks "Evening · 6 PM" there and nowhere else. */
+export const reminderTime = (page: Page, lead: Lead, preset: "Morning" | "Midday" | "Evening" | "Night") =>
+  reminder(page, lead).getByRole("radio", { name: new RegExp(`^${preset} · `) });
+
+/** "+ The day before" / "+ A week before" / "+ On the day" - the add buttons under the reminders. */
+export const addReminderButton = (page: Page, label: "On the day" | "The day before" | "A week before") =>
+  sheetButton(page, `+ ${label}`);
+
+/** "Sat, Dec 5" - the day a reminder rings on, as the card prints it (en-US, the suite's locale). */
+export function dayLabel(key: string): string {
+  return new Date(`${key}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 }
 
 /** The colour a line of text is drawn in. */

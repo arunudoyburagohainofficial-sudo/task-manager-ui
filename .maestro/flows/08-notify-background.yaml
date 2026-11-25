@@ -46,26 +46,28 @@ tags:
 - tapOn: "Reminder Task"
 - tapOn: "Set a schedule"
 - extendedWaitUntil:
-    visible: "When"
+    visible: "When will you do it\\?"
     timeout: 20000
 - tapOn: "Today"
 
-# Add a day-of notification. On the very first add the control reads "Notify me" rather than
-# "+ On the day" (ScheduleSheet.tsx:943) — and "Notify me" is ALSO the card's eyebrow, so there are
-# two matches. index: 1 takes the button rather than the heading; the runner's --hierarchy mode is
-# how that index was confirmed rather than guessed.
-- tapOn:
-    text: "Notify me"
-    index: 1
-
-# Move it to 21:00. The time control's label is "Change the time for 9:00 AM · on the day", so the
-# stable part is the prefix.
-- tapOn:
-    text: "Change the time for.*"
+# Today brings its own reminder (9 AM, or the next full hour once that has gone). Move it to 21:00:
+# "Change" opens the card, and each preset chip prints its clock time. Before about 9:30 PM there
+# is a default; after it, "Add one" adds a reminder and opens the card itself.
+- runFlow:
+    when:
+      visible: "Add one"
+    commands:
+      - tapOn: "Add one"
+- runFlow:
+    when:
+      visible: "Change"
+    commands:
+      - tapOn: "Change"
 - extendedWaitUntil:
-    visible: "Night"
+    visible: "Night · 9 PM"
     timeout: 20000
-- tapOn: "Night"
+- tapOn: "Night · 9 PM"
+- tapOn: "Done"
 
 - tapOn: "Save schedule"
 - extendedWaitUntil:

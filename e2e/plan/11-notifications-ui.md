@@ -27,6 +27,7 @@ are pure and dependency-free — they deserve unit tests rather than browser tes
     configuration, and the two legitimately differ. It has to say which it's showing.
 
 - [ ] **NOTIF-03 — Turning one off removes it and says so on the task**
+  - **Does:** "Change" on the reminder card, then "Turn off reminders", and save.
   - **Proves:** the entry disappears and the task's own schedule row no longer advertises it.
   - **Why:** two sources of truth for one notification; turning it off in one place and leaving
     it in the other is exactly the kind of drift this screen was built to expose.
@@ -124,7 +125,8 @@ screen was built to name which end it's reporting.
     and one a second device makes reachable without the user doing anything wrong.
 
 - [ ] **NOTIF-17 — Two reminder changes in quick succession leave the queue matching the second**
-  - **Does:** save a reminder, then immediately save a different one, without waiting.
+  - **Does:** save the reminder at Evening, then immediately at Night (each through "Change" and
+    that reminder's own time chip), without waiting.
   - **Proves:** the queue matches the later save — no duplicates, and nothing from the first save
     left behind.
   - **Why:** `scheduleAll` is fired unawaited from a dozen places and two overlapping runs used to

@@ -21,7 +21,7 @@ on" is part of what these cover.
 
 - [ ] **CAP-03 — Several drafts in one pass**
   - **Does:** add three drafts with "+ Add another", organise them differently (one focus, one
-    reminder with a time, one attached to a goal), confirm.
+    reminder dated today - which brings its own reminder - and one attached to a goal), confirm.
   - **Proves:** all three are created with their own settings, and Home shows three new rows of
     the right kinds.
   - **Why:** the batch path is where per-draft state gets crossed — one draft's goal landing on
@@ -48,10 +48,11 @@ on" is part of what these cover.
   - **Why:** "I meant to add one more" is the most common reason to go back, and losing the batch
     there means retyping everything.
 
-- [ ] **CAP-08 — A schedule set during Organize is really saved**
-  - **Does:** on a draft, set a date and a notification time through the schedule sheet.
-  - **Proves:** the created task carries both — the row shows "Reminder · <time>" and it sits on
-    the right day.
+- [ ] **CAP-08 — A schedule set during Organize is really saved, earlier reminders included**
+  - **Does:** the phone's clock at 2 PM; on a draft, pick Tomorrow (which brings its 9 AM
+    reminder), move it to Evening, add one the day before and set it to Night.
+  - **Proves:** the created task is dated tomorrow with both reminders, `21:00/1` and `18:00/0`.
+    The day before is this evening, so only times still ahead of 2 PM are offered for it.
   - **Why:** the schedule now travels with the task in one request; it used to be a second call
     that could fail on its own and leave a saved task whose schedule silently didn't apply.
 

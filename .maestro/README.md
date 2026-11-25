@@ -89,7 +89,7 @@ are genuinely ambiguous and the ambiguity is load-bearing:
 | `Done` | The row action *and* the `DONE` section heading. Always use `Done: <task name>`. |
 | `Focus` | A row action, a type switch tab, and a row's kind word. Use `Focus: <task name>`. |
 | `Scheduled` | The tab *and* the ScheduledScreen `H1`. |
-| `Notify me` | The NOTIFY card's eyebrow *and* the first add button. Disambiguate by `index`. |
+| `Change` / `Add one` / `Remind me daily` | The reminder card's one button (heading "Remind you?"): `Change` when there are reminders, `Add one` on a dated task without, `Remind me daily` on an undated one. Since 2026-11-26. |
 | `Task name` | Capture's field *and* every Organize draft field — and Capture stays mounted underneath. |
 | `Change` / `Add` / `Edit` | Four `TimingRow` pills are on screen at once. Use the pill's own label, e.g. `Change do not disturb`. |
 

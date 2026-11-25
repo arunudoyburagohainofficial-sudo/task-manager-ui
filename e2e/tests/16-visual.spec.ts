@@ -3,7 +3,7 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../harness/fixtures";
 import type { Api } from "../harness/api";
 import { button, control, dateKey, exact, openTab, reload, see } from "../harness/app";
-import { openSchedule, seedAndOpen, sheetButton } from "../harness/sheet";
+import { openReminders, openSchedule, seedAndOpen } from "../harness/sheet";
 import { db } from "../harness/db";
 
 /**
@@ -364,43 +364,38 @@ test.describe("baselines", () => {
   });
 
   /**
-   * The Notify me editor, with a notification open for editing.
+   * The reminder card, opened with "Change" (rebuilt 2026-11-26).
    *
-   * It had no visual coverage at all, and it is the densest part of the sheet: a notification
-   * card, a row of time presets, a time button and the add row, four controls deep. Two of
-   * them carried no label until now - four words in a row, then a large time in a box - and
-   * the card printed "On the day" twice, once from the lead line and once from a note saying
-   * the same thing.
+   * It is the densest part of the sheet: each reminder is a sentence with its own row of time
+   * chips, then the add row and the footer. A repeating task, so every sentence reads "every time"
+   * rather than a date - a date in the picture would change every day and fail for nothing.
    *
-   * The gap under "Or choose your own time" in this baseline is the web build, not a bug: the
-   * native time picker renders nothing in react-native-web (see harness/sheet.ts), so on a
-   * phone the button sits there and here it does not.
+   * There's no time spinner here: the native picker renders nothing in react-native-web (see
+   * harness/sheet.ts), so "Pick another time…" is the only trace of it.
    */
-  test("VIS-12 · the notify editor labels what each control is for", async ({ app }) => {
+  test("VIS-12 · the reminder editor gives each reminder its own sentence and times", async ({ app }) => {
     const { page, api } = app;
     // seedAndOpen rather than a bare task + reload: ten days out puts it on Scheduled, not
     // Home, and the helper already knows to go and find it there.
-    await seedAndOpen(page, api, { name: "Warned task", scheduledFor: dateKey(10) });
+    await seedAndOpen(page, api, {
+      name: "Warned task",
+      scheduledFor: dateKey(10),
+      recurrenceRule: "FREQ=MONTHLY",
+      notifications: [{ time: "09:00:00", daysBefore: 0 }, { time: "18:00:00", daysBefore: 1 }],
+    });
     await openSchedule(page, "Warned task");
-    await sheetButton(page, "Notify me").click();
-    await see(page, "Common times");
-    await see(page, "Or choose your own time");
-    /*
-     * Scrolled to the foot of the sheet first. The editor is four controls deep and the last
-     * two sit below the fold on a 375-tall viewport, so an unscrolled shot would frame exactly
-     * the half that already had labels.
-     */
-    await see(page, "Add an earlier reminder");
+    await openReminders(page);
+    await see(page, "Remind me on the day, every time, at");
+    await see(page, "Also remind me earlier");
+    // Scrolled to the foot of the sheet first: the editor runs below the fold on a 375-wide phone.
     await page.mouse.move(187, 600);
-    await page.mouse.wheel(0, 400);
+    await page.mouse.wheel(0, 1200);
     await page.waitForTimeout(500);
-    // Anchored on a label this test just asserted exists, rather than on the section eyebrow -
-    // "NOTIFY ME" is drawn with letter-spacing and does not match as exact text.
-    const anchor = page.getByText("Common times", { exact: true }).locator("visible=true").last();
+    const anchor = page.getByText("Remind you?", { exact: true }).locator("visible=true").last();
     const box = (await anchor.boundingBox())!;
     await page.waitForTimeout(600);
-    await expect(page).toHaveScreenshot("vis-12-notify-editor.png", {
-      clip: { x: 0, y: Math.max(0, box.y - 150), width: 375, height: 430 },
+    await expect(page).toHaveScreenshot("vis-12-reminder-editor.png", {
+      clip: { x: 0, y: Math.max(0, box.y - 20), width: 375, height: 600 },
       animations: "disabled",
     });
   });

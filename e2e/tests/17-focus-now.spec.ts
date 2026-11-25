@@ -227,21 +227,23 @@ test.describe("starting from a task row", () => {
 });
 
 test.describe("picking a notification time", () => {
-  test("FOCUSNOW-12 · adding a notification opens its time editor in the same tap", async ({ app }) => {
+  test("FOCUSNOW-12 · a day brings a reminder, and its times are one tap away", async ({ app }) => {
     const { page, api } = app;
     await api.task({ name: "Call the dentist", taskType: "reminder" });
     await reload(page);
     await exact(page, "Call the dentist").click();
 
     await control(page, "Add scheduled").click();
-    await see(page, /WHEN/);
-    await exact(page, "Today").click();
+    await see(page, "When will you do it?");
+    await exact(page, "Tomorrow").click();
 
     // Picking a time used to take three taps — add, then the bare clock text, which nothing
-    // marked as tappable — and people reported the time as missing rather than hidden.
-    await page.getByText("Notify me", { exact: true }).locator("visible=true").last().click();
-    await see(page, /Morning/);
-    await see(page, /Done/);
+    // marked as tappable — and people reported the time as missing rather than hidden. Now the
+    // day brings its 9 AM reminder, and "Change" shows every time it could be instead.
+    await see(page, /at 9:00 AM \| Change/);
+    await control(page, "Change the reminders").click();
+    await see(page, "Morning · 9 AM");
+    await see(page, "Done");
   });
 });
 

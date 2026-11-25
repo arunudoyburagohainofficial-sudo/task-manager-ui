@@ -39,46 +39,36 @@ tags:
     timeout: 20000
 - tapOn: "Set a schedule"
 - extendedWaitUntil:
-    visible: "When"
+    visible: "When will you do it\\?"
     timeout: 20000
 
-- tapOn: "No date"
+- tapOn: "Anytime"
 # Not a disabled control the user has to poke to discover — a sentence telling them what to do.
-- assertVisible: "Pick a day above to make this repeat."
-- assertVisible: "Stays on Home until you give it a day"
+- assertVisible: "Give it a day first, then it can repeat."
+- assertVisible: "Sits under Anytime on Home until you give it a day"
 
-# ── An undated notification is honest about what it will do ───────────────────────────────────
-# On an undated task a lead time is meaningless, so setNotifications flattens daysBefore to 0
-# rather than storing a promise it cannot keep. The sheet says so, and offers only the day-of
-# preset — the other two are not rendered at all when there is no date.
-- tapOn:
-    text: "Notify me"
-    index: 1
-- assertVisible: "Every day until you finish it."
-- assertNotVisible: "1 week before"
-- assertNotVisible: "1 day before"
+# ── An undated reminder is honest about what it will do ───────────────────────────────────────
+# On an undated task a lead time is meaningless, so there is no default and no earlier reminder
+# to add - only "Remind me daily", which says exactly that.
+- assertVisible: "No reminder"
+- tapOn: "Remind me daily"
+- assertVisible: "Every day at 9:00 AM until it's done"
+- tapOn: "Change"
+- assertVisible: "Remind me every day until it's done, at"
+- assertNotVisible: "\\+ The day before"
+- assertNotVisible: "\\+ A week before"
 - takeScreenshot: artifacts/11-undated-notify
+- tapOn: "Done"
 
-# Giving it a day makes the lead times appear — the same controls, now meaningful.
+# ── A reminder that couldn't ring is never offered ────────────────────────────────────────────
+# Due today, "the day before" and "a week before" are both in the past, so neither button exists.
+# (The sheet used to offer them and then warn; it now only offers what can still ring.)
 - tapOn: "Today"
-- extendedWaitUntil:
-    visible: ".*1 week before.*"
-    timeout: 20000
-
-# ── A lead time longer than the runway cannot fire, and the sheet says which day it missed ────
-# Today + "1 week before" lands seven days in the past. The warning names the day rather than
-# saying something vague, because "it won't fire" without a date is not actionable.
-- tapOn:
-    text: ".*1 week before.*"
-- extendedWaitUntil:
-    visible: ".*already past — it won't fire.*"
-    timeout: 20000
-- takeScreenshot: artifacts/11-lead-time-warning
-
-# ── The warning clears when the cause does, without saving and reopening ──────────────────────
-- tapOn: "Tomorrow"
-- tapOn: "Today"
-- assertVisible: ".*already past — it won't fire.*"
+- tapOn: "Change"
+- assertNotVisible: "\\+ The day before"
+- assertNotVisible: "\\+ A week before"
+- takeScreenshot: artifacts/11-nothing-offered-that-cannot-ring
+- tapOn: "Done"
 
 - tapOn: "Cancel"
 - extendedWaitUntil:

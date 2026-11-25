@@ -83,9 +83,11 @@ surfaces produce a stable frame.
   - **Why:** it is a single line that truncates silently on a narrow phone, and a typecheck
     cannot see that.
 
-- [ ] **VIS-12 — The notify editor labels what each control is for**
-  - **Why:** the densest part of the sheet had no visual coverage, and two of its controls
-    carried no label.
+- [ ] **VIS-12 — The reminder editor gives each reminder its own sentence and times**
+  - **Does:** a monthly task with a day-of and a day-before reminder, opened with "Change".
+  - **Why:** the densest part of the sheet: each reminder is a sentence with its own row of time
+    chips. A repeating task, so the sentences say "every time" rather than a date that would change
+    the picture daily. Rebuilt with the card on 2026-11-26 (`vis-12-reminder-editor.png`).
 
 - [ ] **VIS-13 — The sheet's slider is dressed like the card's**
   - **Why:** the two slide-to-focus controls sat on screen together in different colours and read
